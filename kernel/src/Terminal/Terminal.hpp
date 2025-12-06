@@ -111,10 +111,27 @@ namespace Kt
         const char* componentName = "";
 
 public:
-        KernelLogStream(KernelLogLevel, const char* desiredComponentName) { /* level for potential future rich event logging */
+        const char* LogLevelToStringWithColor(KernelLogLevel level) {
+            switch (level) {
+                case INFO:
+                    return "\e[0;36mINFO\e[0m"; // Cyan
+                case WARNING:
+                    return "\e[0;33mWARNING\e[0m"; // Yellow
+                case ERROR:
+                    return "\e[0;31mERROR\e[0m"; // Red
+                case DEBUG:
+                    return "\e[0;35mDEBUG\e[0m"; // Magenta
+                case OK:
+                    return "\e[0;32mOK\e[0m"; // Green
+                default:
+                    return "UNKNOWN";
+            }
+        }
+
+        KernelLogStream(KernelLogLevel level, const char* desiredComponentName) { /* level for potential future rich event logging */
             componentName = desiredComponentName;
 
-            localStream << componentName << ": ";
+            localStream << componentName << ": " << "[" << LogLevelToStringWithColor(level) << "] ";
         }
 
         ~KernelLogStream() {
