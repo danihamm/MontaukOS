@@ -7,6 +7,24 @@
 #include <CppLib/CString.hpp>
 
 namespace Timekeeping {
+    /*
+        Structure representing the attributes of a time zone; properties and time zone configuration will eventually
+        be loaded from disk/ramdisk.
+    */
+    struct TimeZone {
+        /* Time zone naming scheme: 
+            i.e. "Central European Time" / "CET"
+        */
+        CString TZLongName;
+        CString TZShortName;
+        /* Hour offset from UTC */
+        int8_t HourOffset;
+        /* Minute offset from UTC */
+        int8_t MinuteOffset;
+        /* Is daylight saving time */
+        bool IsDST;
+    };
+    
     const CString Months[] = {
         nullptr,
         "January",
