@@ -100,7 +100,7 @@ namespace Hal {
     template<int I, int N>
     struct SetHandler {
         static void run() {
-            IDTEncodeInterrupt(I, (void*)&ExceptionHandler<I>, TrapGate);
+            IDTEncodeInterrupt(I, (void*)ExceptionHandler<I>, TrapGate);
             SetHandler<I+1,N>::run();
         }
     };
@@ -110,8 +110,10 @@ namespace Hal {
 
     void IDTInitialize() {
         IDT = (InterruptDescriptor*)Memory::g_pfa->Allocate();
+        Kt::KernelLogStream(Kt::DEBUG, "IDT") << "Allocated IDT at " << base::hex << (uint64_t)IDT;
         IDTR.Limit = 0x0FF;
-        IDTR.Base = (uint64_t)&IDT;
+        IDTR.Base = (uint64_t)IDT;
+        Kt::KernelLogStream(Kt::DEBUG, "IDT") << "Set IDTR Base to " << base::hex << IDTR.Base << " and Limit to " << base::hex << IDTR.Limit;
 
         SetHandler<0, 31>::run();
 
