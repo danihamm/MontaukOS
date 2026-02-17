@@ -28,6 +28,8 @@
 #include <Memory/Paging.hpp>
 #include <ACPI/ACPI.hpp>
 #include <Hal/Apic/ApicInit.hpp>
+#include <Pci/Pci.hpp>
+#include <Timekeeping/ApicTimer.hpp>
 #include <Drivers/PS2/PS2Controller.hpp>
 #include <Drivers/PS2/Keyboard.hpp>
 #include <Drivers/PS2/Mouse.hpp>
@@ -121,6 +123,10 @@ extern "C" void kmain() {
 #if defined (__x86_64__)
     if (g_acpi.GetXSDT() != nullptr) {
         Hal::ApicInitialize(g_acpi.GetXSDT());
+
+        Pci::Initialize(g_acpi.GetXSDT());
+
+        Timekeeping::ApicTimerInitialize();
 
         Drivers::PS2::Initialize();
         Drivers::PS2::Keyboard::Initialize();
