@@ -27,6 +27,41 @@ static const char* skip_spaces(const char* s) {
     return s;
 }
 
+static int slen(const char* s) {
+    int n = 0;
+    while (s[n]) n++;
+    return n;
+}
+
+// Current working directory (relative to 0:/).
+// "" = root, "man" = 0:/man, "man/sub" = 0:/man/sub
+static char cwd[128] = "";
+
+// Build full VFS path: "0:/" + cwd + "/" + name
+static void resolve_path(const char* name, char* out, int outMax) {
+    int i = 0;
+    out[i++] = '0'; out[i++] = ':'; out[i++] = '/';
+    if (cwd[0]) {
+        int j = 0;
+        while (cwd[j] && i < outMax - 2) out[i++] = cwd[j++];
+        out[i++] = '/';
+    }
+    int j = 0;
+    while (name[j] && i < outMax - 1) out[i++] = name[j++];
+    out[i] = '\0';
+}
+
+// Build VFS directory path: "0:/" or "0:/<dir>"
+static void build_dir_path(const char* dir, char* out, int outMax) {
+    int i = 0;
+    out[i++] = '0'; out[i++] = ':'; out[i++] = '/';
+    if (dir && dir[0]) {
+        int j = 0;
+        while (dir[j] && i < outMax - 1) out[i++] = dir[j++];
+    }
+    out[i] = '\0';
+}
+
 static void print_int(uint64_t n) {
     if (n == 0) {
         zenith::putchar('0');
@@ -44,7 +79,9 @@ static void print_int(uint64_t n) {
 }
 
 static void prompt() {
-    zenith::print("% ");
+    zenith::print("0:/");
+    if (cwd[0]) zenith::print(cwd);
+    zenith::print("> ");
 }
 
 static void cmd_help() {
@@ -52,7 +89,8 @@ static void cmd_help() {
     zenith::print("  help          Show this help message\n");
     zenith::print("  info          Show system information\n");
     zenith::print("  man <topic>   View manual pages\n");
-    zenith::print("  ls            List ramdisk files\n");
+    zenith::print("  ls [dir]      List files in directory\n");
+    zenith::print("  cd [dir]      Change working directory\n");
     zenith::print("  cat <file>    Display file contents\n");
     zenith::print("  run <file>    Spawn a new process from an ELF file\n");
     zenith::print("  ping <ip>     Send ICMP echo requests\n");
@@ -73,16 +111,53 @@ static void cmd_info() {
     zenith::putchar('\n');
 }
 
-static void cmd_ls() {
+static void cmd_ls(const char* arg) {
+    arg = skip_spaces(arg);
+
+    // Build the target directory (relative path from root)
+    char dir[128];
+    if (*arg) {
+        // ls <dir> — combine cwd and arg
+        if (cwd[0]) {
+            int i = 0, j = 0;
+            while (cwd[j] && i < 126) dir[i++] = cwd[j++];
+            dir[i++] = '/';
+            j = 0;
+            while (arg[j] && i < 126) dir[i++] = arg[j++];
+            dir[i] = '\0';
+        } else {
+            int i = 0;
+            while (arg[i] && i < 126) { dir[i] = arg[i]; i++; }
+            dir[i] = '\0';
+        }
+    } else {
+        // ls with no arg — use cwd
+        int i = 0;
+        while (cwd[i] && i < 126) { dir[i] = cwd[i]; i++; }
+        dir[i] = '\0';
+    }
+
+    char path[128];
+    build_dir_path(dir, path, sizeof(path));
+
     const char* entries[64];
-    int count = zenith::readdir("0:/", entries, 64);
+    int count = zenith::readdir(path, entries, 64);
     if (count <= 0) {
         zenith::print("(empty)\n");
         return;
     }
+
+    // Prefix to strip: "dir/" (if dir is non-empty)
+    int prefixLen = 0;
+    if (dir[0]) prefixLen = slen(dir) + 1;
+
     for (int i = 0; i < count; i++) {
         zenith::print("  ");
-        zenith::print(entries[i]);
+        if (prefixLen > 0 && starts_with(entries[i], dir)) {
+            zenith::print(entries[i] + prefixLen);
+        } else {
+            zenith::print(entries[i]);
+        }
         zenith::putchar('\n');
     }
 }
@@ -94,14 +169,8 @@ static void cmd_cat(const char* arg) {
         return;
     }
 
-    // Build path "0:/<filename>"
     char path[128];
-    const char* prefix = "0:/";
-    int i = 0;
-    while (prefix[i]) { path[i] = prefix[i]; i++; }
-    int j = 0;
-    while (arg[j] && i < 126) { path[i++] = arg[j++]; }
-    path[i] = '\0';
+    resolve_path(arg, path, sizeof(path));
 
     int handle = zenith::open(path);
     if (handle < 0) {
@@ -232,14 +301,8 @@ static void cmd_run(const char* arg) {
         return;
     }
 
-    // Build path "0:/<filename>"
     char path[128];
-    const char* prefix = "0:/";
-    int i = 0;
-    while (prefix[i]) { path[i] = prefix[i]; i++; }
-    int j = 0;
-    while (arg[j] && i < 126) { path[i++] = arg[j++]; }
-    path[i] = '\0';
+    resolve_path(arg, path, sizeof(path));
 
     int pid = zenith::spawn(path);
     if (pid < 0) {
@@ -249,6 +312,63 @@ static void cmd_run(const char* arg) {
     } else {
         zenith::waitpid(pid);
     }
+}
+
+static void cmd_cd(const char* arg) {
+    arg = skip_spaces(arg);
+
+    // cd or cd / → go to root
+    if (*arg == '\0' || streq(arg, "/")) {
+        cwd[0] = '\0';
+        return;
+    }
+
+    // cd .. → go up one level
+    if (streq(arg, "..")) {
+        int len = slen(cwd);
+        int last = -1;
+        for (int i = 0; i < len; i++) {
+            if (cwd[i] == '/') last = i;
+        }
+        if (last >= 0) {
+            cwd[last] = '\0';
+        } else {
+            cwd[0] = '\0';
+        }
+        return;
+    }
+
+    // Build target directory path
+    char target[128];
+    if (cwd[0]) {
+        int i = 0, j = 0;
+        while (cwd[j] && i < 126) target[i++] = cwd[j++];
+        target[i++] = '/';
+        j = 0;
+        while (arg[j] && i < 126) target[i++] = arg[j++];
+        target[i] = '\0';
+    } else {
+        int i = 0;
+        while (arg[i] && i < 126) { target[i] = arg[i]; i++; }
+        target[i] = '\0';
+    }
+
+    // Validate: try readdir on the target
+    char path[128];
+    build_dir_path(target, path, sizeof(path));
+    const char* entries[1];
+    int count = zenith::readdir(path, entries, 1);
+    if (count < 0) {
+        zenith::print("cd: no such directory: ");
+        zenith::print(arg);
+        zenith::putchar('\n');
+        return;
+    }
+
+    // Set cwd
+    int i = 0;
+    while (target[i] && i < 126) { cwd[i] = target[i]; i++; }
+    cwd[i] = '\0';
 }
 
 static void cmd_man(const char* arg) {
@@ -282,8 +402,14 @@ static void process_command(const char* line) {
         cmd_help();
     } else if (streq(line, "info")) {
         cmd_info();
+    } else if (starts_with(line, "ls ")) {
+        cmd_ls(line + 3);
     } else if (streq(line, "ls")) {
-        cmd_ls();
+        cmd_ls("");
+    } else if (starts_with(line, "cd ")) {
+        cmd_cd(line + 3);
+    } else if (streq(line, "cd")) {
+        cmd_cd("");
     } else if (starts_with(line, "man ")) {
         cmd_man(line + 4);
     } else if (streq(line, "man")) {

@@ -18,17 +18,28 @@
 .SS man <topic>
     Open a manual page in the fullscreen pager. See man(1).
 
-.SS ls
-    List all files on the ramdisk (drive 0:/).
+.SS ls [dir]
+    List files in the current directory, or in the specified
+    directory. When a directory argument is given, the output
+    shows only the entries inside that directory with the
+    directory prefix stripped.
+    Examples: ls, ls man
+
+.SS cd [dir]
+    Change the working directory. With no argument or with /,
+    returns to the root (0:/). Use cd .. to go up one level.
+    The shell prompt reflects the current directory.
+    Examples: cd man, cd .., cd
 
 .SS cat <file>
-    Print the contents of a ramdisk file to the terminal.
+    Print the contents of a file to the terminal. The file
+    path is resolved relative to the current directory.
     Example: cat hello.elf
 
 .SS run <file>
-    Spawn a new process from an ELF binary on the ramdisk and wait
-    for it to exit. The shell blocks until the child process
-    terminates.
+    Spawn a new process from an ELF binary and wait for it to
+    exit. The file path is resolved relative to the current
+    directory. The shell blocks until the child process terminates.
     Example: run hello.elf
 
 .SS ping <ip>
