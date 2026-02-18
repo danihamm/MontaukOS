@@ -39,6 +39,16 @@ namespace Zenith {
     static constexpr uint64_t SYS_GETARGS         = 25;
     static constexpr uint64_t SYS_RESET           = 26;
     static constexpr uint64_t SYS_SHUTDOWN        = 27;
+    static constexpr uint64_t SYS_GETTIME         = 28;
+
+    struct DateTime {
+        uint16_t Year;
+        uint8_t Month;
+        uint8_t Day;
+        uint8_t Hour;
+        uint8_t Minute;
+        uint8_t Second;
+    };
 
     struct FbInfo {
         uint64_t width;

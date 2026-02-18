@@ -3,7 +3,7 @@
     syscalls - overview of ZenithOS system calls
 
 .SH DESCRIPTION
-    ZenithOS provides 26 system calls (numbers 0-25) for userspace
+    ZenithOS provides 29 system calls (numbers 0-28) for userspace
     programs. Syscalls use the x86-64 SYSCALL instruction with the
     following register convention:
 
@@ -91,6 +91,12 @@
     Get milliseconds elapsed since boot.
         uint64_t zenith::get_milliseconds();
 
+.B SYS_GETTIME (28)
+    Get the current wall-clock date and time (UTC).
+    Fills a Zenith::DateTime struct with Year, Month, Day,
+    Hour, Minute, and Second fields.
+        void zenith::gettime(Zenith::DateTime* out);
+
 .SH SYSTEM
 .B SYS_GETINFO (15)
     Get OS name, version, and configuration.
@@ -132,6 +138,15 @@
 .B SYS_GETARGS (25)
     Get the argument string passed to this process at spawn time.
         int zenith::getargs(char* buf, uint64_t maxLen);
+
+.SH POWER MANAGEMENT
+.B SYS_RESET (26)
+    Reboot the system.
+        [[noreturn]] void zenith::reset();
+
+.B SYS_SHUTDOWN (27)
+    Shut down the system (currently unimplemented).
+        [[noreturn]] void zenith::shutdown();
 
 .SH SEE ALSO
     spawn(2), file(2), framebuffer(2), malloc(3)

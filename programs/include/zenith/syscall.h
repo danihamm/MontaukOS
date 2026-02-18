@@ -176,6 +176,9 @@ namespace zenith {
         if (rows) *rows = (int)(r >> 32);
     }
 
+    // Timekeeping (wall-clock)
+    inline void gettime(Zenith::DateTime* out) { syscall1(Zenith::SYS_GETTIME, (uint64_t)out); }
+
     // Power management
     [[noreturn]] inline void reset() {
         syscall0(Zenith::SYS_RESET);

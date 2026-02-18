@@ -41,5 +41,16 @@ namespace Timekeeping {
         "December"
     };
 
+    struct DateTime {
+        uint16_t Year;
+        uint8_t Month;
+        uint8_t Day;
+        uint8_t Hour;
+        uint8_t Minute;
+        uint8_t Second;
+    };
+
     void Init(uint16_t Year, uint8_t Month, uint8_t Day, uint8_t Hour, uint8_t Minute, uint8_t Second);
+    int64_t GetUnixTimestamp();
+    DateTime GetDateTime();
 };

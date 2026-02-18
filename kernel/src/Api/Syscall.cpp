@@ -5,6 +5,7 @@
 */
 
 #include "Syscall.hpp"
+#include <Timekeeping/Time.hpp>
 #include <Terminal/Terminal.hpp>
 #include <Fs/Vfs.hpp>
 #include <Memory/Heap.hpp>
@@ -256,7 +257,18 @@ namespace Zenith {
         return (rows << 32) | (cols & 0xFFFFFFFF);
     }
 
-    static void Sys_Reset() { 
+    static void Sys_GetTime(DateTime* out) {
+        if (out == nullptr) return;
+        Timekeeping::DateTime dt = Timekeeping::GetDateTime();
+        out->Year   = dt.Year;
+        out->Month  = dt.Month;
+        out->Day    = dt.Day;
+        out->Hour   = dt.Hour;
+        out->Minute = dt.Minute;
+        out->Second = dt.Second;
+    }
+
+    static void Sys_Reset() {
         /*
             Triple fault for now; TODO: implement UEFI runtime function for clean reboot.
 
@@ -349,6 +361,9 @@ namespace Zenith {
             case SYS_SHUTDOWN:
                 /* Unimplemented */
                 return -1;
+            case SYS_GETTIME:
+                Sys_GetTime((DateTime*)frame->arg1);
+                return 0;
             default:
                 return -1;
         }
@@ -375,7 +390,7 @@ namespace Zenith {
         Hal::WriteMSR(Hal::IA32_FMASK, 0x200);
 
         Kt::KernelLogStream(Kt::OK, "Syscall") << "SYSCALL/SYSRET initialized (LSTAR="
-            << kcp::hex << (uint64_t)SyscallEntry << kcp::dec << ", 26 syscalls)";
+            << kcp::hex << (uint64_t)SyscallEntry << kcp::dec << ", 29 syscalls)";
     }
 
 }

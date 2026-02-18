@@ -94,6 +94,7 @@ static void cmd_help() {
     zenith::print("  cat <file>    Display file contents\n");
     zenith::print("  run <file>    Spawn a new process from an ELF file\n");
     zenith::print("  ping <ip>     Send ICMP echo requests\n");
+    zenith::print("  date          Show current date and time\n");
     zenith::print("  uptime        Show uptime in milliseconds\n");
     zenith::print("  clear         Clear the screen\n");
     zenith::print("  reset         Reboot the system\n");
@@ -390,6 +391,38 @@ static void cmd_man(const char* arg) {
     }
 }
 
+static void print_int_padded(uint64_t n) {
+    if (n < 10) zenith::putchar('0');
+    print_int(n);
+}
+
+static const char* month_name(int m) {
+    static const char* months[] = {
+        "", "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    };
+    if (m >= 1 && m <= 12) return months[m];
+    return "?";
+}
+
+static void cmd_date() {
+    Zenith::DateTime dt;
+    zenith::gettime(&dt);
+
+    print_int(dt.Day);
+    zenith::putchar(' ');
+    zenith::print(month_name(dt.Month));
+    zenith::putchar(' ');
+    print_int(dt.Year);
+    zenith::print(", ");
+    print_int(dt.Hour);
+    zenith::putchar(':');
+    print_int_padded(dt.Minute);
+    zenith::putchar(':');
+    print_int_padded(dt.Second);
+    zenith::print(" UTC\n");
+}
+
 static void cmd_clear() {
     zenith::print("\033[2J");   // Clear entire screen
     zenith::print("\033[H");    // Move cursor to top-left
@@ -428,6 +461,8 @@ static void process_command(const char* line) {
         cmd_ping(line + 5);
     } else if (streq(line, "ping")) {
         cmd_ping("");
+    } else if (streq(line, "date")) {
+        cmd_date();
     } else if (streq(line, "uptime")) {
         cmd_uptime();
     } else if (streq(line, "clear")) {
