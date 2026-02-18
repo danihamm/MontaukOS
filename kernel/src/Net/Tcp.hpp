@@ -71,6 +71,9 @@ namespace Net::Tcp {
     // Blocks until data is available or connection is closed.
     int Receive(Connection* conn, uint8_t* buffer, uint16_t bufferSize);
 
+    // Non-blocking receive. Returns bytes read, 0 if no data available, or -1 on closed/error.
+    int ReceiveNonBlocking(Connection* conn, uint8_t* buffer, uint16_t bufferSize);
+
     // Close a TCP connection gracefully
     void Close(Connection* conn);
 

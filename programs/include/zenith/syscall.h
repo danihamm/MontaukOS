@@ -157,6 +157,32 @@ namespace zenith {
         return (int32_t)syscall2(Zenith::SYS_PING, (uint64_t)ip, (uint64_t)timeoutMs);
     }
 
+    // Sockets
+    inline int socket(int type) {
+        return (int)syscall1(Zenith::SYS_SOCKET, (uint64_t)type);
+    }
+    inline int connect(int fd, uint32_t ip, uint16_t port) {
+        return (int)syscall3(Zenith::SYS_CONNECT, (uint64_t)fd, (uint64_t)ip, (uint64_t)port);
+    }
+    inline int bind(int fd, uint16_t port) {
+        return (int)syscall2(Zenith::SYS_BIND, (uint64_t)fd, (uint64_t)port);
+    }
+    inline int listen(int fd) {
+        return (int)syscall1(Zenith::SYS_LISTEN, (uint64_t)fd);
+    }
+    inline int accept(int fd) {
+        return (int)syscall1(Zenith::SYS_ACCEPT, (uint64_t)fd);
+    }
+    inline int send(int fd, const void* data, uint32_t len) {
+        return (int)syscall3(Zenith::SYS_SEND, (uint64_t)fd, (uint64_t)data, (uint64_t)len);
+    }
+    inline int recv(int fd, void* buf, uint32_t maxLen) {
+        return (int)syscall3(Zenith::SYS_RECV, (uint64_t)fd, (uint64_t)buf, (uint64_t)maxLen);
+    }
+    inline int closesocket(int fd) {
+        return (int)syscall1(Zenith::SYS_CLOSESOCK, (uint64_t)fd);
+    }
+
     // Process management
     inline void waitpid(int pid) { syscall1(Zenith::SYS_WAITPID, (uint64_t)pid); }
 

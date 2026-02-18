@@ -523,9 +523,11 @@ namespace Net::Tcp {
             return -1;
         }
 
+        // Phase 1: Send data segments with interrupts disabled (lock-safe)
+        uint64_t flags;
+        asm volatile("pushfq; pop %0; cli" : "=r"(flags) :: "memory");
         conn->Lock.Acquire();
 
-        // Send data in segments up to MSS (we use a simple 1460 byte MSS)
         constexpr uint16_t MSS = 1460;
         uint16_t sent = 0;
 
@@ -538,6 +540,7 @@ namespace Net::Tcp {
             bool ok = SendSegment(conn, FLAG_ACK | FLAG_PSH, data + sent, segLen);
             if (!ok) {
                 conn->Lock.Release();
+                asm volatile("push %0; popfq" :: "r"(flags) : "memory");
                 return sent > 0 ? sent : -1;
             }
 
@@ -554,30 +557,36 @@ namespace Net::Tcp {
             sent += segLen;
         }
 
-        // Simple wait for ACK with retransmission
+        conn->Lock.Release();
+        asm volatile("push %0; popfq" :: "r"(flags) : "memory");
+
+        // Phase 2: Wait for ACK without holding the lock (interrupts enabled)
         uint64_t startTime = Timekeeping::GetMilliseconds();
         while (conn->SendUnack != conn->SendNext) {
             uint64_t now = Timekeeping::GetMilliseconds();
             if ((now - startTime) > (RETRANSMIT_TIMEOUT_MS * MAX_RETRANSMITS)) {
-                break; // Give up
+                break;
             }
             if ((now - conn->RetransmitTime) > RETRANSMIT_TIMEOUT_MS && conn->RetransmitLen > 0) {
                 conn->RetransmitCount++;
                 if (conn->RetransmitCount > MAX_RETRANSMITS) {
                     break;
                 }
-                // Retransmit: rewind SendNext temporarily
+                // Retransmit with brief interrupt-disabled window
+                asm volatile("pushfq; pop %0; cli" : "=r"(flags) :: "memory");
+                conn->Lock.Acquire();
                 uint32_t savedNext = conn->SendNext;
                 conn->SendNext = conn->SendUnack;
                 SendSegment(conn, FLAG_ACK | FLAG_PSH,
                            conn->RetransmitBuffer, conn->RetransmitLen);
                 conn->SendNext = savedNext;
-                conn->RetransmitTime = now;
+                conn->RetransmitTime = Timekeeping::GetMilliseconds();
+                conn->Lock.Release();
+                asm volatile("push %0; popfq" :: "r"(flags) : "memory");
             }
             Timekeeping::Sleep(10);
         }
 
-        conn->Lock.Release();
         return sent;
     }
 
@@ -588,6 +597,8 @@ namespace Net::Tcp {
 
         // Block until data is available or connection is closing
         while (true) {
+            uint64_t flags;
+            asm volatile("pushfq; pop %0; cli" : "=r"(flags) :: "memory");
             conn->Lock.Acquire();
 
             if (conn->RecvCount > 0) {
@@ -603,6 +614,7 @@ namespace Net::Tcp {
                 conn->RecvCount -= toRead;
 
                 conn->Lock.Release();
+                asm volatile("push %0; popfq" :: "r"(flags) : "memory");
                 return toRead;
             }
 
@@ -610,12 +622,53 @@ namespace Net::Tcp {
                 conn->CurrentState == State::Closed ||
                 conn->CurrentState == State::TimeWait) {
                 conn->Lock.Release();
+                asm volatile("push %0; popfq" :: "r"(flags) : "memory");
                 return 0; // Connection closed
             }
 
             conn->Lock.Release();
+            asm volatile("push %0; popfq" :: "r"(flags) : "memory");
             Timekeeping::Sleep(10);
         }
+    }
+
+    int ReceiveNonBlocking(Connection* conn, uint8_t* buffer, uint16_t bufferSize) {
+        if (conn == nullptr) {
+            return -1;
+        }
+
+        // Disable interrupts while holding the lock to prevent deadlock
+        // with OnPacketReceived (called from the network interrupt handler)
+        uint64_t flags;
+        asm volatile("pushfq; pop %0; cli" : "=r"(flags) :: "memory");
+
+        conn->Lock.Acquire();
+
+        int result;
+        if (conn->RecvCount > 0) {
+            uint16_t toRead = conn->RecvCount;
+            if (toRead > bufferSize) {
+                toRead = bufferSize;
+            }
+
+            for (uint16_t i = 0; i < toRead; i++) {
+                buffer[i] = conn->RecvBuffer[conn->RecvHead];
+                conn->RecvHead = (conn->RecvHead + 1) % RECV_BUFFER_SIZE;
+            }
+            conn->RecvCount -= toRead;
+            result = toRead;
+        } else if (conn->CurrentState == State::CloseWait ||
+                   conn->CurrentState == State::Closed ||
+                   conn->CurrentState == State::TimeWait) {
+            result = -1; // Connection closed
+        } else {
+            result = 0; // No data available
+        }
+
+        conn->Lock.Release();
+        asm volatile("push %0; popfq" :: "r"(flags) : "memory");
+
+        return result;
     }
 
     void Close(Connection* conn) {
@@ -623,6 +676,8 @@ namespace Net::Tcp {
             return;
         }
 
+        uint64_t flags;
+        asm volatile("pushfq; pop %0; cli" : "=r"(flags) :: "memory");
         conn->Lock.Acquire();
 
         switch (conn->CurrentState) {
@@ -631,6 +686,7 @@ namespace Net::Tcp {
                 SendSegment(conn, FLAG_FIN | FLAG_ACK, nullptr, 0);
                 conn->SendNext++;
                 conn->Lock.Release();
+                asm volatile("push %0; popfq" :: "r"(flags) : "memory");
 
                 // Wait for close to complete
                 for (int i = 0; i < 100; i++) {
@@ -649,6 +705,7 @@ namespace Net::Tcp {
                 SendSegment(conn, FLAG_FIN | FLAG_ACK, nullptr, 0);
                 conn->SendNext++;
                 conn->Lock.Release();
+                asm volatile("push %0; popfq" :: "r"(flags) : "memory");
 
                 // Wait for final ACK
                 for (int i = 0; i < 100; i++) {
@@ -666,11 +723,13 @@ namespace Net::Tcp {
                 conn->CurrentState = State::Closed;
                 conn->Active = false;
                 conn->Lock.Release();
+                asm volatile("push %0; popfq" :: "r"(flags) : "memory");
                 return;
             }
 
             default:
                 conn->Lock.Release();
+                asm volatile("push %0; popfq" :: "r"(flags) : "memory");
                 conn->Active = false;
                 return;
         }

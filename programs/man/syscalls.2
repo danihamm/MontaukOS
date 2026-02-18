@@ -3,7 +3,7 @@
     syscalls - overview of ZenithOS system calls
 
 .SH DESCRIPTION
-    ZenithOS provides 29 system calls (numbers 0-28) for userspace
+    ZenithOS provides 37 system calls (numbers 0-36) for userspace
     programs. Syscalls use the x86-64 SYSCALL instruction with the
     following register convention:
 
@@ -119,6 +119,40 @@
 .B SYS_PING (19)
     Send an ICMP echo request and wait for reply.
         int32_t zenith::ping(uint32_t ip, uint32_t timeoutMs);
+
+.B SYS_SOCKET (29)
+    Create a socket. type=SOCK_TCP (1). Returns fd or -1.
+        int zenith::socket(int type);
+
+.B SYS_CONNECT (30)
+    Connect a TCP socket to a remote host.
+        int zenith::connect(int fd, uint32_t ip, uint16_t port);
+
+.B SYS_BIND (31)
+    Bind a socket to a local port for listening.
+        int zenith::bind(int fd, uint16_t port);
+
+.B SYS_LISTEN (32)
+    Start listening for incoming TCP connections.
+        int zenith::listen(int fd);
+
+.B SYS_ACCEPT (33)
+    Accept an incoming connection on a listening socket.
+    Returns a new socket fd for the client connection.
+        int zenith::accept(int fd);
+
+.B SYS_SEND (34)
+    Send data on a connected socket. Returns bytes sent.
+        int zenith::send(int fd, const void* data, uint32_t len);
+
+.B SYS_RECV (35)
+    Receive data from a connected socket. Returns bytes
+    received, 0 on connection close, or -1 on error.
+        int zenith::recv(int fd, void* buf, uint32_t maxLen);
+
+.B SYS_CLOSESOCK (36)
+    Close a socket and release its resources.
+        int zenith::closesocket(int fd);
 
 .SH FRAMEBUFFER
 .B SYS_FBINFO (21)

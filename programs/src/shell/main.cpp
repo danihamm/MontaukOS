@@ -94,6 +94,7 @@ static void cmd_help() {
     zenith::print("  cat <file>    Display file contents\n");
     zenith::print("  run <file>    Spawn a new process from an ELF file\n");
     zenith::print("  ping <ip>     Send ICMP echo requests\n");
+    zenith::print("  tcpconnect <ip> <port>  Connect to a TCP server\n");
     zenith::print("  date          Show current date and time\n");
     zenith::print("  uptime        Show uptime in milliseconds\n");
     zenith::print("  clear         Clear the screen\n");
@@ -297,20 +298,162 @@ static void cmd_ping(const char* arg) {
     }
 }
 
-static void cmd_run(const char* arg) {
+static bool parse_uint16(const char* s, uint16_t* out) {
+    uint32_t val = 0;
+    if (*s == '\0') return false;
+    while (*s) {
+        if (*s < '0' || *s > '9') return false;
+        val = val * 10 + (*s - '0');
+        if (val > 65535) return false;
+        s++;
+    }
+    *out = (uint16_t)val;
+    return true;
+}
+
+static void cmd_tcpconnect(const char* arg) {
     arg = skip_spaces(arg);
     if (*arg == '\0') {
-        zenith::print("Usage: run <filename>\n");
+        zenith::print("Usage: tcpconnect <ip> <port>\n");
         return;
     }
 
-    char path[128];
-    resolve_path(arg, path, sizeof(path));
+    // Parse IP address (up to first space)
+    char ipStr[32];
+    int i = 0;
+    while (arg[i] && arg[i] != ' ' && i < 31) {
+        ipStr[i] = arg[i];
+        i++;
+    }
+    ipStr[i] = '\0';
 
-    int pid = zenith::spawn(path);
+    uint32_t ip;
+    if (!parse_ip(ipStr, &ip)) {
+        zenith::print("Invalid IP address: ");
+        zenith::print(ipStr);
+        zenith::putchar('\n');
+        return;
+    }
+
+    // Parse port
+    const char* portStr = skip_spaces(arg + i);
+    if (*portStr == '\0') {
+        zenith::print("Usage: tcpconnect <ip> <port>\n");
+        return;
+    }
+    uint16_t port;
+    if (!parse_uint16(portStr, &port)) {
+        zenith::print("Invalid port: ");
+        zenith::print(portStr);
+        zenith::putchar('\n');
+        return;
+    }
+
+    // Create socket
+    int fd = zenith::socket(Zenith::SOCK_TCP);
+    if (fd < 0) {
+        zenith::print("Error: failed to create socket\n");
+        return;
+    }
+
+    zenith::print("Connecting to ");
+    print_ip(ip);
+    zenith::putchar(':');
+    print_int(port);
+    zenith::print("...\n");
+
+    if (zenith::connect(fd, ip, port) < 0) {
+        zenith::print("Error: connection failed\n");
+        zenith::closesocket(fd);
+        return;
+    }
+
+    zenith::print("Connected! Type to send, Ctrl+Q to disconnect.\n");
+
+    // Interactive send/receive loop
+    char sendBuf[256];
+    int sendPos = 0;
+    uint8_t recvBuf[512];
+
+    while (true) {
+        // Poll for received data (non-blocking)
+        int r = zenith::recv(fd, recvBuf, sizeof(recvBuf) - 1);
+        if (r < 0) {
+            zenith::print("\nConnection closed by remote.\n");
+            break;
+        }
+        if (r > 0) {
+            recvBuf[r] = '\0';
+            zenith::print((const char*)recvBuf);
+        }
+
+        // Poll keyboard
+        if (zenith::is_key_available()) {
+            Zenith::KeyEvent ev;
+            zenith::getkey(&ev);
+
+            if (!ev.pressed) continue;
+
+            // Ctrl+Q to quit
+            if (ev.ctrl && (ev.ascii == 'q' || ev.ascii == 'Q')) {
+                zenith::print("\nDisconnecting...\n");
+                break;
+            }
+
+            if (ev.ascii == '\n') {
+                sendBuf[sendPos++] = '\n';
+                zenith::putchar('\n');
+                zenith::send(fd, sendBuf, sendPos);
+                sendPos = 0;
+            } else if (ev.ascii == '\b') {
+                if (sendPos > 0) {
+                    sendPos--;
+                    zenith::putchar('\b');
+                    zenith::putchar(' ');
+                    zenith::putchar('\b');
+                }
+            } else if (ev.ascii >= ' ' && sendPos < 254) {
+                sendBuf[sendPos++] = ev.ascii;
+                zenith::putchar(ev.ascii);
+            }
+        } else {
+            // No key and no data — yield to avoid busy-spinning
+            zenith::yield();
+        }
+    }
+
+    zenith::closesocket(fd);
+}
+
+static void cmd_run(const char* arg) {
+    arg = skip_spaces(arg);
+    if (*arg == '\0') {
+        zenith::print("Usage: run <filename> [args...]\n");
+        return;
+    }
+
+    // Split filename from arguments at first space
+    char filename[128];
+    int i = 0;
+    while (arg[i] && arg[i] != ' ' && i < 127) {
+        filename[i] = arg[i];
+        i++;
+    }
+    filename[i] = '\0';
+
+    const char* args = nullptr;
+    if (arg[i] == ' ') {
+        args = skip_spaces(arg + i);
+        if (*args == '\0') args = nullptr;
+    }
+
+    char path[128];
+    resolve_path(filename, path, sizeof(path));
+
+    int pid = zenith::spawn(path, args);
     if (pid < 0) {
         zenith::print("Error: failed to spawn '");
-        zenith::print(arg);
+        zenith::print(filename);
         zenith::print("'\n");
     } else {
         zenith::waitpid(pid);
@@ -461,6 +604,10 @@ static void process_command(const char* line) {
         cmd_ping(line + 5);
     } else if (streq(line, "ping")) {
         cmd_ping("");
+    } else if (starts_with(line, "tcpconnect ")) {
+        cmd_tcpconnect(line + 11);
+    } else if (streq(line, "tcpconnect")) {
+        cmd_tcpconnect("");
     } else if (streq(line, "date")) {
         cmd_date();
     } else if (streq(line, "uptime")) {

@@ -11,6 +11,7 @@
 #include <Net/Icmp.hpp>
 #include <Net/Udp.hpp>
 #include <Net/Tcp.hpp>
+#include <Net/Socket.hpp>
 #include <Net/NetConfig.hpp>
 #include <Drivers/Net/E1000.hpp>
 #include <Terminal/Terminal.hpp>
@@ -33,6 +34,7 @@ namespace Net {
         Icmp::Initialize();
         Udp::Initialize();
         Tcp::Initialize();
+        Socket::Initialize();
 
         // Hook E1000 RX to our Ethernet dispatcher
         Drivers::Net::E1000::SetRxCallback(Ethernet::OnFrameReceived);

@@ -18,6 +18,7 @@
 #include <Libraries/String.hpp>
 #include <Drivers/PS2/Keyboard.hpp>
 #include <Net/Icmp.hpp>
+#include <Net/Socket.hpp>
 #include <Net/ByteOrder.hpp>
 #include <Hal/MSR.hpp>
 #include <Hal/GDT.hpp>
@@ -268,6 +269,40 @@ namespace Zenith {
         out->Second = dt.Second;
     }
 
+    // ---- Socket syscalls ----
+
+    static int Sys_Socket(int type) {
+        return Net::Socket::Create(type, Sched::GetCurrentPid());
+    }
+
+    static int Sys_Connect(int fd, uint32_t ip, uint16_t port) {
+        return Net::Socket::Connect(fd, ip, port, Sched::GetCurrentPid());
+    }
+
+    static int Sys_Bind(int fd, uint16_t port) {
+        return Net::Socket::Bind(fd, port, Sched::GetCurrentPid());
+    }
+
+    static int Sys_Listen(int fd) {
+        return Net::Socket::Listen(fd, Sched::GetCurrentPid());
+    }
+
+    static int Sys_Accept(int fd) {
+        return Net::Socket::Accept(fd, Sched::GetCurrentPid());
+    }
+
+    static int Sys_Send(int fd, const uint8_t* data, uint32_t len) {
+        return Net::Socket::Send(fd, data, len, Sched::GetCurrentPid());
+    }
+
+    static int Sys_Recv(int fd, uint8_t* buf, uint32_t maxLen) {
+        return Net::Socket::Recv(fd, buf, maxLen, Sched::GetCurrentPid());
+    }
+
+    static void Sys_CloseSock(int fd) {
+        Net::Socket::Close(fd, Sched::GetCurrentPid());
+    }
+
     static void Sys_Reset() {
         /*
             Triple fault for now; TODO: implement UEFI runtime function for clean reboot.
@@ -364,6 +399,23 @@ namespace Zenith {
             case SYS_GETTIME:
                 Sys_GetTime((DateTime*)frame->arg1);
                 return 0;
+            case SYS_SOCKET:
+                return (int64_t)Sys_Socket((int)frame->arg1);
+            case SYS_CONNECT:
+                return (int64_t)Sys_Connect((int)frame->arg1, (uint32_t)frame->arg2, (uint16_t)frame->arg3);
+            case SYS_BIND:
+                return (int64_t)Sys_Bind((int)frame->arg1, (uint16_t)frame->arg2);
+            case SYS_LISTEN:
+                return (int64_t)Sys_Listen((int)frame->arg1);
+            case SYS_ACCEPT:
+                return (int64_t)Sys_Accept((int)frame->arg1);
+            case SYS_SEND:
+                return (int64_t)Sys_Send((int)frame->arg1, (const uint8_t*)frame->arg2, (uint32_t)frame->arg3);
+            case SYS_RECV:
+                return (int64_t)Sys_Recv((int)frame->arg1, (uint8_t*)frame->arg2, (uint32_t)frame->arg3);
+            case SYS_CLOSESOCK:
+                Sys_CloseSock((int)frame->arg1);
+                return 0;
             default:
                 return -1;
         }
@@ -390,7 +442,7 @@ namespace Zenith {
         Hal::WriteMSR(Hal::IA32_FMASK, 0x200);
 
         Kt::KernelLogStream(Kt::OK, "Syscall") << "SYSCALL/SYSRET initialized (LSTAR="
-            << kcp::hex << (uint64_t)SyscallEntry << kcp::dec << ", 29 syscalls)";
+            << kcp::hex << (uint64_t)SyscallEntry << kcp::dec << ", 37 syscalls)";
     }
 
 }

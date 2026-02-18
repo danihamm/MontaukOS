@@ -40,6 +40,16 @@ namespace Zenith {
     static constexpr uint64_t SYS_RESET           = 26;
     static constexpr uint64_t SYS_SHUTDOWN        = 27;
     static constexpr uint64_t SYS_GETTIME         = 28;
+    static constexpr uint64_t SYS_SOCKET          = 29;
+    static constexpr uint64_t SYS_CONNECT         = 30;
+    static constexpr uint64_t SYS_BIND            = 31;
+    static constexpr uint64_t SYS_LISTEN          = 32;
+    static constexpr uint64_t SYS_ACCEPT          = 33;
+    static constexpr uint64_t SYS_SEND            = 34;
+    static constexpr uint64_t SYS_RECV            = 35;
+    static constexpr uint64_t SYS_CLOSESOCK       = 36;
+
+    static constexpr int SOCK_TCP = 1;
 
     struct DateTime {
         uint16_t Year;
