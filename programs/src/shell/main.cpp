@@ -138,6 +138,11 @@ static void cmd_help() {
     zenith::print("Any .elf on the ramdisk is executable.\n");
 }
 
+// Check if a string already has a VFS drive prefix (e.g. "0:/")
+static bool has_drive_prefix(const char* s) {
+    return s[0] >= '0' && s[0] <= '9' && s[1] == ':';
+}
+
 // ---- Builtin: ls ----
 
 static void cmd_ls(const char* arg) {
@@ -146,24 +151,24 @@ static void cmd_ls(const char* arg) {
     // Build the target directory (relative path from root)
     char dir[128];
     if (*arg) {
-        // ls <dir> -- combine cwd and arg
-        if (cwd[0]) {
-            int i = 0, j = 0;
-            while (cwd[j] && i < 126) dir[i++] = cwd[j++];
-            dir[i++] = '/';
-            j = 0;
-            while (arg[j] && i < 126) dir[i++] = arg[j++];
-            dir[i] = '\0';
+        if (has_drive_prefix(arg)) {
+            // Absolute VFS path: "0:/something"
+            scopy(dir, arg + 3, sizeof(dir));
+        } else if (arg[0] == '/') {
+            // Absolute path from root: "/something"
+            scopy(dir, arg + 1, sizeof(dir));
+        } else if (cwd[0]) {
+            // Relative path with CWD
+            scopy(dir, cwd, sizeof(dir));
+            scat(dir, "/", sizeof(dir));
+            scat(dir, arg, sizeof(dir));
         } else {
-            int i = 0;
-            while (arg[i] && i < 126) { dir[i] = arg[i]; i++; }
-            dir[i] = '\0';
+            // Relative path at root
+            scopy(dir, arg, sizeof(dir));
         }
     } else {
         // ls with no arg -- use cwd
-        int i = 0;
-        while (cwd[i] && i < 126) { dir[i] = cwd[i]; i++; }
-        dir[i] = '\0';
+        scopy(dir, cwd, sizeof(dir));
     }
 
     char path[128];
@@ -225,19 +230,48 @@ static void cmd_cd(const char* arg) {
         return;
     }
 
-    // Build target directory path
+    // cd /path -> absolute path from root
+    if (arg[0] == '/') {
+        arg++;
+        if (*arg == '\0') { cwd[0] = '\0'; return; }
+        char path[128];
+        build_dir_path(arg, path, sizeof(path));
+        const char* entries[1];
+        if (zenith::readdir(path, entries, 1) < 0) {
+            zenith::print("cd: no such directory: ");
+            zenith::print(arg);
+            zenith::putchar('\n');
+            return;
+        }
+        scopy(cwd, arg, sizeof(cwd));
+        return;
+    }
+
+    // cd 0:/path -> absolute VFS path
+    if (has_drive_prefix(arg)) {
+        const char* rel = arg + 3;  // skip "0:/"
+        if (*rel == '\0') { cwd[0] = '\0'; return; }
+        char path[128];
+        build_dir_path(rel, path, sizeof(path));
+        const char* entries[1];
+        if (zenith::readdir(path, entries, 1) < 0) {
+            zenith::print("cd: no such directory: ");
+            zenith::print(arg);
+            zenith::putchar('\n');
+            return;
+        }
+        scopy(cwd, rel, sizeof(cwd));
+        return;
+    }
+
+    // Build target directory path (relative to CWD)
     char target[128];
     if (cwd[0]) {
-        int i = 0, j = 0;
-        while (cwd[j] && i < 126) target[i++] = cwd[j++];
-        target[i++] = '/';
-        j = 0;
-        while (arg[j] && i < 126) target[i++] = arg[j++];
-        target[i] = '\0';
+        scopy(target, cwd, sizeof(target));
+        scat(target, "/", sizeof(target));
+        scat(target, arg, sizeof(target));
     } else {
-        int i = 0;
-        while (arg[i] && i < 126) { target[i] = arg[i]; i++; }
-        target[i] = '\0';
+        scopy(target, arg, sizeof(target));
     }
 
     // Validate: try readdir on the target
@@ -253,9 +287,7 @@ static void cmd_cd(const char* arg) {
     }
 
     // Set cwd
-    int i = 0;
-    while (target[i] && i < 126) { cwd[i] = target[i]; i++; }
-    cwd[i] = '\0';
+    scopy(cwd, target, sizeof(cwd));
 }
 
 // ---- Builtin: man ----
@@ -292,11 +324,6 @@ static bool try_exec(const char* path, const char* args) {
     return true;
 }
 
-// Check if a string already has a VFS drive prefix (e.g. "0:/")
-static bool has_drive_prefix(const char* s) {
-    return s[0] >= '0' && s[0] <= '9' && s[1] == ':';
-}
-
 // Resolve arguments: expand relative file paths against CWD.
 // Tokens that already have a drive prefix (e.g. "0:/foo") are left as-is.
 // Everything before the first space-delimited token that looks like a path
@@ -322,12 +349,26 @@ static void resolve_args(const char* args, char* out, int outMax) {
         bool resolve = cwd[0] && !has_drive_prefix(tokStart) && tokStart[0] != '-';
 
         if (resolve) {
-            // Write "0:/<cwd>/<token>"
-            if (o + 3 < outMax) { out[o++] = '0'; out[o++] = ':'; out[o++] = '/'; }
+            // Build candidate resolved path and check if the file exists
+            char candidate[256];
+            int r = 0;
+            candidate[r++] = '0'; candidate[r++] = ':'; candidate[r++] = '/';
             int j = 0;
-            while (cwd[j] && o < outMax - 1) out[o++] = cwd[j++];
-            if (o < outMax - 1) out[o++] = '/';
-            for (int k = 0; k < tokLen && o < outMax - 1; k++) out[o++] = tokStart[k];
+            while (cwd[j] && r < 255) candidate[r++] = cwd[j++];
+            if (r < 255) candidate[r++] = '/';
+            for (int k = 0; k < tokLen && r < 255; k++) candidate[r++] = tokStart[k];
+            candidate[r] = '\0';
+
+            // Only use the resolved path if the file actually exists;
+            // otherwise pass the argument through unchanged (it may be
+            // a hostname, IP address, URL, or other non-path argument).
+            int h = zenith::open(candidate);
+            if (h >= 0) {
+                zenith::close(h);
+                for (int k = 0; k < r && o < outMax - 1; k++) out[o++] = candidate[k];
+            } else {
+                for (int k = 0; k < tokLen && o < outMax - 1; k++) out[o++] = tokStart[k];
+            }
         } else {
             for (int k = 0; k < tokLen && o < outMax - 1; k++) out[o++] = tokStart[k];
         }
