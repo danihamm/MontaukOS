@@ -57,6 +57,7 @@ namespace Zenith {
     static constexpr uint64_t SYS_TERMSCALE     = 43;
     static constexpr uint64_t SYS_RESOLVE        = 44;
     static constexpr uint64_t SYS_GETRANDOM     = 45;
+    static constexpr uint64_t SYS_KLOG          = 46;
 
     static constexpr int SOCK_TCP = 1;
     static constexpr int SOCK_UDP = 2;

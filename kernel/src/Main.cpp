@@ -33,6 +33,7 @@
 #include <Drivers/PS2/PS2Controller.hpp>
 #include <Drivers/PS2/Keyboard.hpp>
 #include <Drivers/PS2/Mouse.hpp>
+#include <Drivers/USB/Xhci.hpp>
 #include <Drivers/Net/E1000.hpp>
 #include <Drivers/Net/E1000E.hpp>
 #include <Drivers/Graphics/IntelGPU.hpp>
@@ -198,6 +199,8 @@ extern "C" void kmain() {
         Drivers::PS2::Keyboard::Initialize();
         Drivers::PS2::Mouse::Initialize();
 
+        Drivers::USB::Xhci::Initialize();
+
         Drivers::Net::E1000::Initialize();
         if (!Drivers::Net::E1000::IsInitialized()) {
             KernelLogStream(INFO, "Init") << "E1000 not found, trying E1000E...";
@@ -248,6 +251,8 @@ extern "C" void kmain() {
     Zenith::InitializeSyscalls();
 
     Sched::Initialize();
+
+    Kt::SuppressKernelLog();
     Sched::Spawn("0:/os/init.elf");
 
     // Enable preemptive scheduling via the APIC timer

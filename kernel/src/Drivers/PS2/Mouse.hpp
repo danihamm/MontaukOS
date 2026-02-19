@@ -34,4 +34,7 @@ namespace Drivers::PS2::Mouse {
 
     void SetBounds(int32_t maxX, int32_t maxY);
 
+    // Inject a mouse report from an external source (e.g., USB HID mouse)
+    void InjectMouseReport(uint8_t buttons, int8_t deltaX, int8_t deltaY, int8_t scroll);
+
 };

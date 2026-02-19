@@ -10,3 +10,4 @@ toolchain/src/
 programs/bin/
 programs/obj/
 programs/src/doom/obj/
+programs/gui/icons/

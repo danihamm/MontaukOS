@@ -196,4 +196,21 @@ namespace Drivers::PS2::Mouse {
         g_MaxY = maxY;
     }
 
+    void InjectMouseReport(uint8_t buttons, int8_t deltaX, int8_t deltaY, int8_t scroll) {
+        g_StateLock.Acquire();
+
+        g_State.X += (int32_t)deltaX;
+        g_State.Y += (int32_t)deltaY;
+        g_State.Buttons = buttons;
+        g_State.ScrollDelta = (int32_t)scroll;
+
+        // Clamp to screen bounds
+        if (g_State.X < 0) g_State.X = 0;
+        if (g_State.Y < 0) g_State.Y = 0;
+        if (g_State.X > g_MaxX) g_State.X = g_MaxX;
+        if (g_State.Y > g_MaxY) g_State.Y = g_MaxY;
+
+        g_StateLock.Release();
+    }
+
 };

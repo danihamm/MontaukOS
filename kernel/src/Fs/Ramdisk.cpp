@@ -120,10 +120,6 @@ namespace Fs::Ramdisk {
                 continue;
             }
 
-            Kt::KernelLogStream(Kt::INFO, "Ramdisk") << "  " << entry.name
-                << " (" << entry.size << " bytes"
-                << (entry.isDirectory ? ", dir" : "") << ")";
-
             fileCount++;
 
             // Advance past header + data (rounded up to 512-byte blocks)

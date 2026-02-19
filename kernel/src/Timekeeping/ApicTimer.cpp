@@ -12,6 +12,7 @@
 #include <CppLib/Stream.hpp>
 #include <Sched/Scheduler.hpp>
 #include <Drivers/Net/E1000E.hpp>
+#include <Drivers/USB/Xhci.hpp>
 
 using namespace Kt;
 
@@ -45,6 +46,7 @@ namespace Timekeeping {
         // In polling mode, drain the NIC's RX ring from timer context
         // (equivalent to a real NIC IRQ handler, runs with interrupts disabled)
         Drivers::Net::E1000E::Poll();
+        Drivers::USB::Xhci::ProcessDeferredWork();
 
         if (g_schedEnabled) {
             Sched::Tick();

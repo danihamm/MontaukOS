@@ -57,9 +57,9 @@ run-aarch64: $(IMAGE_NAME).iso
 		-M virt \
 		-cpu cortex-a72 \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
+		-device qemu-xhci,id=xhci \
+		-device usb-kbd,bus=xhci.0 \
+		-device usb-mouse,bus=xhci.0 \
 		-bios /usr/share/ovmf/OVMF.fd \
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS)
@@ -70,9 +70,9 @@ run-hdd-aarch64: $(IMAGE_NAME).hdd
 		-M virt \
 		-cpu cortex-a72 \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
+		-device qemu-xhci,id=xhci \
+		-device usb-kbd,bus=xhci.0 \
+		-device usb-mouse,bus=xhci.0 \
 		-bios /usr/share/ovmf/OVMF.fd \
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS)
@@ -83,9 +83,9 @@ run-riscv64: $(IMAGE_NAME).iso
 		-M virt \
 		-cpu rv64 \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
+		-device qemu-xhci,id=xhci \
+		-device usb-kbd,bus=xhci.0 \
+		-device usb-mouse,bus=xhci.0 \
 		-bios /usr/share/ovmf/OVMF.fd \
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS)
@@ -96,9 +96,9 @@ run-hdd-riscv64: $(IMAGE_NAME).hdd
 		-M virt \
 		-cpu rv64 \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
+		-device qemu-xhci,id=xhci \
+		-device usb-kbd,bus=xhci.0 \
+		-device usb-mouse,bus=xhci.0 \
 		-bios /usr/share/ovmf/OVMF.fd \
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS)
@@ -109,9 +109,9 @@ run-loongarch64: $(IMAGE_NAME).iso
 		-M virt \
 		-cpu la464 \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
+		-device qemu-xhci,id=xhci \
+		-device usb-kbd,bus=xhci.0 \
+		-device usb-mouse,bus=xhci.0 \
 		-bios /usr/share/ovmf/OVMF.fd \
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS)
@@ -122,9 +122,9 @@ run-hdd-loongarch64: $(IMAGE_NAME).hdd
 		-M virt \
 		-cpu la464 \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
+		-device qemu-xhci,id=xhci \
+		-device usb-kbd,bus=xhci.0 \
+		-device usb-mouse,bus=xhci.0 \
 		-bios /usr/share/ovmf/OVMF.fd \
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS)

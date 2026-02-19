@@ -549,6 +549,8 @@ namespace Zenith {
                 return Sys_Resolve((const char*)frame->arg1);
             case SYS_GETRANDOM:
                 return Sys_GetRandom((uint8_t*)frame->arg1, frame->arg2);
+            case SYS_KLOG:
+                return Kt::ReadKernelLog((char*)frame->arg1, frame->arg2);
             default:
                 return -1;
         }
@@ -575,7 +577,7 @@ namespace Zenith {
         Hal::WriteMSR(Hal::IA32_FMASK, 0x200);
 
         Kt::KernelLogStream(Kt::OK, "Syscall") << "SYSCALL/SYSRET initialized (LSTAR="
-            << kcp::hex << (uint64_t)SyscallEntry << kcp::dec << ", 46 syscalls)";
+            << kcp::hex << (uint64_t)SyscallEntry << kcp::dec << ", 47 syscalls)";
     }
 
 }

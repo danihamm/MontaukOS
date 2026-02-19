@@ -49,4 +49,7 @@ namespace Drivers::PS2::Keyboard {
     // Modifier state query
     const ModifierState& GetModifiers();
 
+    // Inject a key event from an external source (e.g., USB HID keyboard)
+    void InjectKeyEvent(const KeyEvent& event);
+
 };

@@ -109,6 +109,12 @@ namespace Kt
         OK
     };
 
+    extern uint32_t g_kernelLogDepth;
+    extern bool g_suppressKernelLog;
+
+    void SuppressKernelLog();
+    int64_t ReadKernelLog(char* buf, uint64_t size);
+
     class KernelLogStream {
         KernelOutStream localStream{};
 
@@ -133,6 +139,7 @@ public:
         }
 
         KernelLogStream(KernelLogLevel level, const char* desiredComponentName) { /* level for potential future rich event logging */
+            g_kernelLogDepth++;
             componentName = desiredComponentName;
 
             localStream << componentName << ": " << "[" << LogLevelToStringWithColor(level) << "] ";
@@ -140,6 +147,7 @@ public:
 
         ~KernelLogStream() {
             localStream << newline;
+            g_kernelLogDepth--;
         }
 
         template<typename T>

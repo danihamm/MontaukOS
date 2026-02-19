@@ -291,4 +291,10 @@ namespace Drivers::PS2::Keyboard {
         return g_Modifiers;
     }
 
+    void InjectKeyEvent(const KeyEvent& event) {
+        g_BufferLock.Acquire();
+        BufferPush(event);
+        g_BufferLock.Release();
+    }
+
 };

@@ -18,6 +18,39 @@ namespace Kt {
     flanterm_context *ctx;
     std::size_t g_terminal_width = 0;
 
+    // Kernel log depth counter and suppression flag
+    uint32_t g_kernelLogDepth = 0;
+    bool g_suppressKernelLog = false;
+
+    // 64KB ring buffer for kernel log messages
+    static constexpr uint64_t KLOG_BUF_SIZE = 65536;
+    static char g_klogBuf[KLOG_BUF_SIZE];
+    static uint64_t g_klogHead = 0;  // next write position
+    static uint64_t g_klogCount = 0; // total chars stored (capped at KLOG_BUF_SIZE)
+
+    // ANSI escape sequence filter state
+    static bool g_ansiEscape = false;
+
+    static void RingBufferAppend(char c) {
+        // Strip ANSI escape sequences
+        if (c == '\033') {
+            g_ansiEscape = true;
+            return;
+        }
+        if (g_ansiEscape) {
+            if (c == 'm') {
+                g_ansiEscape = false;
+            }
+            return;
+        }
+
+        g_klogBuf[g_klogHead] = c;
+        g_klogHead = (g_klogHead + 1) % KLOG_BUF_SIZE;
+        if (g_klogCount < KLOG_BUF_SIZE) {
+            g_klogCount++;
+        }
+    }
+
     // Maximum grid cells allocated at init (scale 1,1). Used to validate
     // that a requested scale does not exceed the original buffer capacity.
     static std::size_t g_max_grid_cells = 0;
@@ -182,6 +215,19 @@ namespace Kt {
     }
 
     void Putchar(char c) {
+        if (g_kernelLogDepth > 0) {
+            if (c == '\n') {
+                RingBufferAppend('\r');
+                RingBufferAppend('\n');
+            } else {
+                RingBufferAppend(c);
+            }
+
+            if (g_suppressKernelLog) {
+                return;
+            }
+        }
+
         if (c == '\n') {
             flanterm_write(ctx, "\r\n", 2);
             return;
@@ -193,6 +239,36 @@ namespace Kt {
         for (size_t i = 0; text[i] != '\0'; i++) {
             Putchar(text[i]);
         }
+    }
+
+    void SuppressKernelLog() {
+        g_suppressKernelLog = true;
+    }
+
+    int64_t ReadKernelLog(char* buf, uint64_t size) {
+        if (buf == nullptr || size == 0) return 0;
+
+        uint64_t toRead = g_klogCount;
+        if (toRead > size) toRead = size;
+
+        // Start position: oldest character in the ring buffer
+        uint64_t start;
+        if (g_klogCount < KLOG_BUF_SIZE) {
+            start = 0;
+        } else {
+            start = g_klogHead; // head points to the oldest entry when full
+        }
+
+        // Copy from oldest to newest, skipping entries if buffer too small
+        uint64_t skipCount = g_klogCount - toRead;
+        uint64_t readPos = (start + skipCount) % KLOG_BUF_SIZE;
+
+        for (uint64_t i = 0; i < toRead; i++) {
+            buf[i] = g_klogBuf[readPos];
+            readPos = (readPos + 1) % KLOG_BUF_SIZE;
+        }
+
+        return (int64_t)toRead;
     }
 
 };
