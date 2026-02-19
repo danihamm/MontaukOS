@@ -224,6 +224,32 @@ namespace Pci {
     }
 
     // -------------------------------------------------------------------------
+    // PCI capability list traversal
+    // -------------------------------------------------------------------------
+
+    uint8_t FindCapability(uint8_t bus, uint8_t device, uint8_t function, uint8_t capId) {
+        // Check Status register bit 4 (Capabilities List present)
+        uint16_t status = ReadConfig16(bus, device, function, RegStatus);
+        if (!(status & (1 << 4))) {
+            return 0;
+        }
+
+        // Read Capabilities Pointer (offset 0x34), mask to dword-aligned
+        uint8_t offset = ReadConfig8(bus, device, function, 0x34) & 0xFC;
+
+        // Walk the linked list (cap_id @ +0, next_ptr @ +1)
+        while (offset != 0) {
+            uint8_t id = ReadConfig8(bus, device, function, offset);
+            if (id == capId) {
+                return offset;
+            }
+            offset = ReadConfig8(bus, device, function, offset + 1) & 0xFC;
+        }
+
+        return 0;
+    }
+
+    // -------------------------------------------------------------------------
     // PCI class code names
     // -------------------------------------------------------------------------
 

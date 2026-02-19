@@ -17,13 +17,17 @@ namespace Fs::Ramdisk {
         char name[MaxNameLen];
         uint8_t* data;
         uint64_t size;
+        uint64_t capacity;
         bool isDirectory;
+        bool heapAllocated;
     };
 
     void Initialize(void* moduleData, uint64_t moduleSize);
 
     int Open(const char* path);
     int Read(int handle, uint8_t* buffer, uint64_t offset, uint64_t size);
+    int Write(int handle, const uint8_t* buffer, uint64_t offset, uint64_t size);
+    int Create(const char* path);
     uint64_t GetSize(int handle);
     void Close(int handle);
 

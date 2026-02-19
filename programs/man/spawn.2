@@ -13,11 +13,11 @@
     Loads the ELF64 binary at the given VFS path and creates a new
     process. The path must include the drive prefix, for example:
 
-        int pid = zenith::spawn("0:/hello.elf");
+        int pid = zenith::spawn("0:/os/hello.elf");
 
     An optional second argument passes a string to the child:
 
-        int pid = zenith::spawn("0:/man.elf", "intro");
+        int pid = zenith::spawn("0:/os/man.elf", "intro");
 
     The new process gets its own PML4 page table, a 16 KiB stack
     (at 0x7FFFFEF000-0x7FFFFFF000), and begins executing at the
@@ -40,7 +40,7 @@
 .SH EXAMPLES
     Spawn a program and wait for it:
 
-        int pid = zenith::spawn("0:/hello.elf");
+        int pid = zenith::spawn("0:/os/hello.elf");
         if (pid < 0) {
             zenith::print("spawn failed\n");
         } else {

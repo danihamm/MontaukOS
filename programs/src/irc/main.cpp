@@ -6,6 +6,16 @@
 */
 
 #include <zenith/syscall.h>
+#include <zenith/string.h>
+
+using zenith::slen;
+using zenith::streq;
+using zenith::starts_with;
+using zenith::skip_spaces;
+using zenith::strcpy;
+using zenith::strncpy;
+using zenith::memcpy;
+using zenith::memmove;
 
 // ---- Minimal snprintf (no libc available) ----
 
@@ -89,51 +99,6 @@ static int snprintf(char* buf, int size, const char* fmt, ...) {
     int ret = vsnprintf(buf, size, fmt, ap);
     va_end(ap);
     return ret;
-}
-
-// ---- String utilities ----
-
-static int slen(const char* s) {
-    int n = 0;
-    while (s[n]) n++;
-    return n;
-}
-
-static bool streq(const char* a, const char* b) {
-    while (*a && *b) { if (*a != *b) return false; a++; b++; }
-    return *a == *b;
-}
-
-static bool starts_with(const char* str, const char* prefix) {
-    while (*prefix) { if (*str != *prefix) return false; str++; prefix++; }
-    return true;
-}
-
-static const char* skip_spaces(const char* s) {
-    while (*s == ' ') s++;
-    return s;
-}
-
-static void strcpy(char* dst, const char* src) {
-    while (*src) *dst++ = *src++;
-    *dst = '\0';
-}
-
-static void strncpy(char* dst, const char* src, int max) {
-    int i = 0;
-    while (src[i] && i < max - 1) { dst[i] = src[i]; i++; }
-    dst[i] = '\0';
-}
-
-static void memcpy(void* dst, const void* src, int n) {
-    auto d = (char*)dst; auto s = (const char*)src;
-    for (int i = 0; i < n; i++) d[i] = s[i];
-}
-
-static void memmove(void* dst, const void* src, int n) {
-    auto d = (char*)dst; auto s = (const char*)src;
-    if (d < s) { for (int i = 0; i < n; i++) d[i] = s[i]; }
-    else { for (int i = n - 1; i >= 0; i--) d[i] = s[i]; }
 }
 
 // Case-insensitive comparison for IRC commands

@@ -3,7 +3,7 @@
     syscalls - overview of ZenithOS system calls
 
 .SH DESCRIPTION
-    ZenithOS provides 37 system calls (numbers 0-36) for userspace
+    ZenithOS provides 41 system calls (numbers 0-40) for userspace
     programs. Syscalls use the x86-64 SYSCALL instruction with the
     following register convention:
 
@@ -120,8 +120,18 @@
     Send an ICMP echo request and wait for reply.
         int32_t zenith::ping(uint32_t ip, uint32_t timeoutMs);
 
+.B SYS_GETNETCFG (37)
+    Get the current network configuration (IP, mask, gateway, MAC).
+        void zenith::get_netcfg(Zenith::NetCfg* out);
+
+.B SYS_SETNETCFG (38)
+    Set the network configuration (IP, mask, gateway).
+        int zenith::set_netcfg(const Zenith::NetCfg* cfg);
+
+.SH SOCKETS
 .B SYS_SOCKET (29)
-    Create a socket. type=SOCK_TCP (1). Returns fd or -1.
+    Create a socket. type=SOCK_TCP (1) or SOCK_UDP (2).
+    Returns fd or -1.
         int zenith::socket(int type);
 
 .B SYS_CONNECT (30)
@@ -147,12 +157,22 @@
 
 .B SYS_RECV (35)
     Receive data from a connected socket. Returns bytes
-    received, 0 on connection close, or -1 on error.
+    received, 0 if no data available, or -1 on close/error.
         int zenith::recv(int fd, void* buf, uint32_t maxLen);
 
 .B SYS_CLOSESOCK (36)
     Close a socket and release its resources.
         int zenith::closesocket(int fd);
+
+.B SYS_SENDTO (39)
+    Send a UDP datagram to a specific destination.
+        int zenith::sendto(int fd, const void* data, uint32_t len,
+                           uint32_t destIp, uint16_t destPort);
+
+.B SYS_RECVFROM (40)
+    Receive a UDP datagram. Returns the source address.
+        int zenith::recvfrom(int fd, void* buf, uint32_t maxLen,
+                             uint32_t* srcIp, uint16_t* srcPort);
 
 .SH FRAMEBUFFER
 .B SYS_FBINFO (21)

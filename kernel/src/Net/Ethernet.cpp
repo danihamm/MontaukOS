@@ -9,6 +9,7 @@
 #include <Net/Arp.hpp>
 #include <Net/Ipv4.hpp>
 #include <Drivers/Net/E1000.hpp>
+#include <Drivers/Net/E1000E.hpp>
 #include <Libraries/Memory.hpp>
 #include <Terminal/Terminal.hpp>
 #include <CppLib/Stream.hpp>
@@ -16,6 +17,18 @@
 using namespace Kt;
 
 namespace Net::Ethernet {
+
+    static const uint8_t* GetActiveNicMac() {
+        if (Drivers::Net::E1000::IsInitialized())
+            return Drivers::Net::E1000::GetMacAddress();
+        return Drivers::Net::E1000E::GetMacAddress();
+    }
+
+    static bool ActiveNicSend(const uint8_t* data, uint16_t length) {
+        if (Drivers::Net::E1000::IsInitialized())
+            return Drivers::Net::E1000::SendPacket(data, length);
+        return Drivers::Net::E1000E::SendPacket(data, length);
+    }
 
     void Initialize() {
         KernelLogStream(OK, "Net") << "Ethernet layer initialized";
@@ -30,14 +43,14 @@ namespace Net::Ethernet {
         Header* hdr = (Header*)frame;
 
         memcpy(hdr->DestMac, destMac, 6);
-        memcpy(hdr->SrcMac, Drivers::Net::E1000::GetMacAddress(), 6);
+        memcpy(hdr->SrcMac, GetActiveNicMac(), 6);
         hdr->EtherType = Htons(etherType);
 
         memcpy(frame + HEADER_SIZE, payload, payloadLen);
 
         uint16_t totalLen = HEADER_SIZE + payloadLen;
 
-        return Drivers::Net::E1000::SendPacket(frame, totalLen);
+        return ActiveNicSend(frame, totalLen);
     }
 
     void OnFrameReceived(const uint8_t* data, uint16_t length) {

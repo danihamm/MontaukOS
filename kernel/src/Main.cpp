@@ -34,6 +34,7 @@
 #include <Drivers/PS2/Keyboard.hpp>
 #include <Drivers/PS2/Mouse.hpp>
 #include <Drivers/Net/E1000.hpp>
+#include <Drivers/Net/E1000E.hpp>
 #include <Net/Net.hpp>
 #include <CppLib/BoxUI.hpp>
 #include <Graphics/Cursor.hpp>
@@ -153,6 +154,10 @@ extern "C" void kmain() {
         Drivers::PS2::Mouse::Initialize();
 
         Drivers::Net::E1000::Initialize();
+        if (!Drivers::Net::E1000::IsInitialized()) {
+            KernelLogStream(INFO, "Init") << "E1000 not found, trying E1000E...";
+            Drivers::Net::E1000E::Initialize();
+        }
         Net::Initialize();
     }
 #endif
@@ -188,7 +193,9 @@ extern "C" void kmain() {
         Fs::Ramdisk::Read,
         Fs::Ramdisk::GetSize,
         Fs::Ramdisk::Close,
-        Fs::Ramdisk::ReadDir
+        Fs::Ramdisk::ReadDir,
+        Fs::Ramdisk::Write,
+        Fs::Ramdisk::Create
     };
     Fs::Vfs::RegisterDrive(0, &ramdiskDriver);
 
@@ -198,7 +205,7 @@ extern "C" void kmain() {
     Zenith::InitializeSyscalls();
 
     Sched::Initialize();
-    Sched::Spawn("0:/shell.elf");
+    Sched::Spawn("0:/os/init.elf");
 
     // Enable preemptive scheduling via the APIC timer
     Timekeeping::EnableSchedulerTick();

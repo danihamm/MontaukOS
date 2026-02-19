@@ -1,0 +1,39 @@
+.TH INIT 1
+.SH NAME
+    init - ZenithOS init system
+
+.SH SYNOPSIS
+    Spawned automatically by the kernel as PID 0.
+
+.SH DESCRIPTION
+    init is the first userspace process started by the ZenithOS
+    kernel. It chains system services in sequence, then launches
+    the interactive shell.
+
+    Each service is spawned as a child process. init waits for it
+    to exit before starting the next one. If a service fails to
+    spawn, init logs an error and continues to the next stage.
+
+    Log output is timestamped and color-coded:
+
+        HH:MM:SS   INFO   init  Starting dhcp
+        HH:MM:SS     OK   init  dhcp finished (pid 1)
+
+.SH BOOT SEQUENCE
+    The following services are started in order:
+
+        1. 0:/os/dhcp.elf     Obtain network configuration via DHCP
+        2. 0:/os/shell.elf    Launch the interactive shell
+
+    After the shell exits, init enters an idle loop.
+
+.SH LOG LEVELS
+    init uses four log levels, each with a distinct color:
+
+        OK      Green    Service completed successfully
+        INFO    Cyan     Informational (service starting, etc.)
+        WARN    Yellow   Non-fatal warning
+        FAIL    Red      Service failed to start
+
+.SH SEE ALSO
+    dhcp(1), shell(1), syscalls(2)

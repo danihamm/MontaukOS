@@ -11,6 +11,7 @@
 #include <Terminal/Terminal.hpp>
 #include <CppLib/Stream.hpp>
 #include <Sched/Scheduler.hpp>
+#include <Drivers/Net/E1000E.hpp>
 
 using namespace Kt;
 
@@ -37,9 +38,13 @@ namespace Timekeeping {
 
     static bool g_schedEnabled = false;
 
-    // Timer IRQ handler: increment tick count and drive scheduler
+    // Timer IRQ handler: increment tick count, poll NIC, and drive scheduler
     static void TimerHandler(uint8_t) {
         g_tickCount = g_tickCount + 1;
+
+        // In polling mode, drain the NIC's RX ring from timer context
+        // (equivalent to a real NIC IRQ handler, runs with interrupts disabled)
+        Drivers::Net::E1000E::Poll();
 
         if (g_schedEnabled) {
             Sched::Tick();

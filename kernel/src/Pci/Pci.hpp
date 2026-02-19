@@ -60,6 +60,13 @@ namespace Pci {
     void LegacyWrite16(uint8_t bus, uint8_t device, uint8_t function, uint8_t offset, uint16_t value);
     void LegacyWrite32(uint8_t bus, uint8_t device, uint8_t function, uint8_t offset, uint32_t value);
 
+    // PCI capability IDs
+    constexpr uint8_t PCI_CAP_MSI = 0x05;
+
+    // Walk the PCI capability linked list for a given device.
+    // Returns the config-space offset of the capability, or 0 if not found.
+    uint8_t FindCapability(uint8_t bus, uint8_t device, uint8_t function, uint8_t capId);
+
     // Class code name lookup
     const char* GetClassName(uint8_t classCode, uint8_t subClass);
 

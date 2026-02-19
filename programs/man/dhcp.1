@@ -1,0 +1,48 @@
+.TH DHCP 1
+.SH NAME
+    dhcp - obtain network configuration via DHCP
+
+.SH SYNOPSIS
+    dhcp
+
+.SH DESCRIPTION
+    The DHCP client automatically obtains an IP address, subnet mask,
+    default gateway, and other network parameters from a DHCP server
+    on the local network using the Dynamic Host Configuration Protocol
+    (RFC 2131).
+
+    On success the network configuration is applied immediately via
+    set_netcfg(). On failure the original configuration is restored.
+
+    The client is run automatically by the init system at boot, but
+    may also be invoked manually from the shell.
+
+.SH PROTOCOL
+    The client performs the standard four-message DHCP exchange:
+
+        1. DHCPDISCOVER  Broadcast to 255.255.255.255:67
+        2. DHCPOFFER     Server offers an IP address
+        3. DHCPREQUEST   Client accepts the offered address
+        4. DHCPACK       Server confirms the lease
+
+    The BROADCAST flag (0x8000) is set so that server replies are
+    sent to the broadcast address, since the client has no IP yet.
+
+    Each step has a 10-second timeout. If no response is received
+    the client exits with an error and restores the previous config.
+
+.SH OUTPUT
+    On success the client prints the assigned configuration:
+
+        IP Address, Subnet Mask, Gateway, DNS Server, Lease Time
+
+.SH OPTIONS
+    The DHCP client requests the following options from the server:
+
+        1   Subnet Mask
+        3   Router (default gateway)
+        6   DNS Server
+        51  Lease Time
+
+.SH SEE ALSO
+    ifconfig(1), shell(1), syscalls(2)

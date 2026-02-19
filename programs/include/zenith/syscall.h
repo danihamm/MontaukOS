@@ -136,6 +136,14 @@ namespace zenith {
         return (int)syscall3(Zenith::SYS_READDIR, (uint64_t)path, (uint64_t)names, (uint64_t)max);
     }
 
+    // File write/create
+    inline int fwrite(int handle, const uint8_t* buf, uint64_t off, uint64_t size) {
+        return (int)syscall4(Zenith::SYS_FWRITE, (uint64_t)handle, (uint64_t)buf, off, size);
+    }
+    inline int fcreate(const char* path) {
+        return (int)syscall1(Zenith::SYS_FCREATE, (uint64_t)path);
+    }
+
     // Memory
     inline void* alloc(uint64_t size) { return (void*)syscall1(Zenith::SYS_ALLOC, size); }
     inline void free(void* ptr) { syscall1(Zenith::SYS_FREE, (uint64_t)ptr); }
@@ -156,6 +164,10 @@ namespace zenith {
     inline int32_t ping(uint32_t ip, uint32_t timeoutMs = 3000) {
         return (int32_t)syscall2(Zenith::SYS_PING, (uint64_t)ip, (uint64_t)timeoutMs);
     }
+
+    // Network configuration
+    inline void get_netcfg(Zenith::NetCfg* out) { syscall1(Zenith::SYS_GETNETCFG, (uint64_t)out); }
+    inline int set_netcfg(const Zenith::NetCfg* cfg) { return (int)syscall1(Zenith::SYS_SETNETCFG, (uint64_t)cfg); }
 
     // Sockets
     inline int socket(int type) {
@@ -181,6 +193,14 @@ namespace zenith {
     }
     inline int closesocket(int fd) {
         return (int)syscall1(Zenith::SYS_CLOSESOCK, (uint64_t)fd);
+    }
+    inline int sendto(int fd, const void* data, uint32_t len, uint32_t destIp, uint16_t destPort) {
+        return (int)syscall5(Zenith::SYS_SENDTO, (uint64_t)fd, (uint64_t)data,
+                             (uint64_t)len, (uint64_t)destIp, (uint64_t)destPort);
+    }
+    inline int recvfrom(int fd, void* buf, uint32_t maxLen, uint32_t* srcIp, uint16_t* srcPort) {
+        return (int)syscall5(Zenith::SYS_RECVFROM, (uint64_t)fd, (uint64_t)buf,
+                             (uint64_t)maxLen, (uint64_t)srcIp, (uint64_t)srcPort);
     }
 
     // Process management

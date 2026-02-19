@@ -1,0 +1,51 @@
+.TH EDIT 1
+.SH NAME
+    edit - text editor for ZenithOS
+
+.SH SYNOPSIS
+    edit [filename]
+
+.SH DESCRIPTION
+    edit is an interactive text editor. When invoked with a filename,
+    it opens the file for editing. If the file does not exist, a new
+    empty buffer is created and will be saved to that path on write.
+
+    When invoked without arguments, edit opens an empty buffer. You
+    will be prompted for a filename when saving.
+
+.SH KEYBOARD SHORTCUTS
+
+.SS Navigation
+    Arrow Keys      Move cursor up/down/left/right
+    Home            Move to start of line
+    End             Move to end of line
+    Page Up         Scroll up one page
+    Page Down       Scroll down one page
+
+.SS Editing
+    Backspace       Delete character before cursor
+    Delete          Delete character at cursor
+    Enter           Insert new line
+    Tab             Insert 4 spaces
+
+.SS Commands
+    Ctrl+S          Save file
+    Ctrl+Q          Quit (warns if unsaved changes)
+    Ctrl+F          Search for text
+    Ctrl+G          Find next occurrence
+
+.SH DISPLAY
+    The top line shows the filename, a modified indicator [+],
+    and the current cursor position (Ln, Col).
+
+    The bottom line shows keyboard shortcuts or status messages.
+
+    Line numbers are displayed in a gutter on the left side.
+    Lines past the end of the file are marked with ~.
+
+.SH EXAMPLES
+    edit intro.1            Edit a file
+    edit                    Open a new empty buffer
+
+.SH SEE ALSO
+    cat(1), shell(1)

@@ -12,13 +12,13 @@
 .SH DESCRIPTION
     ZenithOS provides a simple read-only Virtual File System (VFS)
     backed by the boot ramdisk. Files are accessed via paths in the
-    format "<drive>:/<name>", where drive 0 is the ramdisk.
+    format "<drive>:/<path>", where drive 0 is the ramdisk.
 
 .SS open
     Opens a file and returns a non-negative handle on success, or a
     negative value on error (file not found, no free handles).
 
-        int h = zenith::open("0:/shell.elf");
+        int h = zenith::open("0:/os/hello.elf");
 
 .SS read
     Reads up to 'size' bytes starting at 'offset' into 'buf'.
@@ -42,15 +42,17 @@
 .SS readdir
     Lists entries in a directory. Up to 'max' entry names (max 64)
     are written to the 'names' array. The kernel allocates a user-
-    accessible page for the string data automatically.
+    accessible page for the string data automatically. Directory
+    entries are returned with a trailing slash.
 
         const char* entries[64];
         int count = zenith::readdir("0:/", entries, 64);
+        // entries: "os/", "games/", "man/", "www/", "home/"
 
 .SH READING PATTERN
     The standard pattern for reading a file:
 
-        int h = zenith::open("0:/myfile.txt");
+        int h = zenith::open("0:/man/intro.1");
         uint64_t size = zenith::getsize(h);
         uint8_t buf[512];
         uint64_t off = 0;

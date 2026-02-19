@@ -8,6 +8,7 @@
 #include <Terminal/Terminal.hpp>
 #include <Libraries/String.hpp>
 #include <Libraries/Memory.hpp>
+#include <Memory/Heap.hpp>
 
 namespace Fs::Ramdisk {
 
@@ -105,6 +106,8 @@ namespace Fs::Ramdisk {
 
             entry.isDirectory = (typeFlag == '5');
             entry.size = size;
+            entry.capacity = size;
+            entry.heapAllocated = false;
 
             // Data starts at next 512-byte block
             entry.data = ptr + 512;
@@ -233,6 +236,110 @@ namespace Fs::Ramdisk {
         }
 
         return count;
+    }
+
+    int Write(int handle, const uint8_t* buffer, uint64_t offset, uint64_t size) {
+        if (handle < 0 || handle >= fileCount) return -1;
+        if (buffer == nullptr || size == 0) return 0;
+
+        FileEntry& entry = fileTable[handle];
+        if (entry.isDirectory) return -1;
+
+        uint64_t endOffset = offset + size;
+
+        // Copy-on-write: if data points into tar memory, copy to heap
+        if (!entry.heapAllocated) {
+            uint64_t newCap = entry.size;
+            if (endOffset > newCap) newCap = endOffset;
+            if (newCap < 256) newCap = 256;
+            // Round up to next power of 2 for growth
+            uint64_t rounded = 256;
+            while (rounded < newCap) rounded *= 2;
+            newCap = rounded;
+
+            uint8_t* newBuf = (uint8_t*)Memory::g_heap->Request(newCap);
+            if (newBuf == nullptr) return -1;
+
+            if (entry.data && entry.size > 0) {
+                memcpy(newBuf, entry.data, entry.size);
+            }
+
+            entry.data = newBuf;
+            entry.capacity = newCap;
+            entry.heapAllocated = true;
+        }
+
+        // Grow buffer if needed
+        if (endOffset > entry.capacity) {
+            uint64_t newCap = entry.capacity;
+            while (newCap < endOffset) newCap *= 2;
+
+            uint8_t* newBuf = (uint8_t*)Memory::g_heap->Request(newCap);
+            if (newBuf == nullptr) return -1;
+
+            if (entry.data && entry.size > 0) {
+                memcpy(newBuf, entry.data, entry.size);
+            }
+            Memory::g_heap->Free(entry.data);
+
+            entry.data = newBuf;
+            entry.capacity = newCap;
+        }
+
+        memcpy(entry.data + offset, buffer, size);
+
+        if (endOffset > entry.size) {
+            entry.size = endOffset;
+        }
+
+        return (int)size;
+    }
+
+    int Create(const char* path) {
+        if (path == nullptr) return -1;
+        if (fileCount >= MaxFiles) return -1;
+
+        // Normalize: skip leading '/'
+        if (path[0] == '/') path++;
+
+        // Check if file already exists
+        for (int i = 0; i < fileCount; i++) {
+            if (StrEqual(fileTable[i].name, path)) {
+                // File exists — truncate it
+                FileEntry& entry = fileTable[i];
+                if (!entry.heapAllocated) {
+                    uint8_t* newBuf = (uint8_t*)Memory::g_heap->Request(256);
+                    if (newBuf == nullptr) return -1;
+                    entry.data = newBuf;
+                    entry.capacity = 256;
+                    entry.heapAllocated = true;
+                }
+                entry.size = 0;
+                entry.isDirectory = false;
+                return i;
+            }
+        }
+
+        // Create new file entry
+        FileEntry& entry = fileTable[fileCount];
+
+        int nameLen = 0;
+        while (nameLen < MaxNameLen - 1 && path[nameLen] != '\0') {
+            entry.name[nameLen] = path[nameLen];
+            nameLen++;
+        }
+        entry.name[nameLen] = '\0';
+
+        uint8_t* buf = (uint8_t*)Memory::g_heap->Request(256);
+        if (buf == nullptr) return -1;
+
+        entry.data = buf;
+        entry.size = 0;
+        entry.capacity = 256;
+        entry.isDirectory = false;
+        entry.heapAllocated = true;
+
+        return fileCount++;
     }
 
     int GetFileCount() {

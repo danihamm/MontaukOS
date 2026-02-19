@@ -7,27 +7,11 @@
 
 #include <zenith/syscall.h>
 #include <zenith/heap.h>
+#include <zenith/string.h>
 
-// ---- Utility functions ----
-
-static bool starts_with(const char* str, const char* prefix) {
-    while (*prefix) {
-        if (*str != *prefix) return false;
-        str++; prefix++;
-    }
-    return true;
-}
-
-static const char* skip_spaces(const char* s) {
-    while (*s == ' ') s++;
-    return s;
-}
-
-static int slen(const char* s) {
-    int n = 0;
-    while (s[n]) n++;
-    return n;
-}
+using zenith::slen;
+using zenith::starts_with;
+using zenith::skip_spaces;
 
 static void print_int(uint64_t n) {
     if (n == 0) {

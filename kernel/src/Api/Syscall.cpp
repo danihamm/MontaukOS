@@ -20,6 +20,9 @@
 #include <Net/Icmp.hpp>
 #include <Net/Socket.hpp>
 #include <Net/ByteOrder.hpp>
+#include <Net/NetConfig.hpp>
+#include <Drivers/Net/E1000.hpp>
+#include <Drivers/Net/E1000E.hpp>
 #include <Hal/MSR.hpp>
 #include <Hal/GDT.hpp>
 #include <Graphics/Cursor.hpp>
@@ -303,6 +306,45 @@ namespace Zenith {
         Net::Socket::Close(fd, Sched::GetCurrentPid());
     }
 
+    static int Sys_SendTo(int fd, const uint8_t* data, uint32_t len,
+                          uint32_t destIp, uint16_t destPort) {
+        return Net::Socket::SendTo(fd, data, len, destIp, destPort, Sched::GetCurrentPid());
+    }
+
+    static int Sys_RecvFrom(int fd, uint8_t* buf, uint32_t maxLen,
+                            uint32_t* srcIp, uint16_t* srcPort) {
+        return Net::Socket::RecvFrom(fd, buf, maxLen, srcIp, srcPort, Sched::GetCurrentPid());
+    }
+
+    static void Sys_GetNetCfg(NetCfg* out) {
+        if (out == nullptr) return;
+        out->ipAddress  = Net::GetIpAddress();
+        out->subnetMask = Net::GetSubnetMask();
+        out->gateway    = Net::GetGateway();
+
+        const uint8_t* mac = nullptr;
+        if (Drivers::Net::E1000::IsInitialized()) {
+            mac = Drivers::Net::E1000::GetMacAddress();
+        } else if (Drivers::Net::E1000E::IsInitialized()) {
+            mac = Drivers::Net::E1000E::GetMacAddress();
+        }
+        if (mac) {
+            for (int i = 0; i < 6; i++) out->macAddress[i] = mac[i];
+        } else {
+            for (int i = 0; i < 6; i++) out->macAddress[i] = 0;
+        }
+        out->_pad[0] = 0;
+        out->_pad[1] = 0;
+    }
+
+    static int Sys_SetNetCfg(const NetCfg* in) {
+        if (in == nullptr) return -1;
+        Net::SetIpAddress(in->ipAddress);
+        Net::SetSubnetMask(in->subnetMask);
+        Net::SetGateway(in->gateway);
+        return 0;
+    }
+
     static void Sys_Reset() {
         /*
             Triple fault for now; TODO: implement UEFI runtime function for clean reboot.
@@ -318,6 +360,16 @@ namespace Zenith {
         struct [[gnu::packed]] { uint16_t limit; uint64_t base; } nullIdt = {0, 0};
         asm volatile("lidt %0; int $0x03" :: "m"(nullIdt));
         __builtin_unreachable();
+    }
+
+    // ---- File write/create ----
+
+    static int Sys_FWrite(int handle, const uint8_t* data, uint64_t offset, uint64_t size) {
+        return Fs::Vfs::VfsWrite(handle, data, offset, size);
+    }
+
+    static int Sys_FCreate(const char* path) {
+        return Fs::Vfs::VfsCreate(path);
     }
 
     // ---- Dispatch ----
@@ -416,6 +468,24 @@ namespace Zenith {
             case SYS_CLOSESOCK:
                 Sys_CloseSock((int)frame->arg1);
                 return 0;
+            case SYS_GETNETCFG:
+                Sys_GetNetCfg((NetCfg*)frame->arg1);
+                return 0;
+            case SYS_SETNETCFG:
+                return (int64_t)Sys_SetNetCfg((const NetCfg*)frame->arg1);
+            case SYS_SENDTO:
+                return (int64_t)Sys_SendTo((int)frame->arg1, (const uint8_t*)frame->arg2,
+                                           (uint32_t)frame->arg3, (uint32_t)frame->arg4,
+                                           (uint16_t)frame->arg5);
+            case SYS_RECVFROM:
+                return (int64_t)Sys_RecvFrom((int)frame->arg1, (uint8_t*)frame->arg2,
+                                             (uint32_t)frame->arg3, (uint32_t*)frame->arg4,
+                                             (uint16_t*)frame->arg5);
+            case SYS_FWRITE:
+                return (int64_t)Sys_FWrite((int)frame->arg1, (const uint8_t*)frame->arg2,
+                                           frame->arg3, frame->arg4);
+            case SYS_FCREATE:
+                return (int64_t)Sys_FCreate((const char*)frame->arg1);
             default:
                 return -1;
         }
@@ -442,7 +512,7 @@ namespace Zenith {
         Hal::WriteMSR(Hal::IA32_FMASK, 0x200);
 
         Kt::KernelLogStream(Kt::OK, "Syscall") << "SYSCALL/SYSRET initialized (LSTAR="
-            << kcp::hex << (uint64_t)SyscallEntry << kcp::dec << ", 37 syscalls)";
+            << kcp::hex << (uint64_t)SyscallEntry << kcp::dec << ", 43 syscalls)";
     }
 
 }

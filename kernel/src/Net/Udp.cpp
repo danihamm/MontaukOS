@@ -61,7 +61,7 @@ namespace Net::Udp {
         // Dispatch to bound callback
         for (uint32_t i = 0; i < MAX_BINDINGS; i++) {
             if (g_bindings[i].Active && g_bindings[i].Port == dstPort) {
-                g_bindings[i].Callback(srcIp, srcPort, payload, payloadLen);
+                g_bindings[i].Callback(srcIp, srcPort, dstPort, payload, payloadLen);
                 return;
             }
         }

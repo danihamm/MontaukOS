@@ -8,11 +8,11 @@
 #include <cstdint>
 
 namespace Hal {
-    // IRQ handler function type. The parameter is the IRQ number (0-23).
+    // IRQ handler function type. The parameter is the IRQ number (0-47).
     using IrqHandler = void(*)(uint8_t irq);
 
-    // Number of IRQ lines supported (IOAPIC inputs)
-    constexpr int IRQ_COUNT = 24;
+    // Number of IRQ slots supported (0-23: legacy ISA via IOAPIC, 24-47: MSI)
+    constexpr int IRQ_COUNT = 48;
 
     // IRQ vector base: hardware IRQs start at IDT vector 32
     constexpr uint8_t IRQ_VECTOR_BASE = 32;
@@ -29,7 +29,7 @@ namespace Hal {
     constexpr uint8_t IRQ_ATA1     = 14;
     constexpr uint8_t IRQ_ATA2     = 15;
 
-    // Register a handler for the given IRQ number (0-23)
+    // Register a handler for the given IRQ number (0-47)
     void RegisterIrqHandler(uint8_t irq, IrqHandler handler);
 
     // Install IRQ stubs into the IDT and set up the dispatch table

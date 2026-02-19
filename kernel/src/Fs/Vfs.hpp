@@ -19,6 +19,8 @@ namespace Fs::Vfs {
         uint64_t (*GetSize)(int handle);
         void (*Close)(int handle);
         int (*ReadDir)(const char* path, const char** outNames, int maxEntries);
+        int (*Write)(int handle, const uint8_t* buffer, uint64_t offset, uint64_t size);
+        int (*Create)(const char* path);
     };
 
     void Initialize();
@@ -26,6 +28,8 @@ namespace Fs::Vfs {
 
     int VfsOpen(const char* path);
     int VfsRead(int handle, uint8_t* buffer, uint64_t offset, uint64_t size);
+    int VfsWrite(int handle, const uint8_t* buffer, uint64_t offset, uint64_t size);
+    int VfsCreate(const char* path);
     uint64_t VfsGetSize(int handle);
     void VfsClose(int handle);
     int VfsReadDir(const char* path, const char** outNames, int maxEntries);

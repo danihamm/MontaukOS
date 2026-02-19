@@ -54,7 +54,6 @@ namespace Sched {
     uint64_t ElfLoad(const char* vfsPath, uint64_t pml4Phys) {
         int handle = Fs::Vfs::VfsOpen(vfsPath);
         if (handle < 0) {
-            Kt::KernelLogStream(Kt::ERROR, "ELF") << "Failed to open " << vfsPath;
             return 0;
         }
 

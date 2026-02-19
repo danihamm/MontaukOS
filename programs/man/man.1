@@ -11,7 +11,7 @@
     fullscreen pager. Pages are stored as plain text files with
     simple formatting directives.
 
-    If no section is specified, sections 1, 2, and 3 are searched
+    If no section is specified, sections 1 through 7 are searched
     in order. If a section number is given, only that section is
     checked.
 
@@ -27,9 +27,10 @@
     q                 Quit
 
 .SH SECTIONS
-    1   User commands (shell built-ins)
+    1   User commands and programs
     2   System calls (kernel interface)
     3   Library functions (userspace libraries)
+    7   Miscellaneous (legal, conventions)
 
 .SH FILES
     Man pages are stored on the ramdisk at:
@@ -42,6 +43,7 @@
     man intro          View the introduction
     man 2 syscalls     View syscall overview (section 2)
     man malloc         View malloc documentation
+    man legal          View copyright information
 
 .SH SEE ALSO
     intro(1), shell(1), syscalls(2)

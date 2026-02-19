@@ -106,7 +106,6 @@ namespace Sched {
         // Load ELF into the process's address space
         uint64_t entry = ElfLoad(vfsPath, pml4Phys);
         if (entry == 0) {
-            Kt::KernelLogStream(Kt::ERROR, "Sched") << "Failed to load ELF: " << vfsPath;
             return -1;
         }
 
@@ -204,6 +203,13 @@ namespace Sched {
     }
 
     void Schedule() {
+        // Reclaim terminated process slots so they can be reused
+        for (int i = 0; i < MaxProcesses; i++) {
+            if (processTable[i].state == ProcessState::Terminated) {
+                processTable[i].state = ProcessState::Free;
+            }
+        }
+
         int next = -1;
         int start = (currentPid >= 0) ? currentPid + 1 : 0;
 
@@ -311,9 +317,13 @@ namespace Sched {
     }
 
     bool IsAlive(int pid) {
-        if (pid < 0 || pid >= MaxProcesses) return false;
-        return processTable[pid].state == ProcessState::Ready
-            || processTable[pid].state == ProcessState::Running;
+        for (int i = 0; i < MaxProcesses; i++) {
+            if (processTable[i].pid == pid) {
+                return processTable[i].state == ProcessState::Ready
+                    || processTable[i].state == ProcessState::Running;
+            }
+        }
+        return false;
     }
 
 }

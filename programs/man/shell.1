@@ -3,66 +3,101 @@
     shell - ZenithOS interactive command shell
 
 .SH DESCRIPTION
-    The ZenithOS shell is a simple command interpreter that runs as
-    the first userspace process. It provides basic file inspection,
-    process management, networking, and documentation access.
+    The ZenithOS shell is a command interpreter launched by init
+    after system services have started. It provides command
+    execution, file navigation, and command history.
 
-.SH COMMANDS
+    Commands are either shell builtins or external programs. When
+    a command is not a builtin, the shell searches for a matching
+    ELF binary and executes it as a child process.
+
+.SH COMMAND RESOLUTION
+    When a non-builtin command is entered, the shell searches for
+    a matching binary in the following order:
+
+        1. 0:/os/<command>.elf
+        2. 0:/games/<command>.elf
+        3. 0:/<cwd>/<command>.elf  (if cwd is set)
+        4. 0:/<command>.elf
+
+    The first match is spawned and the shell waits for it to exit.
+    If no match is found, the shell prints:
+
+        <command>: command not found
+
+    Arguments after the command name are passed to the spawned
+    process. File path arguments are resolved against the current
+    working directory before being passed to external programs.
+
+.SH BUILTINS
 
 .SS help
-    Display a list of available commands.
-
-.SS info
-    Show the OS name, version, and syscall API version number.
-
-.SS man <topic>
-    Open a manual page in the fullscreen pager. See man(1).
+    Display a categorized list of available commands.
 
 .SS ls [dir]
     List files in the current directory, or in the specified
     directory. When a directory argument is given, the output
     shows only the entries inside that directory with the
-    directory prefix stripped.
-    Examples: ls, ls man
+    directory prefix stripped. Directory entries are shown
+    with a trailing slash.
+    Examples: ls, ls man, ls os
 
 .SS cd [dir]
     Change the working directory. With no argument or with /,
     returns to the root (0:/). Use cd .. to go up one level.
+    Trailing slashes on directory names are stripped.
     The shell prompt reflects the current directory.
-    Examples: cd man, cd .., cd
-
-.SS cat <file>
-    Print the contents of a file to the terminal. The file
-    path is resolved relative to the current directory.
-    Example: cat hello.elf
-
-.SS run <file>
-    Spawn a new process from an ELF binary and wait for it to
-    exit. The file path is resolved relative to the current
-    directory. The shell blocks until the child process terminates.
-    Example: run hello.elf
-
-.SS ping <ip>
-    Send 4 ICMP echo requests to the given IP address and display
-    round-trip times. Timeout is 3 seconds per request.
-    Example: ping 10.0.2.2
-
-.SS date
-    Display the current date and time in UTC.
-
-.SS uptime
-    Display the system uptime in minutes, seconds, and milliseconds.
-
-.SS clear
-    Clear the terminal screen.
+    Examples: cd os, cd .., cd
 
 .SS exit
     Terminate the shell process.
 
+.SH EXTERNAL COMMANDS
+
+.SS System commands (0:/os/)
+    man <topic>     View manual pages
+    cat <file>      Display file contents
+    info            Show system information
+    date            Show current date and time
+    uptime          Show system uptime
+    clear           Clear the screen and framebuffer
+    reset           Reboot the system
+    shutdown        Shut down the system
+
+.SS Network commands (0:/os/)
+    ping <ip>       Send ICMP echo requests
+    ifconfig        Show/set network configuration
+    tcpconnect <ip> <port>  Interactive TCP client
+    irc             IRC client
+    dhcp            DHCP client
+    fetch           HTTP client
+    httpd           HTTP server
+
+.SS Games (0:/games/)
+    doom            DOOM
+
 .SH INPUT
-    The shell reads input character by character using SYS_GETCHAR.
-    Backspace is supported. Lines are limited to 255 characters.
-    There is no command history or tab completion.
+    The shell uses non-blocking keyboard input via SYS_GETKEY to
+    support arrow key detection. Lines are limited to 255
+    characters.
+
+.SS Editing
+    Backspace       Delete character before cursor
+    Enter           Execute command
+
+.SS History
+    The shell stores the last 32 unique commands. Duplicate
+    consecutive entries are suppressed.
+
+    Up Arrow        Recall previous command
+    Down Arrow      Recall next command (or clear line)
+
+.SH PROMPT
+    The prompt displays the current working directory:
+
+        0:/> _              (at root)
+        0:/os> _            (in os/ directory)
+        0:/man> _           (in man/ directory)
 
 .SH SEE ALSO
     man(1), intro(1), syscalls(2)

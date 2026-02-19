@@ -10,6 +10,7 @@
 #include <Net/Ipv4.hpp>
 #include <Net/NetConfig.hpp>
 #include <Drivers/Net/E1000.hpp>
+#include <Drivers/Net/E1000E.hpp>
 #include <Libraries/Memory.hpp>
 #include <Terminal/Terminal.hpp>
 #include <CppLib/Stream.hpp>
@@ -18,6 +19,12 @@
 using namespace Kt;
 
 namespace Net::Arp {
+
+    static const uint8_t* GetActiveNicMac() {
+        if (Drivers::Net::E1000::IsInitialized())
+            return Drivers::Net::E1000::GetMacAddress();
+        return Drivers::Net::E1000E::GetMacAddress();
+    }
 
     // ARP cache entry
     struct CacheEntry {
@@ -107,7 +114,7 @@ namespace Net::Arp {
             reply.ProtocolAddrLen = 4;
             reply.Operation = Htons(OP_REPLY);
 
-            memcpy(reply.SenderMac, Drivers::Net::E1000::GetMacAddress(), 6);
+            memcpy(reply.SenderMac, GetActiveNicMac(), 6);
             reply.SenderIp = GetIpAddress();
             memcpy(reply.TargetMac, pkt->SenderMac, 6);
             reply.TargetIp = senderIp;
@@ -141,7 +148,7 @@ namespace Net::Arp {
         req.ProtocolAddrLen = 4;
         req.Operation = Htons(OP_REQUEST);
 
-        memcpy(req.SenderMac, Drivers::Net::E1000::GetMacAddress(), 6);
+        memcpy(req.SenderMac, GetActiveNicMac(), 6);
         req.SenderIp = GetIpAddress();
         memset(req.TargetMac, 0, 6);
         req.TargetIp = targetIp;

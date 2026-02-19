@@ -123,6 +123,46 @@ namespace Fs::Vfs {
         entry.inUse = false;
     }
 
+    int VfsWrite(int handle, const uint8_t* buffer, uint64_t offset, uint64_t size) {
+        if (handle < 0 || handle >= MaxHandles || !handleTable[handle].inUse) return -1;
+
+        HandleEntry& entry = handleTable[handle];
+        if (driveTable[entry.driveNumber]->Write == nullptr) return -1;
+        return driveTable[entry.driveNumber]->Write(entry.localHandle, buffer, offset, size);
+    }
+
+    int VfsCreate(const char* path) {
+        int drive;
+        const char* localPath;
+
+        if (!ParsePath(path, drive, localPath)) {
+            Kt::KernelLogStream(Kt::ERROR, "VFS") << "Invalid path format for Create";
+            return -1;
+        }
+
+        if (drive < 0 || drive >= MaxDrives || driveTable[drive] == nullptr) {
+            Kt::KernelLogStream(Kt::ERROR, "VFS") << "Drive " << drive << " not registered";
+            return -1;
+        }
+
+        if (driveTable[drive]->Create == nullptr) return -1;
+
+        int localHandle = driveTable[drive]->Create(localPath);
+        if (localHandle < 0) return -1;
+
+        int globalHandle = AllocHandle();
+        if (globalHandle < 0) {
+            Kt::KernelLogStream(Kt::ERROR, "VFS") << "No free handles";
+            return -1;
+        }
+
+        handleTable[globalHandle].inUse = true;
+        handleTable[globalHandle].driveNumber = drive;
+        handleTable[globalHandle].localHandle = localHandle;
+
+        return globalHandle;
+    }
+
     int VfsReadDir(const char* path, const char** outNames, int maxEntries) {
         int drive;
         const char* localPath;

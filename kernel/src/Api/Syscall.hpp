@@ -48,8 +48,15 @@ namespace Zenith {
     static constexpr uint64_t SYS_SEND            = 34;
     static constexpr uint64_t SYS_RECV            = 35;
     static constexpr uint64_t SYS_CLOSESOCK       = 36;
+    static constexpr uint64_t SYS_GETNETCFG      = 37;
+    static constexpr uint64_t SYS_SETNETCFG      = 38;
+    static constexpr uint64_t SYS_SENDTO         = 39;
+    static constexpr uint64_t SYS_RECVFROM       = 40;
+    static constexpr uint64_t SYS_FWRITE         = 41;
+    static constexpr uint64_t SYS_FCREATE        = 42;
 
     static constexpr int SOCK_TCP = 1;
+    static constexpr int SOCK_UDP = 2;
 
     struct DateTime {
         uint16_t Year;
@@ -73,6 +80,14 @@ namespace Zenith {
         char osVersion[32];
         uint32_t    apiVersion;
         uint32_t    maxProcesses;
+    };
+
+    struct NetCfg {
+        uint32_t ipAddress;   // network byte order
+        uint32_t subnetMask;  // network byte order
+        uint32_t gateway;     // network byte order
+        uint8_t  macAddress[6];
+        uint8_t  _pad[2];
     };
 
     struct KeyEvent {

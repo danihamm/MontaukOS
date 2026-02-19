@@ -65,8 +65,8 @@ IrqCommon:
 
     iretq
 
-; Define stubs for IRQs 0..23 (vectors 32..55)
-; This covers all standard ISA IRQs plus some extra IOAPIC inputs
+; Define stubs for IRQs 0..47 (vectors 32..79)
+; 0-23: legacy ISA IRQs via IOAPIC, 24-47: MSI vectors
 IRQ_STUB 0
 IRQ_STUB 1
 IRQ_STUB 2
@@ -91,6 +91,30 @@ IRQ_STUB 20
 IRQ_STUB 21
 IRQ_STUB 22
 IRQ_STUB 23
+IRQ_STUB 24
+IRQ_STUB 25
+IRQ_STUB 26
+IRQ_STUB 27
+IRQ_STUB 28
+IRQ_STUB 29
+IRQ_STUB 30
+IRQ_STUB 31
+IRQ_STUB 32
+IRQ_STUB 33
+IRQ_STUB 34
+IRQ_STUB 35
+IRQ_STUB 36
+IRQ_STUB 37
+IRQ_STUB 38
+IRQ_STUB 39
+IRQ_STUB 40
+IRQ_STUB 41
+IRQ_STUB 42
+IRQ_STUB 43
+IRQ_STUB 44
+IRQ_STUB 45
+IRQ_STUB 46
+IRQ_STUB 47
 
 ; Spurious interrupt handler (vector 0xFF) - do nothing, no EOI
 global IrqStubSpurious
@@ -125,3 +149,27 @@ IrqStubTable:
     dq IrqStub21
     dq IrqStub22
     dq IrqStub23
+    dq IrqStub24
+    dq IrqStub25
+    dq IrqStub26
+    dq IrqStub27
+    dq IrqStub28
+    dq IrqStub29
+    dq IrqStub30
+    dq IrqStub31
+    dq IrqStub32
+    dq IrqStub33
+    dq IrqStub34
+    dq IrqStub35
+    dq IrqStub36
+    dq IrqStub37
+    dq IrqStub38
+    dq IrqStub39
+    dq IrqStub40
+    dq IrqStub41
+    dq IrqStub42
+    dq IrqStub43
+    dq IrqStub44
+    dq IrqStub45
+    dq IrqStub46
+    dq IrqStub47

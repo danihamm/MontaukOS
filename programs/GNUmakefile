@@ -56,29 +56,63 @@ BINDIR := bin
 # Discover all programs (each subdirectory under src/ is a program).
 PROGRAMS := $(notdir $(wildcard src/*))
 
-# Build targets: one ELF per program.
-TARGETS := $(addprefix $(BINDIR)/,$(addsuffix .elf,$(PROGRAMS)))
+# Games are built separately (doom has its own Makefile).
+GAMES := doom
+SYSTEM_PROGRAMS := $(filter-out $(GAMES),$(PROGRAMS))
+
+# Build targets: system programs go to bin/os/, games are handled separately.
+TARGETS := $(addprefix $(BINDIR)/os/,$(addsuffix .elf,$(SYSTEM_PROGRAMS)))
+
+# Game data files to copy into bin/games/.
+GAME_DATA := $(BINDIR)/games/doom1.wad
 
 # Man pages source directory.
 MANDIR := man
 MANSRC := $(wildcard $(MANDIR)/*.*)
 MANDST := $(patsubst $(MANDIR)/%,$(BINDIR)/man/%,$(MANSRC))
 
-.PHONY: all clean
+# Web content source directory.
+WWWDIR := www
+WWWSRC := $(wildcard $(WWWDIR)/*.*)
+WWWDST := $(patsubst $(WWWDIR)/%,$(BINDIR)/www/%,$(WWWSRC))
 
-all: $(TARGETS) $(MANDST)
+# Home directory placeholder.
+HOMEKEEP := $(BINDIR)/home/.keep
+
+.PHONY: all clean doom
+
+all: $(TARGETS) doom $(GAME_DATA) $(MANDST) $(WWWDST) $(HOMEKEEP)
+
+# Build doom via its own Makefile.
+doom:
+	$(MAKE) -C src/doom
+
+# Copy doom1.wad from data/games/ into bin/games/.
+$(BINDIR)/games/doom1.wad: data/games/doom1.wad
+	mkdir -p $(BINDIR)/games
+	cp $< $@
 
 # Copy man pages into bin/man/ so mkramdisk.sh picks them up.
 $(BINDIR)/man/%: $(MANDIR)/%
 	mkdir -p $(BINDIR)/man
 	cp $< $@
 
-# Build each program from its source files.
-# For now each program is a single .cpp file compiled and linked directly.
-$(BINDIR)/%.elf: src/%/main.cpp link.ld GNUmakefile
-	mkdir -p $(BINDIR) obj/$*
+# Copy web content into bin/www/ so mkramdisk.sh picks them up.
+$(BINDIR)/www/%: $(WWWDIR)/%
+	mkdir -p $(BINDIR)/www
+	cp $< $@
+
+# Create empty home directory with a keep file.
+$(HOMEKEEP):
+	mkdir -p $(BINDIR)/home
+	touch $@
+
+# Build each system program from its source files.
+$(BINDIR)/os/%.elf: src/%/main.cpp link.ld GNUmakefile
+	mkdir -p $(BINDIR)/os obj/$*
 	$(CXX) $(CXXFLAGS) -c src/$*/main.cpp -o obj/$*/main.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) obj/$*/main.o -o $@
 
 clean:
 	rm -rf $(BINDIR) obj
+	$(MAKE) -C src/doom clean

@@ -222,7 +222,7 @@ void DG_SetWindowTitle(const char* title) {
 /* ---- Entry point ---- */
 
 void _start(void) {
-    char *argv[] = { "doom", "-iwad", "0:/doom1.wad", 0 };
+    char *argv[] = { "doom", "-iwad", "0:/games/doom1.wad", 0 };
     doomgeneric_Create(3, argv);
     for (;;) {
         doomgeneric_Tick();

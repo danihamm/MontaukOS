@@ -5,51 +5,32 @@
 */
 
 #include <zenith/syscall.h>
+#include <zenith/string.h>
 
-static bool streq(const char* a, const char* b) {
-    while (*a && *b) {
-        if (*a != *b) return false;
-        a++; b++;
+using zenith::slen;
+using zenith::streq;
+using zenith::starts_with;
+using zenith::skip_spaces;
+
+static void scopy(char* dst, const char* src, int maxLen) {
+    int i = 0;
+    while (src[i] && i < maxLen - 1) { dst[i] = src[i]; i++; }
+    dst[i] = '\0';
+}
+
+static void scat(char* dst, const char* src, int maxLen) {
+    int dLen = slen(dst);
+    int i = 0;
+    while (src[i] && dLen + i < maxLen - 1) {
+        dst[dLen + i] = src[i];
+        i++;
     }
-    return *a == *b;
-}
-
-static bool starts_with(const char* str, const char* prefix) {
-    while (*prefix) {
-        if (*str != *prefix) return false;
-        str++; prefix++;
-    }
-    return true;
-}
-
-static const char* skip_spaces(const char* s) {
-    while (*s == ' ') s++;
-    return s;
-}
-
-static int slen(const char* s) {
-    int n = 0;
-    while (s[n]) n++;
-    return n;
+    dst[dLen + i] = '\0';
 }
 
 // Current working directory (relative to 0:/).
 // "" = root, "man" = 0:/man, "man/sub" = 0:/man/sub
 static char cwd[128] = "";
-
-// Build full VFS path: "0:/" + cwd + "/" + name
-static void resolve_path(const char* name, char* out, int outMax) {
-    int i = 0;
-    out[i++] = '0'; out[i++] = ':'; out[i++] = '/';
-    if (cwd[0]) {
-        int j = 0;
-        while (cwd[j] && i < outMax - 2) out[i++] = cwd[j++];
-        out[i++] = '/';
-    }
-    int j = 0;
-    while (name[j] && i < outMax - 1) out[i++] = name[j++];
-    out[i] = '\0';
-}
 
 // Build VFS directory path: "0:/" or "0:/<dir>"
 static void build_dir_path(const char* dir, char* out, int outMax) {
@@ -62,21 +43,33 @@ static void build_dir_path(const char* dir, char* out, int outMax) {
     out[i] = '\0';
 }
 
-static void print_int(uint64_t n) {
-    if (n == 0) {
-        zenith::putchar('0');
-        return;
+// ---- Command history ----
+
+static constexpr int HISTORY_MAX = 32;
+static char history[HISTORY_MAX][256];
+static int history_count = 0;
+static int history_next = 0; // ring-buffer write index
+
+static void history_add(const char* line) {
+    if (line[0] == '\0') return;
+    // Don't add duplicate of last entry
+    if (history_count > 0) {
+        int prev = (history_next + HISTORY_MAX - 1) % HISTORY_MAX;
+        if (streq(history[prev], line)) return;
     }
-    char buf[20];
-    int i = 0;
-    while (n > 0) {
-        buf[i++] = '0' + (n % 10);
-        n /= 10;
-    }
-    for (int j = i - 1; j >= 0; j--) {
-        zenith::putchar(buf[j]);
-    }
+    scopy(history[history_next], line, 256);
+    history_next = (history_next + 1) % HISTORY_MAX;
+    if (history_count < HISTORY_MAX) history_count++;
 }
+
+// Get history entry by index (0 = most recent, 1 = one before that, ...)
+static const char* history_get(int idx) {
+    if (idx < 0 || idx >= history_count) return nullptr;
+    int pos = (history_next + HISTORY_MAX - 1 - idx) % HISTORY_MAX;
+    return history[pos];
+}
+
+// ---- Prompt ----
 
 static void prompt() {
     zenith::print("0:/");
@@ -84,36 +77,66 @@ static void prompt() {
     zenith::print("> ");
 }
 
+// ---- Erase current input line on screen ----
+
+static void erase_input(int len) {
+    // Move cursor to start of input and overwrite with spaces
+    for (int i = 0; i < len; i++) zenith::putchar('\b');
+    for (int i = 0; i < len; i++) zenith::putchar(' ');
+    for (int i = 0; i < len; i++) zenith::putchar('\b');
+}
+
+// ---- Replace visible line with new content ----
+
+static void replace_line(char* line, int* pos, const char* newContent) {
+    int oldLen = *pos;
+    erase_input(oldLen);
+    int newLen = slen(newContent);
+    if (newLen > 255) newLen = 255;
+    for (int i = 0; i < newLen; i++) {
+        line[i] = newContent[i];
+        zenith::putchar(newContent[i]);
+    }
+    line[newLen] = '\0';
+    *pos = newLen;
+}
+
+// ---- Builtin: help ----
+
 static void cmd_help() {
-    zenith::print("Available commands:\n");
+    zenith::print("Shell builtins:\n");
     zenith::print("  help          Show this help message\n");
-    zenith::print("  info          Show system information\n");
-    zenith::print("  man <topic>   View manual pages\n");
     zenith::print("  ls [dir]      List files in directory\n");
     zenith::print("  cd [dir]      Change working directory\n");
+    zenith::print("  exit          Exit the shell\n");
+    zenith::print("\n");
+    zenith::print("System commands:\n");
+    zenith::print("  man <topic>   View manual pages\n");
     zenith::print("  cat <file>    Display file contents\n");
-    zenith::print("  run <file>    Spawn a new process from an ELF file\n");
-    zenith::print("  ping <ip>     Send ICMP echo requests\n");
-    zenith::print("  tcpconnect <ip> <port>  Connect to a TCP server\n");
+    zenith::print("  edit [file]   Text editor\n");
+    zenith::print("  info          Show system information\n");
     zenith::print("  date          Show current date and time\n");
-    zenith::print("  uptime        Show uptime in milliseconds\n");
+    zenith::print("  uptime        Show uptime\n");
     zenith::print("  clear         Clear the screen\n");
     zenith::print("  reset         Reboot the system\n");
     zenith::print("  shutdown      Shut down the system\n");
-    zenith::print("  exit          Exit the shell\n");
+    zenith::print("\n");
+    zenith::print("Network commands:\n");
+    zenith::print("  ping <ip>     Send ICMP echo requests\n");
+    zenith::print("  ifconfig      Show/set network configuration\n");
+    zenith::print("  tcpconnect    Connect to a TCP server\n");
+    zenith::print("  irc           IRC client\n");
+    zenith::print("  dhcp          DHCP client\n");
+    zenith::print("  fetch <url>   HTTP client\n");
+    zenith::print("  httpd         HTTP server\n");
+    zenith::print("\n");
+    zenith::print("Games:\n");
+    zenith::print("  doom          DOOM\n");
+    zenith::print("\n");
+    zenith::print("Any .elf on the ramdisk is executable.\n");
 }
 
-static void cmd_info() {
-    Zenith::SysInfo info;
-    zenith::get_info(&info);
-    zenith::print(info.osName);
-    zenith::print(" v");
-    zenith::print(info.osVersion);
-    zenith::print("\n");
-    zenith::print("Syscall API version: ");
-    print_int(info.apiVersion);
-    zenith::putchar('\n');
-}
+// ---- Builtin: ls ----
 
 static void cmd_ls(const char* arg) {
     arg = skip_spaces(arg);
@@ -121,7 +144,7 @@ static void cmd_ls(const char* arg) {
     // Build the target directory (relative path from root)
     char dir[128];
     if (*arg) {
-        // ls <dir> — combine cwd and arg
+        // ls <dir> -- combine cwd and arg
         if (cwd[0]) {
             int i = 0, j = 0;
             while (cwd[j] && i < 126) dir[i++] = cwd[j++];
@@ -135,7 +158,7 @@ static void cmd_ls(const char* arg) {
             dir[i] = '\0';
         }
     } else {
-        // ls with no arg — use cwd
+        // ls with no arg -- use cwd
         int i = 0;
         while (cwd[i] && i < 126) { dir[i] = cwd[i]; i++; }
         dir[i] = '\0';
@@ -166,310 +189,26 @@ static void cmd_ls(const char* arg) {
     }
 }
 
-static void cmd_cat(const char* arg) {
-    arg = skip_spaces(arg);
-    if (*arg == '\0') {
-        zenith::print("Usage: cat <filename>\n");
-        return;
-    }
-
-    char path[128];
-    resolve_path(arg, path, sizeof(path));
-
-    int handle = zenith::open(path);
-    if (handle < 0) {
-        zenith::print("Error: cannot open '");
-        zenith::print(arg);
-        zenith::print("'\n");
-        return;
-    }
-
-    uint64_t size = zenith::getsize(handle);
-    if (size == 0) {
-        zenith::close(handle);
-        return;
-    }
-
-    // Read in chunks
-    uint8_t buf[512];
-    uint64_t offset = 0;
-    while (offset < size) {
-        uint64_t chunk = size - offset;
-        if (chunk > sizeof(buf) - 1) chunk = sizeof(buf) - 1;
-        int bytesRead = zenith::read(handle, buf, offset, chunk);
-        if (bytesRead <= 0) break;
-        buf[bytesRead] = '\0';
-        zenith::print((const char*)buf);
-        offset += bytesRead;
-    }
-
-    zenith::close(handle);
-    zenith::putchar('\n');
-}
-
-static void cmd_uptime() {
-    uint64_t ms = zenith::get_milliseconds();
-    uint64_t secs = ms / 1000;
-    uint64_t mins = secs / 60;
-    secs %= 60;
-    ms %= 1000;
-
-    zenith::print("Uptime: ");
-    print_int(mins);
-    zenith::print("m ");
-    print_int(secs);
-    zenith::print("s ");
-    print_int(ms);
-    zenith::print("ms\n");
-}
-
-static bool parse_ip(const char* s, uint32_t* out) {
-    // Parse "a.b.c.d" into a uint32_t in network byte order (little-endian stored)
-    uint32_t octets[4];
-    int idx = 0;
-    uint32_t val = 0;
-    bool hasDigit = false;
-
-    for (int i = 0; ; i++) {
-        char c = s[i];
-        if (c >= '0' && c <= '9') {
-            val = val * 10 + (c - '0');
-            if (val > 255) return false;
-            hasDigit = true;
-        } else if (c == '.' || c == '\0') {
-            if (!hasDigit || idx >= 4) return false;
-            octets[idx++] = val;
-            val = 0;
-            hasDigit = false;
-            if (c == '\0') break;
-        } else {
-            return false;
-        }
-    }
-
-    if (idx != 4) return false;
-    *out = octets[0] | (octets[1] << 8) | (octets[2] << 16) | (octets[3] << 24);
-    return true;
-}
-
-static void print_ip(uint32_t ip) {
-    print_int(ip & 0xFF);
-    zenith::putchar('.');
-    print_int((ip >> 8) & 0xFF);
-    zenith::putchar('.');
-    print_int((ip >> 16) & 0xFF);
-    zenith::putchar('.');
-    print_int((ip >> 24) & 0xFF);
-}
-
-static void cmd_ping(const char* arg) {
-    arg = skip_spaces(arg);
-    if (*arg == '\0') {
-        zenith::print("Usage: ping <ip address>\n");
-        return;
-    }
-
-    uint32_t ip;
-    if (!parse_ip(arg, &ip)) {
-        zenith::print("Invalid IP address: ");
-        zenith::print(arg);
-        zenith::putchar('\n');
-        return;
-    }
-
-    zenith::print("PING ");
-    print_ip(ip);
-    zenith::putchar('\n');
-
-    for (int i = 0; i < 4; i++) {
-        int32_t rtt = zenith::ping(ip, 3000);
-        if (rtt < 0) {
-            zenith::print("  Request timed out\n");
-        } else {
-            zenith::print("  Reply from ");
-            print_ip(ip);
-            zenith::print(": time=");
-            print_int((uint64_t)rtt);
-            zenith::print("ms\n");
-        }
-        if (i < 3) {
-            zenith::sleep_ms(1000);
-        }
-    }
-}
-
-static bool parse_uint16(const char* s, uint16_t* out) {
-    uint32_t val = 0;
-    if (*s == '\0') return false;
-    while (*s) {
-        if (*s < '0' || *s > '9') return false;
-        val = val * 10 + (*s - '0');
-        if (val > 65535) return false;
-        s++;
-    }
-    *out = (uint16_t)val;
-    return true;
-}
-
-static void cmd_tcpconnect(const char* arg) {
-    arg = skip_spaces(arg);
-    if (*arg == '\0') {
-        zenith::print("Usage: tcpconnect <ip> <port>\n");
-        return;
-    }
-
-    // Parse IP address (up to first space)
-    char ipStr[32];
-    int i = 0;
-    while (arg[i] && arg[i] != ' ' && i < 31) {
-        ipStr[i] = arg[i];
-        i++;
-    }
-    ipStr[i] = '\0';
-
-    uint32_t ip;
-    if (!parse_ip(ipStr, &ip)) {
-        zenith::print("Invalid IP address: ");
-        zenith::print(ipStr);
-        zenith::putchar('\n');
-        return;
-    }
-
-    // Parse port
-    const char* portStr = skip_spaces(arg + i);
-    if (*portStr == '\0') {
-        zenith::print("Usage: tcpconnect <ip> <port>\n");
-        return;
-    }
-    uint16_t port;
-    if (!parse_uint16(portStr, &port)) {
-        zenith::print("Invalid port: ");
-        zenith::print(portStr);
-        zenith::putchar('\n');
-        return;
-    }
-
-    // Create socket
-    int fd = zenith::socket(Zenith::SOCK_TCP);
-    if (fd < 0) {
-        zenith::print("Error: failed to create socket\n");
-        return;
-    }
-
-    zenith::print("Connecting to ");
-    print_ip(ip);
-    zenith::putchar(':');
-    print_int(port);
-    zenith::print("...\n");
-
-    if (zenith::connect(fd, ip, port) < 0) {
-        zenith::print("Error: connection failed\n");
-        zenith::closesocket(fd);
-        return;
-    }
-
-    zenith::print("Connected! Type to send, Ctrl+Q to disconnect.\n");
-
-    // Interactive send/receive loop
-    char sendBuf[256];
-    int sendPos = 0;
-    uint8_t recvBuf[512];
-
-    while (true) {
-        // Poll for received data (non-blocking)
-        int r = zenith::recv(fd, recvBuf, sizeof(recvBuf) - 1);
-        if (r < 0) {
-            zenith::print("\nConnection closed by remote.\n");
-            break;
-        }
-        if (r > 0) {
-            recvBuf[r] = '\0';
-            zenith::print((const char*)recvBuf);
-        }
-
-        // Poll keyboard
-        if (zenith::is_key_available()) {
-            Zenith::KeyEvent ev;
-            zenith::getkey(&ev);
-
-            if (!ev.pressed) continue;
-
-            // Ctrl+Q to quit
-            if (ev.ctrl && (ev.ascii == 'q' || ev.ascii == 'Q')) {
-                zenith::print("\nDisconnecting...\n");
-                break;
-            }
-
-            if (ev.ascii == '\n') {
-                sendBuf[sendPos++] = '\n';
-                zenith::putchar('\n');
-                zenith::send(fd, sendBuf, sendPos);
-                sendPos = 0;
-            } else if (ev.ascii == '\b') {
-                if (sendPos > 0) {
-                    sendPos--;
-                    zenith::putchar('\b');
-                    zenith::putchar(' ');
-                    zenith::putchar('\b');
-                }
-            } else if (ev.ascii >= ' ' && sendPos < 254) {
-                sendBuf[sendPos++] = ev.ascii;
-                zenith::putchar(ev.ascii);
-            }
-        } else {
-            // No key and no data — yield to avoid busy-spinning
-            zenith::yield();
-        }
-    }
-
-    zenith::closesocket(fd);
-}
-
-static void cmd_run(const char* arg) {
-    arg = skip_spaces(arg);
-    if (*arg == '\0') {
-        zenith::print("Usage: run <filename> [args...]\n");
-        return;
-    }
-
-    // Split filename from arguments at first space
-    char filename[128];
-    int i = 0;
-    while (arg[i] && arg[i] != ' ' && i < 127) {
-        filename[i] = arg[i];
-        i++;
-    }
-    filename[i] = '\0';
-
-    const char* args = nullptr;
-    if (arg[i] == ' ') {
-        args = skip_spaces(arg + i);
-        if (*args == '\0') args = nullptr;
-    }
-
-    char path[128];
-    resolve_path(filename, path, sizeof(path));
-
-    int pid = zenith::spawn(path, args);
-    if (pid < 0) {
-        zenith::print("Error: failed to spawn '");
-        zenith::print(filename);
-        zenith::print("'\n");
-    } else {
-        zenith::waitpid(pid);
-    }
-}
+// ---- Builtin: cd ----
 
 static void cmd_cd(const char* arg) {
     arg = skip_spaces(arg);
 
-    // cd or cd / → go to root
+    // Strip trailing slashes from argument (ls shows dirs as "www/", user may type that)
+    static char argBuf[128];
+    int aLen = 0;
+    while (arg[aLen] && aLen < 127) { argBuf[aLen] = arg[aLen]; aLen++; }
+    argBuf[aLen] = '\0';
+    while (aLen > 0 && argBuf[aLen - 1] == '/') argBuf[--aLen] = '\0';
+    arg = argBuf;
+
+    // cd or cd / -> go to root
     if (*arg == '\0' || streq(arg, "/")) {
         cwd[0] = '\0';
         return;
     }
 
-    // cd .. → go up one level
+    // cd .. -> go up one level
     if (streq(arg, "..")) {
         int len = slen(cwd);
         int last = -1;
@@ -517,6 +256,8 @@ static void cmd_cd(const char* arg) {
     cwd[i] = '\0';
 }
 
+// ---- Builtin: man ----
+
 static void cmd_man(const char* arg) {
     arg = skip_spaces(arg);
     if (*arg == '\0') {
@@ -526,7 +267,7 @@ static void cmd_man(const char* arg) {
         return;
     }
 
-    int pid = zenith::spawn("0:/man.elf", arg);
+    int pid = zenith::spawn("0:/os/man.elf", arg);
     if (pid < 0) {
         zenith::print("Error: failed to start man viewer\n");
     } else {
@@ -534,101 +275,154 @@ static void cmd_man(const char* arg) {
     }
 }
 
-static void print_int_padded(uint64_t n) {
-    if (n < 10) zenith::putchar('0');
-    print_int(n);
+// ---- External command execution ----
+
+// Try to spawn an ELF at the given path. Returns true on success.
+static bool try_exec(const char* path, const char* args) {
+    // Check if the file exists before asking the kernel to load it
+    int h = zenith::open(path);
+    if (h < 0) return false;
+    zenith::close(h);
+
+    int pid = zenith::spawn(path, args);
+    if (pid < 0) return false;
+    zenith::waitpid(pid);
+    return true;
 }
 
-static const char* month_name(int m) {
-    static const char* months[] = {
-        "", "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December"
-    };
-    if (m >= 1 && m <= 12) return months[m];
-    return "?";
+// Check if a string already has a VFS drive prefix (e.g. "0:/")
+static bool has_drive_prefix(const char* s) {
+    return s[0] >= '0' && s[0] <= '9' && s[1] == ':';
 }
 
-static void cmd_date() {
-    Zenith::DateTime dt;
-    zenith::gettime(&dt);
+// Resolve arguments: expand relative file paths against CWD.
+// Tokens that already have a drive prefix (e.g. "0:/foo") are left as-is.
+// Everything before the first space-delimited token that looks like a path
+// option (starts with '-') is also left as-is.
+static void resolve_args(const char* args, char* out, int outMax) {
+    if (!args || !args[0]) { out[0] = '\0'; return; }
 
-    print_int(dt.Day);
-    zenith::putchar(' ');
-    zenith::print(month_name(dt.Month));
-    zenith::putchar(' ');
-    print_int(dt.Year);
-    zenith::print(", ");
-    print_int(dt.Hour);
-    zenith::putchar(':');
-    print_int_padded(dt.Minute);
-    zenith::putchar(':');
-    print_int_padded(dt.Second);
-    zenith::print(" UTC\n");
+    int o = 0;
+    const char* p = args;
+
+    while (*p && o < outMax - 1) {
+        // Skip spaces, copy them through
+        while (*p == ' ' && o < outMax - 1) { out[o++] = *p++; }
+        if (!*p) break;
+
+        // Extract the token
+        const char* tokStart = p;
+        int tokLen = 0;
+        while (p[tokLen] && p[tokLen] != ' ') tokLen++;
+
+        // Decide whether to resolve this token as a path.
+        // Don't resolve if it already has a drive prefix, or starts with '-'
+        bool resolve = cwd[0] && !has_drive_prefix(tokStart) && tokStart[0] != '-';
+
+        if (resolve) {
+            // Write "0:/<cwd>/<token>"
+            if (o + 3 < outMax) { out[o++] = '0'; out[o++] = ':'; out[o++] = '/'; }
+            int j = 0;
+            while (cwd[j] && o < outMax - 1) out[o++] = cwd[j++];
+            if (o < outMax - 1) out[o++] = '/';
+            for (int k = 0; k < tokLen && o < outMax - 1; k++) out[o++] = tokStart[k];
+        } else {
+            for (int k = 0; k < tokLen && o < outMax - 1; k++) out[o++] = tokStart[k];
+        }
+
+        p = tokStart + tokLen;
+    }
+    out[o] = '\0';
 }
 
-static void cmd_clear() {
-    zenith::print("\033[2J");   // Clear entire screen
-    zenith::print("\033[H");    // Move cursor to top-left
+static void exec_external(const char* cmd, const char* args) {
+    char path[256];
+
+    // Resolve arguments against CWD so external programs get full VFS paths
+    char resolvedArgs[512];
+    resolve_args(args, resolvedArgs, sizeof(resolvedArgs));
+    const char* finalArgs = resolvedArgs[0] ? resolvedArgs : nullptr;
+
+    // 1. Try 0:/os/<cmd>.elf
+    scopy(path, "0:/os/", sizeof(path));
+    scat(path, cmd, sizeof(path));
+    scat(path, ".elf", sizeof(path));
+    if (try_exec(path, finalArgs)) return;
+
+    // 2. Try 0:/games/<cmd>.elf
+    scopy(path, "0:/games/", sizeof(path));
+    scat(path, cmd, sizeof(path));
+    scat(path, ".elf", sizeof(path));
+    if (try_exec(path, finalArgs)) return;
+
+    // 3. Try 0:/<cwd>/<cmd>.elf (if cwd is set)
+    if (cwd[0]) {
+        scopy(path, "0:/", sizeof(path));
+        scat(path, cwd, sizeof(path));
+        scat(path, "/", sizeof(path));
+        scat(path, cmd, sizeof(path));
+        scat(path, ".elf", sizeof(path));
+        if (try_exec(path, finalArgs)) return;
+    }
+
+    // 4. Try 0:/<cmd>.elf
+    scopy(path, "0:/", sizeof(path));
+    scat(path, cmd, sizeof(path));
+    scat(path, ".elf", sizeof(path));
+    if (try_exec(path, finalArgs)) return;
+
+    // Not found
+    zenith::print(cmd);
+    zenith::print(": command not found\n");
 }
+
+// ---- Command dispatch ----
 
 static void process_command(const char* line) {
-    // Skip leading spaces
     line = skip_spaces(line);
     if (*line == '\0') return;
 
-    if (streq(line, "help")) {
+    // Parse command name and arguments
+    char cmd[128];
+    int i = 0;
+    while (line[i] && line[i] != ' ' && i < 127) {
+        cmd[i] = line[i];
+        i++;
+    }
+    cmd[i] = '\0';
+
+    const char* args = nullptr;
+    if (line[i] == ' ') {
+        args = skip_spaces(line + i);
+        if (*args == '\0') args = nullptr;
+    }
+
+    // Builtins
+    if (streq(cmd, "help")) {
         cmd_help();
-    } else if (streq(line, "info")) {
-        cmd_info();
-    } else if (starts_with(line, "ls ")) {
-        cmd_ls(line + 3);
-    } else if (streq(line, "ls")) {
-        cmd_ls("");
-    } else if (starts_with(line, "cd ")) {
-        cmd_cd(line + 3);
-    } else if (streq(line, "cd")) {
-        cmd_cd("");
-    } else if (starts_with(line, "man ")) {
-        cmd_man(line + 4);
-    } else if (streq(line, "man")) {
-        cmd_man("");
-    } else if (starts_with(line, "cat ")) {
-        cmd_cat(line + 4);
-    } else if (streq(line, "cat")) {
-        cmd_cat("");
-    } else if (starts_with(line, "run ")) {
-        cmd_run(line + 4);
-    } else if (streq(line, "run")) {
-        cmd_run("");
-    } else if (starts_with(line, "ping ")) {
-        cmd_ping(line + 5);
-    } else if (streq(line, "ping")) {
-        cmd_ping("");
-    } else if (starts_with(line, "tcpconnect ")) {
-        cmd_tcpconnect(line + 11);
-    } else if (streq(line, "tcpconnect")) {
-        cmd_tcpconnect("");
-    } else if (streq(line, "date")) {
-        cmd_date();
-    } else if (streq(line, "uptime")) {
-        cmd_uptime();
-    } else if (streq(line, "clear")) {
-        cmd_clear();
-    } else if (streq(line, "reset")) {
-        zenith::print("Rebooting...\n");
-        zenith::reset();
-    } else if (streq(line, "shutdown")) {
-        zenith::print("Shutting down...\n");
-        zenith::shutdown();
-    } else if (streq(line, "exit")) {
+    } else if (streq(cmd, "ls")) {
+        cmd_ls(args ? args : "");
+    } else if (streq(cmd, "cd")) {
+        cmd_cd(args ? args : "");
+    } else if (streq(cmd, "man")) {
+        cmd_man(args ? args : "");
+    } else if (streq(cmd, "exit")) {
         zenith::print("Goodbye.\n");
         zenith::exit(0);
     } else {
-        zenith::print("Unknown command: ");
-        zenith::print(line);
-        zenith::print("\nType 'help' for available commands.\n");
+        // External command -- pass full argument string
+        exec_external(cmd, args);
     }
 }
+
+// ---- Arrow key scancodes ----
+
+static constexpr uint8_t SC_UP    = 0x48;
+static constexpr uint8_t SC_DOWN  = 0x50;
+static constexpr uint8_t SC_LEFT  = 0x4B;
+static constexpr uint8_t SC_RIGHT = 0x4D;
+
+// ---- Entry point ----
 
 extern "C" void _start() {
     zenith::print("\n");
@@ -641,28 +435,69 @@ extern "C" void _start() {
 
     char line[256];
     int pos = 0;
+    int hist_nav = -1; // -1 = not navigating history
 
     prompt();
 
     while (true) {
-        char c = zenith::getchar();
+        if (!zenith::is_key_available()) {
+            zenith::yield();
+            continue;
+        }
 
-        if (c == '\n') {
+        Zenith::KeyEvent ev;
+        zenith::getkey(&ev);
+
+        if (!ev.pressed) continue;
+
+        // Arrow keys: ascii == 0, check scancode
+        if (ev.ascii == 0) {
+            if (ev.scancode == SC_UP) {
+                // Navigate to older history entry
+                int next = hist_nav + 1;
+                const char* entry = history_get(next);
+                if (entry) {
+                    hist_nav = next;
+                    replace_line(line, &pos, entry);
+                }
+            } else if (ev.scancode == SC_DOWN) {
+                // Navigate to newer history entry
+                if (hist_nav > 0) {
+                    hist_nav--;
+                    const char* entry = history_get(hist_nav);
+                    if (entry) {
+                        replace_line(line, &pos, entry);
+                    }
+                } else if (hist_nav == 0) {
+                    // Back to empty line
+                    hist_nav = -1;
+                    erase_input(pos);
+                    pos = 0;
+                    line[0] = '\0';
+                }
+            }
+            // Left/Right arrows: ignore for now (no cursor movement within line)
+            continue;
+        }
+
+        if (ev.ascii == '\n') {
             zenith::putchar('\n');
             line[pos] = '\0';
+            history_add(line);
             process_command(line);
             pos = 0;
+            hist_nav = -1;
             prompt();
-        } else if (c == '\b') {
+        } else if (ev.ascii == '\b') {
             if (pos > 0) {
                 pos--;
                 zenith::putchar('\b');
                 zenith::putchar(' ');
                 zenith::putchar('\b');
             }
-        } else if (c >= ' ' && pos < 255) {
-            line[pos++] = c;
-            zenith::putchar(c);
+        } else if (ev.ascii >= ' ' && pos < 255) {
+            line[pos++] = ev.ascii;
+            zenith::putchar(ev.ascii);
         }
     }
 }

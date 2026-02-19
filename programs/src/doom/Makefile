@@ -163,14 +163,14 @@ ALL_OBJS   := $(DOOM_OBJS) $(LOCAL_OBJS)
 
 # ---- Target ----
 
-TARGET := $(BINDIR)/doom.elf
+TARGET := $(BINDIR)/games/doom.elf
 
 .PHONY: all clean
 
 all: $(TARGET)
 
 $(TARGET): $(ALL_OBJS) $(LINK_LD) Makefile
-	mkdir -p $(BINDIR)
+	mkdir -p $(BINDIR)/games
 	$(LD) $(CFLAGS) $(LDFLAGS) $(ALL_OBJS) -o $@
 
 # DOOM source files (from doomgeneric directory)

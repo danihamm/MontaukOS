@@ -19,7 +19,9 @@ namespace Net::Udp {
     } __attribute__((packed));
 
     // Callback type for receiving UDP data
-    using RecvCallback = void(*)(uint32_t srcIp, uint16_t srcPort, const uint8_t* data, uint16_t length);
+    using RecvCallback = void(*)(uint32_t srcIp, uint16_t srcPort,
+                                  uint16_t dstPort,
+                                  const uint8_t* data, uint16_t length);
 
     // Initialize the UDP subsystem
     void Initialize();
