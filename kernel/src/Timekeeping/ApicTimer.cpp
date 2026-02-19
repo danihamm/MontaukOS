@@ -149,7 +149,11 @@ namespace Timekeeping {
     void Sleep(uint64_t ms) {
         uint64_t target = g_tickCount + ms;
         while (g_tickCount < target) {
-            asm volatile("hlt");
+            // Yield to other processes instead of hlt. Using hlt here causes
+            // a deadlock: if the timer ISR preempts us during hlt and context-
+            // switches away (via Tick → Schedule), EOI is never sent, so no
+            // more timer interrupts fire and any process doing hlt freezes.
+            Sched::Schedule();
         }
     }
 };

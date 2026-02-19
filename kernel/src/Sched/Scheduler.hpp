@@ -6,6 +6,7 @@
 
 #pragma once
 #include <cstdint>
+#include <Api/Syscall.hpp>
 
 namespace Sched {
 
@@ -39,6 +40,24 @@ namespace Sched {
         uint64_t userStackTop;    // User-space stack top
         uint64_t heapNext;        // Simple bump allocator for user heap
         char args[256];           // Command-line arguments (set by parent via Spawn)
+
+        // I/O redirection for GUI terminal
+        bool redirected = false;
+        int parentPid = -1;
+        uint8_t* outBuf = nullptr;   // 4KB ring: child writes (print/putchar), parent reads
+        uint32_t outHead = 0;
+        uint32_t outTail = 0;
+        uint8_t* inBuf = nullptr;    // 4KB ring: parent writes, child reads (getchar)
+        uint32_t inHead = 0;
+        uint32_t inTail = 0;
+        Zenith::KeyEvent keyBuf[64]; // parent injects, child reads (getkey/iskeyavailable)
+        uint32_t keyHead = 0;
+        uint32_t keyTail = 0;
+        static constexpr uint32_t IoBufSize = 4096;
+
+        // GUI terminal dimensions (set by desktop, read by SYS_TERMSIZE)
+        int termCols = 0;
+        int termRows = 0;
     };
 
     void Initialize();
@@ -59,5 +78,8 @@ namespace Sched {
 
     // Check if a process is still alive (Ready or Running)
     bool IsAlive(int pid);
+
+    // Find a process by PID (returns nullptr if not found or not alive)
+    Process* GetProcessByPid(int pid);
 
 }

@@ -256,4 +256,27 @@ namespace zenith {
         __builtin_unreachable();
     }
 
+    // Mouse
+    inline void mouse_state(Zenith::MouseState* out) { syscall1(Zenith::SYS_MOUSESTATE, (uint64_t)out); }
+    inline void set_mouse_bounds(int32_t maxX, int32_t maxY) {
+        syscall2(Zenith::SYS_SETMOUSEBOUNDS, (uint64_t)maxX, (uint64_t)maxY);
+    }
+
+    // I/O redirection
+    inline int spawn_redir(const char* path, const char* args = nullptr) {
+        return (int)syscall2(Zenith::SYS_SPAWN_REDIR, (uint64_t)path, (uint64_t)args);
+    }
+    inline int childio_read(int childPid, char* buf, int maxLen) {
+        return (int)syscall3(Zenith::SYS_CHILDIO_READ, (uint64_t)childPid, (uint64_t)buf, (uint64_t)maxLen);
+    }
+    inline int childio_write(int childPid, const char* data, int len) {
+        return (int)syscall3(Zenith::SYS_CHILDIO_WRITE, (uint64_t)childPid, (uint64_t)data, (uint64_t)len);
+    }
+    inline int childio_writekey(int childPid, const Zenith::KeyEvent* key) {
+        return (int)syscall2(Zenith::SYS_CHILDIO_WRITEKEY, (uint64_t)childPid, (uint64_t)key);
+    }
+    inline int childio_settermsz(int childPid, int cols, int rows) {
+        return (int)syscall3(Zenith::SYS_CHILDIO_SETTERMSZ, (uint64_t)childPid, (uint64_t)cols, (uint64_t)rows);
+    }
+
 }

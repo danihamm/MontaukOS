@@ -57,7 +57,7 @@ BINDIR := bin
 PROGRAMS := $(notdir $(wildcard src/*))
 
 # Programs with custom Makefiles (built separately).
-CUSTOM_BUILDS := doom fetch wiki
+CUSTOM_BUILDS := doom fetch wiki desktop
 SYSTEM_PROGRAMS := $(filter-out $(CUSTOM_BUILDS),$(PROGRAMS))
 
 # Build targets: system programs go to bin/os/, games are handled separately.
@@ -82,9 +82,9 @@ CA_CERTS := $(BINDIR)/etc/ca-certificates.crt
 # Home directory placeholder.
 HOMEKEEP := $(BINDIR)/home/.keep
 
-.PHONY: all clean doom fetch wiki bearssl libc
+.PHONY: all clean doom fetch wiki desktop icons bearssl libc
 
-all: bearssl libc $(TARGETS) fetch wiki doom $(GAME_DATA) $(MANDST) $(WWWDST) $(CA_CERTS) $(HOMEKEEP)
+all: bearssl libc $(TARGETS) fetch wiki doom desktop icons $(GAME_DATA) $(MANDST) $(WWWDST) $(CA_CERTS) $(HOMEKEEP)
 
 # Build BearSSL static library.
 bearssl:
@@ -101,6 +101,14 @@ fetch: bearssl libc
 # Build wiki via its own Makefile (depends on bearssl and libc).
 wiki: bearssl libc
 	$(MAKE) -C src/wiki
+
+# Build desktop via its own Makefile.
+desktop:
+	$(MAKE) -C src/desktop
+
+# Copy SVG icons for the desktop into bin/icons/.
+icons:
+	../scripts/copy_icons.sh
 
 # Build doom via its own Makefile.
 doom:
@@ -143,3 +151,4 @@ clean:
 	$(MAKE) -C lib/libc clean
 	$(MAKE) -C src/fetch clean
 	$(MAKE) -C src/doom clean
+	$(MAKE) -C src/desktop clean

@@ -17,6 +17,7 @@
 #include <Libraries/Memory.hpp>
 #include <Libraries/String.hpp>
 #include <Drivers/PS2/Keyboard.hpp>
+#include <Drivers/PS2/Mouse.hpp>
 #include <Net/Icmp.hpp>
 #include <Net/Dns.hpp>
 #include <Net/Socket.hpp>
@@ -53,11 +54,53 @@ namespace Zenith {
         return Sched::GetCurrentPid();
     }
 
+    static void RingWrite(uint8_t* buf, uint32_t& head, uint32_t /*tail*/, uint32_t size, uint8_t byte) {
+        buf[head] = byte;
+        head = (head + 1) % size;
+    }
+
+    static int RingRead(uint8_t* buf, uint32_t& head, uint32_t& tail, uint32_t size, uint8_t* out, int maxLen) {
+        int count = 0;
+        while (tail != head && count < maxLen) {
+            out[count++] = buf[tail];
+            tail = (tail + 1) % size;
+        }
+        return count;
+    }
+
+    // Find the process that owns the I/O ring buffers for a redirected process.
+    // If proc owns buffers itself (spawned via spawn_redir), returns proc.
+    // If proc inherited redirection (spawned via spawn from a redirected parent),
+    // follows parentPid to find the buffer owner.
+    static Sched::Process* GetRedirTarget(Sched::Process* proc) {
+        if (!proc || !proc->redirected) return nullptr;
+        if (proc->outBuf) return proc;  // owns buffers
+        return Sched::GetProcessByPid(proc->parentPid);
+    }
+
     static void Sys_Print(const char* text) {
+        auto* proc = Sched::GetCurrentProcessPtr();
+        if (proc && proc->redirected) {
+            auto* target = GetRedirTarget(proc);
+            if (target && target->outBuf) {
+                for (int i = 0; text[i]; i++) {
+                    RingWrite(target->outBuf, target->outHead, target->outTail, Sched::Process::IoBufSize, (uint8_t)text[i]);
+                }
+                return;
+            }
+        }
         Kt::Print(text);
     }
 
     static void Sys_Putchar(char c) {
+        auto* proc = Sched::GetCurrentProcessPtr();
+        if (proc && proc->redirected) {
+            auto* target = GetRedirTarget(proc);
+            if (target && target->outBuf) {
+                RingWrite(target->outBuf, target->outHead, target->outTail, Sched::Process::IoBufSize, (uint8_t)c);
+                return;
+            }
+        }
         Kt::Putchar(c);
     }
 
@@ -162,11 +205,29 @@ namespace Zenith {
     }
 
     static bool Sys_IsKeyAvailable() {
+        auto* proc = Sched::GetCurrentProcessPtr();
+        if (proc && proc->redirected) {
+            auto* target = GetRedirTarget(proc);
+            if (target) return target->keyHead != target->keyTail;
+        }
         return Drivers::PS2::Keyboard::IsKeyAvailable();
     }
 
     static void Sys_GetKey(KeyEvent* outEvent) {
         if (outEvent == nullptr) return;
+        auto* proc = Sched::GetCurrentProcessPtr();
+        if (proc && proc->redirected) {
+            auto* target = GetRedirTarget(proc);
+            if (target) {
+                // Wait for key in target's keyBuf ring
+                while (target->keyHead == target->keyTail) {
+                    Sched::Schedule();
+                }
+                *outEvent = target->keyBuf[target->keyTail];
+                target->keyTail = (target->keyTail + 1) % 64;
+                return;
+            }
+        }
         auto k = Drivers::PS2::Keyboard::GetKey();
         outEvent->scancode = k.Scancode;
         outEvent->ascii    = k.Ascii;
@@ -177,6 +238,19 @@ namespace Zenith {
     }
 
     static char Sys_GetChar() {
+        auto* proc = Sched::GetCurrentProcessPtr();
+        if (proc && proc->redirected) {
+            auto* target = GetRedirTarget(proc);
+            if (target && target->inBuf) {
+                // Wait for data in target's inBuf ring
+                while (target->inTail == target->inHead) {
+                    Sched::Schedule(); // yield until parent writes
+                }
+                uint8_t c = target->inBuf[target->inTail];
+                target->inTail = (target->inTail + 1) % Sched::Process::IoBufSize;
+                return (char)c;
+            }
+        }
         return Drivers::PS2::Keyboard::GetChar();
     }
 
@@ -249,7 +323,26 @@ namespace Zenith {
     }
 
     static int Sys_Spawn(const char* path, const char* args) {
-        return Sched::Spawn(path, args);
+        auto* parent = Sched::GetCurrentProcessPtr();
+        int childPid = Sched::Spawn(path, args);
+        if (childPid < 0) return childPid;
+
+        // Inherit I/O redirection: if the parent is redirected, the child
+        // is marked redirected too. It stores a parentPid pointing to the
+        // process that owns the actual ring buffers (the one spawned via
+        // spawn_redir). The child does NOT get its own buffers — Sys_Print
+        // et al. look up the buffer owner at write time.
+        if (parent && parent->redirected) {
+            auto* child = Sched::GetProcessByPid(childPid);
+            if (child) {
+                child->redirected = true;
+                // Point to the buffer owner: if parent owns buffers, target parent;
+                // if parent itself inherited, follow the chain.
+                child->parentPid = parent->outBuf ? parent->pid : parent->parentPid;
+            }
+        }
+
+        return childPid;
     }
 
     static int Sys_GetArgs(char* buf, uint64_t maxLen) {
@@ -264,6 +357,14 @@ namespace Zenith {
     }
 
     static uint64_t Sys_TermSize() {
+        // If the process is redirected to a GUI terminal, return those dimensions
+        auto* proc = Sched::GetCurrentProcessPtr();
+        if (proc && proc->redirected) {
+            auto* target = GetRedirTarget(proc);
+            if (target && target->termCols > 0 && target->termRows > 0) {
+                return ((uint64_t)target->termRows << 32) | ((uint64_t)target->termCols & 0xFFFFFFFF);
+            }
+        }
         size_t cols = 0, rows = 0;
         flanterm_get_dimensions(Kt::ctx, &cols, &rows);
         return (rows << 32) | (cols & 0xFFFFFFFF);
@@ -429,6 +530,81 @@ namespace Zenith {
         return (int64_t)len;
     }
 
+    // ---- Mouse syscalls ----
+
+    static void Sys_MouseState(MouseState* out) {
+        if (out == nullptr) return;
+        auto state = Drivers::PS2::Mouse::GetMouseState();
+        out->x = state.X;
+        out->y = state.Y;
+        out->scrollDelta = state.ScrollDelta;
+        out->buttons = state.Buttons;
+    }
+
+    static void Sys_SetMouseBounds(int32_t maxX, int32_t maxY) {
+        Drivers::PS2::Mouse::SetBounds(maxX, maxY);
+    }
+
+    // ---- I/O redirection syscalls ----
+
+    static int Sys_SpawnRedir(const char* path, const char* args) {
+        int childPid = Sched::Spawn(path, args);
+        if (childPid < 0) return -1;
+
+        auto* child = Sched::GetProcessByPid(childPid);
+        if (child == nullptr) return -1;
+
+        // Allocate ring buffers
+        void* outPage = Memory::g_pfa->AllocateZeroed();
+        void* inPage = Memory::g_pfa->AllocateZeroed();
+        if (!outPage || !inPage) return -1;
+
+        child->outBuf = (uint8_t*)outPage;
+        child->inBuf = (uint8_t*)inPage;
+        child->outHead = 0;
+        child->outTail = 0;
+        child->inHead = 0;
+        child->inTail = 0;
+        child->keyHead = 0;
+        child->keyTail = 0;
+        child->redirected = true;
+        child->parentPid = Sched::GetCurrentPid();
+
+        return childPid;
+    }
+
+    static int Sys_ChildIoRead(int childPid, char* buf, int maxLen) {
+        auto* child = Sched::GetProcessByPid(childPid);
+        if (child == nullptr || !child->redirected || !child->outBuf) return -1;
+        return RingRead(child->outBuf, child->outHead, child->outTail, Sched::Process::IoBufSize, (uint8_t*)buf, maxLen);
+    }
+
+    static int Sys_ChildIoWrite(int childPid, const char* data, int len) {
+        auto* child = Sched::GetProcessByPid(childPid);
+        if (child == nullptr || !child->redirected || !child->inBuf) return -1;
+        for (int i = 0; i < len; i++) {
+            RingWrite(child->inBuf, child->inHead, child->inTail, Sched::Process::IoBufSize, (uint8_t)data[i]);
+        }
+        return len;
+    }
+
+    static int Sys_ChildIoWriteKey(int childPid, const KeyEvent* key) {
+        if (key == nullptr) return -1;
+        auto* child = Sched::GetProcessByPid(childPid);
+        if (child == nullptr || !child->redirected) return -1;
+        child->keyBuf[child->keyHead] = *key;
+        child->keyHead = (child->keyHead + 1) % 64;
+        return 0;
+    }
+
+    static int Sys_ChildIoSetTermsz(int childPid, int cols, int rows) {
+        auto* child = Sched::GetProcessByPid(childPid);
+        if (child == nullptr || !child->redirected) return -1;
+        child->termCols = cols;
+        child->termRows = rows;
+        return 0;
+    }
+
     // ---- Dispatch ----
 
     extern "C" int64_t SyscallDispatch(SyscallFrame* frame) {
@@ -551,6 +727,22 @@ namespace Zenith {
                 return Sys_GetRandom((uint8_t*)frame->arg1, frame->arg2);
             case SYS_KLOG:
                 return Kt::ReadKernelLog((char*)frame->arg1, frame->arg2);
+            case SYS_MOUSESTATE:
+                Sys_MouseState((MouseState*)frame->arg1);
+                return 0;
+            case SYS_SETMOUSEBOUNDS:
+                Sys_SetMouseBounds((int32_t)frame->arg1, (int32_t)frame->arg2);
+                return 0;
+            case SYS_SPAWN_REDIR:
+                return (int64_t)Sys_SpawnRedir((const char*)frame->arg1, (const char*)frame->arg2);
+            case SYS_CHILDIO_READ:
+                return (int64_t)Sys_ChildIoRead((int)frame->arg1, (char*)frame->arg2, (int)frame->arg3);
+            case SYS_CHILDIO_WRITE:
+                return (int64_t)Sys_ChildIoWrite((int)frame->arg1, (const char*)frame->arg2, (int)frame->arg3);
+            case SYS_CHILDIO_WRITEKEY:
+                return (int64_t)Sys_ChildIoWriteKey((int)frame->arg1, (const KeyEvent*)frame->arg2);
+            case SYS_CHILDIO_SETTERMSZ:
+                return (int64_t)Sys_ChildIoSetTermsz((int)frame->arg1, (int)frame->arg2, (int)frame->arg3);
             default:
                 return -1;
         }
@@ -577,7 +769,7 @@ namespace Zenith {
         Hal::WriteMSR(Hal::IA32_FMASK, 0x200);
 
         Kt::KernelLogStream(Kt::OK, "Syscall") << "SYSCALL/SYSRET initialized (LSTAR="
-            << kcp::hex << (uint64_t)SyscallEntry << kcp::dec << ", 47 syscalls)";
+            << kcp::hex << (uint64_t)SyscallEntry << kcp::dec << ", 53 syscalls)";
     }
 
 }

@@ -57,6 +57,14 @@ namespace Zenith {
     static constexpr uint64_t SYS_TERMSCALE     = 43;
     static constexpr uint64_t SYS_RESOLVE        = 44;
     static constexpr uint64_t SYS_GETRANDOM     = 45;
+    static constexpr uint64_t SYS_KLOG           = 46;
+    static constexpr uint64_t SYS_MOUSESTATE     = 47;
+    static constexpr uint64_t SYS_SETMOUSEBOUNDS = 48;
+    static constexpr uint64_t SYS_SPAWN_REDIR    = 49;
+    static constexpr uint64_t SYS_CHILDIO_READ   = 50;
+    static constexpr uint64_t SYS_CHILDIO_WRITE  = 51;
+    static constexpr uint64_t SYS_CHILDIO_WRITEKEY = 52;
+    static constexpr uint64_t SYS_CHILDIO_SETTERMSZ = 53;
 
     static constexpr int SOCK_TCP = 1;
     static constexpr int SOCK_UDP = 2;
@@ -101,6 +109,13 @@ namespace Zenith {
         bool    shift;
         bool    ctrl;
         bool    alt;
+    };
+
+    struct MouseState {
+        int32_t  x;
+        int32_t  y;
+        int32_t  scrollDelta;
+        uint8_t  buttons;
     };
 
 }

@@ -153,8 +153,11 @@ extern "C" void _start() {
     // ---- Stage 1: Network configuration ----
     run_service("0:/os/dhcp.elf", "dhcp");
 
-    // ---- Stage 2: Interactive shell ----
-    run_service("0:/os/shell.elf", "shell");
+    // ---- Stage 2: Desktop environment (falls back to shell) ----
+    if (!run_service("0:/os/desktop.elf", "desktop")) {
+        log_warn("Desktop failed, falling back to shell");
+        run_service("0:/os/shell.elf", "shell");
+    }
 
     log_warn("All services exited");
 

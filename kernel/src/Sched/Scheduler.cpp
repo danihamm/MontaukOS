@@ -76,6 +76,18 @@ namespace Sched {
             processTable[i].userStackTop = 0;
             processTable[i].heapNext = 0;
             processTable[i].args[0] = '\0';
+            processTable[i].redirected = false;
+            processTable[i].parentPid = -1;
+            processTable[i].outBuf = nullptr;
+            processTable[i].outHead = 0;
+            processTable[i].outTail = 0;
+            processTable[i].inBuf = nullptr;
+            processTable[i].inHead = 0;
+            processTable[i].inTail = 0;
+            processTable[i].keyHead = 0;
+            processTable[i].keyTail = 0;
+            processTable[i].termCols = 0;
+            processTable[i].termRows = 0;
         }
 
         currentPid = -1;
@@ -198,6 +210,19 @@ namespace Sched {
             }
             proc.args[i] = '\0';
         }
+
+        proc.redirected = false;
+        proc.parentPid = -1;
+        proc.outBuf = nullptr;
+        proc.outHead = 0;
+        proc.outTail = 0;
+        proc.inBuf = nullptr;
+        proc.inHead = 0;
+        proc.inTail = 0;
+        proc.keyHead = 0;
+        proc.keyTail = 0;
+        proc.termCols = 0;
+        proc.termRows = 0;
 
         return proc.pid;
     }
@@ -324,6 +349,17 @@ namespace Sched {
             }
         }
         return false;
+    }
+
+    Process* GetProcessByPid(int pid) {
+        for (int i = 0; i < MaxProcesses; i++) {
+            if (processTable[i].pid == pid &&
+                (processTable[i].state == ProcessState::Ready ||
+                 processTable[i].state == ProcessState::Running)) {
+                return &processTable[i];
+            }
+        }
+        return nullptr;
     }
 
 }
