@@ -1,594 +1,19 @@
 /*
     * main.cpp
-    * ZenithOS Desktop Environment - window manager, compositor, and applications
+    * ZenithOS Desktop Environment - window manager, compositor, and run loop
     * Copyright (c) 2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
-#include <zenith/string.h>
-#include <zenith/heap.h>
-#include <gui/gui.hpp>
-#include <gui/framebuffer.hpp>
-#include <gui/font.hpp>
-#include <gui/draw.hpp>
-#include <gui/svg.hpp>
-#include <gui/widgets.hpp>
-#include <gui/window.hpp>
-#include <gui/terminal.hpp>
-#include <gui/desktop.hpp>
-
-// Placement new for freestanding environment
-inline void* operator new(unsigned long, void* p) { return p; }
-
-using namespace gui;
-
-// ============================================================================
-// Minimal snprintf (copied from init/main.cpp pattern)
-// ============================================================================
-
-using va_list = __builtin_va_list;
-#define va_start __builtin_va_start
-#define va_end   __builtin_va_end
-#define va_arg   __builtin_va_arg
-
-struct PfState { char* buf; int pos; int max; };
-
-static void pf_putc(PfState* st, char c) {
-    if (st->pos < st->max) st->buf[st->pos] = c;
-    st->pos++;
-}
-
-static void pf_putnum(PfState* st, unsigned long val, int base, int width, char pad, int neg) {
-    char tmp[24]; int i = 0;
-    const char* digits = "0123456789abcdef";
-    if (val == 0) { tmp[i++] = '0'; }
-    else { while (val > 0) { tmp[i++] = digits[val % base]; val /= base; } }
-    int total = (neg ? 1 : 0) + i;
-    if (neg && pad == '0') pf_putc(st, '-');
-    for (int w = total; w < width; w++) pf_putc(st, pad);
-    if (neg && pad != '0') pf_putc(st, '-');
-    while (i > 0) pf_putc(st, tmp[--i]);
-}
-
-static int snprintf(char* buf, int size, const char* fmt, ...) {
-    va_list ap; va_start(ap, fmt);
-    PfState st; st.buf = buf; st.pos = 0; st.max = size > 0 ? size - 1 : 0;
-    while (*fmt) {
-        if (*fmt != '%') { pf_putc(&st, *fmt++); continue; }
-        fmt++;
-        char pad = ' ';
-        if (*fmt == '0') { pad = '0'; fmt++; }
-        int width = 0;
-        while (*fmt >= '0' && *fmt <= '9') { width = width * 10 + (*fmt - '0'); fmt++; }
-        if (*fmt == 'l') fmt++;
-        switch (*fmt) {
-        case 'd': case 'i': {
-            long val = va_arg(ap, int);
-            int neg = 0; unsigned long uval;
-            if (val < 0) { neg = 1; uval = (unsigned long)(-val); } else uval = (unsigned long)val;
-            pf_putnum(&st, uval, 10, width, pad, neg); break;
-        }
-        case 'u': { unsigned val = va_arg(ap, unsigned); pf_putnum(&st, val, 10, width, pad, 0); break; }
-        case 'x': { unsigned val = va_arg(ap, unsigned); pf_putnum(&st, val, 16, width, pad, 0); break; }
-        case 's': {
-            const char* s = va_arg(ap, const char*); if (!s) s = "(null)";
-            int slen = 0; while (s[slen]) slen++;
-            for (int w = slen; w < width; w++) pf_putc(&st, ' ');
-            for (int j = 0; j < slen; j++) pf_putc(&st, s[j]);
-            break;
-        }
-        case 'c': { char c = (char)va_arg(ap, int); pf_putc(&st, c); break; }
-        case '%': pf_putc(&st, '%'); break;
-        default: pf_putc(&st, '%'); pf_putc(&st, *fmt); break;
-        }
-        if (*fmt) fmt++;
-    }
-    if (size > 0) { if (st.pos < size) st.buf[st.pos] = '\0'; else st.buf[size - 1] = '\0'; }
-    va_end(ap); return st.pos;
-}
-
-// ============================================================================
-// String helpers
-// ============================================================================
-
-static void str_append(char* dst, const char* src, int max) {
-    int len = zenith::slen(dst);
-    int i = 0;
-    while (src[i] && len < max - 1) {
-        dst[len++] = src[i++];
-    }
-    dst[len] = '\0';
-}
-
-// ============================================================================
-// File Manager Application
-// ============================================================================
-
-struct FileManagerState {
-    char current_path[256];
-    char entry_names[64][64];
-    int entry_count;
-    int selected;
-    int scroll_offset;
-    bool is_dir[64];
-};
-
-static void filemanager_read_dir(FileManagerState* fm) {
-    const char* names[64];
-    fm->entry_count = zenith::readdir(fm->current_path, names, 64);
-    if (fm->entry_count < 0) fm->entry_count = 0;
-    for (int i = 0; i < fm->entry_count; i++) {
-        zenith::strncpy(fm->entry_names[i], names[i], 63);
-        // Heuristic: entries ending with '/' or without '.' are directories
-        int len = zenith::slen(fm->entry_names[i]);
-        if (len > 0 && fm->entry_names[i][len - 1] == '/') {
-            fm->is_dir[i] = true;
-            fm->entry_names[i][len - 1] = '\0'; // strip trailing slash
-        } else {
-            // Check if entry has an extension (has a dot)
-            bool has_dot = false;
-            for (int j = 0; j < len; j++) {
-                if (fm->entry_names[i][j] == '.') { has_dot = true; break; }
-            }
-            fm->is_dir[i] = !has_dot;
-        }
-    }
-    fm->selected = -1;
-    fm->scroll_offset = 0;
-}
-
-static void filemanager_navigate(FileManagerState* fm, const char* name) {
-    // Build new path
-    int path_len = zenith::slen(fm->current_path);
-    if (path_len > 0 && fm->current_path[path_len - 1] != '/') {
-        str_append(fm->current_path, "/", 256);
-    }
-    str_append(fm->current_path, name, 256);
-    filemanager_read_dir(fm);
-}
-
-static void filemanager_go_up(FileManagerState* fm) {
-    int len = zenith::slen(fm->current_path);
-    if (len <= 3) return; // "0:/" is root
-
-    // Remove trailing slash if present
-    if (len > 0 && fm->current_path[len - 1] == '/') {
-        fm->current_path[len - 1] = '\0';
-        len--;
-    }
-
-    // Find last slash
-    int last_slash = -1;
-    for (int i = len - 1; i >= 0; i--) {
-        if (fm->current_path[i] == '/') { last_slash = i; break; }
-    }
-    if (last_slash >= 0) {
-        fm->current_path[last_slash + 1] = '\0';
-    }
-    filemanager_read_dir(fm);
-}
-
-static void filemanager_on_draw(Window* win, Framebuffer& fb) {
-    FileManagerState* fm = (FileManagerState*)win->app_data;
-    if (!fm) return;
-
-    Rect cr = win->content_rect();
-    int cw = cr.w;
-    int ch = cr.h;
-
-    // Render to content buffer
-    uint32_t* pixels = win->content;
-    uint32_t bg_px = colors::WINDOW_BG.to_pixel();
-    for (int i = 0; i < cw * ch; i++) pixels[i] = bg_px;
-
-    // Draw path bar at top (24px tall, light gray background)
-    uint32_t pathbar_px = Color::from_rgb(0xF0, 0xF0, 0xF0).to_pixel();
-    for (int y = 0; y < 24 && y < ch; y++)
-        for (int x = 0; x < cw; x++)
-            pixels[y * cw + x] = pathbar_px;
-
-    // Draw path text
-    {
-        int tx = 8;
-        int ty = 4;
-        uint32_t fg_px = colors::TEXT_COLOR.to_pixel();
-        for (int ci = 0; fm->current_path[ci] && tx + FONT_WIDTH <= cw; ci++) {
-            const uint8_t* glyph = &font_data[(unsigned char)fm->current_path[ci] * FONT_HEIGHT];
-            for (int fy = 0; fy < FONT_HEIGHT && ty + fy < ch; fy++) {
-                uint8_t bits = glyph[fy];
-                for (int fx = 0; fx < FONT_WIDTH; fx++) {
-                    if (bits & (0x80 >> fx)) {
-                        int dx = tx + fx;
-                        int dy = ty + fy;
-                        if (dx < cw && dy < ch)
-                            pixels[dy * cw + dx] = fg_px;
-                    }
-                }
-            }
-            tx += FONT_WIDTH;
-        }
-    }
-
-    // Draw separator line
-    uint32_t sep_px = colors::BORDER.to_pixel();
-    if (24 < ch) {
-        for (int x = 0; x < cw; x++)
-            pixels[24 * cw + x] = sep_px;
-    }
-
-    // Draw file entries
-    int item_height = 24;
-    int start_y = 26;
-    int visible_items = (ch - start_y) / item_height;
-
-    for (int i = fm->scroll_offset; i < fm->entry_count && (i - fm->scroll_offset) < visible_items; i++) {
-        int iy = start_y + (i - fm->scroll_offset) * item_height;
-        if (iy + item_height > ch) break;
-
-        // Highlight selected
-        if (i == fm->selected) {
-            uint32_t sel_px = colors::MENU_HOVER.to_pixel();
-            for (int y = iy; y < iy + item_height && y < ch; y++)
-                for (int x = 0; x < cw; x++)
-                    pixels[y * cw + x] = sel_px;
-        }
-
-        // Draw icon placeholder (small colored square)
-        uint32_t icon_px;
-        if (fm->is_dir[i]) {
-            icon_px = Color::from_rgb(0xFF, 0xBD, 0x2E).to_pixel(); // folder yellow
-        } else {
-            icon_px = Color::from_rgb(0x90, 0x90, 0x90).to_pixel(); // file gray
-        }
-        int icon_x = 8;
-        int icon_y = iy + 4;
-        for (int dy = 0; dy < 16 && icon_y + dy < ch; dy++)
-            for (int dx = 0; dx < 16 && icon_x + dx < cw; dx++)
-                pixels[(icon_y + dy) * cw + (icon_x + dx)] = icon_px;
-
-        // Draw entry name
-        int tx = 30;
-        int ty = iy + 4;
-        uint32_t text_px = colors::TEXT_COLOR.to_pixel();
-        for (int ci = 0; fm->entry_names[i][ci] && tx + FONT_WIDTH <= cw; ci++) {
-            const uint8_t* glyph = &font_data[(unsigned char)fm->entry_names[i][ci] * FONT_HEIGHT];
-            for (int fy = 0; fy < FONT_HEIGHT && ty + fy < ch; fy++) {
-                uint8_t bits = glyph[fy];
-                for (int fx = 0; fx < FONT_WIDTH; fx++) {
-                    if (bits & (0x80 >> fx)) {
-                        int dx = tx + fx;
-                        int dy = ty + fy;
-                        if (dx < cw && dy < ch)
-                            pixels[dy * cw + dx] = text_px;
-                    }
-                }
-            }
-            tx += FONT_WIDTH;
-        }
-    }
-}
-
-static void filemanager_on_mouse(Window* win, MouseEvent& ev) {
-    FileManagerState* fm = (FileManagerState*)win->app_data;
-    if (!fm) return;
-
-    Rect cr = win->content_rect();
-    int local_y = ev.y - cr.y;
-
-    if (ev.left_pressed()) {
-        int item_height = 24;
-        int start_y = 26;
-        int clicked_idx = fm->scroll_offset + (local_y - start_y) / item_height;
-
-        if (local_y >= start_y && clicked_idx >= 0 && clicked_idx < fm->entry_count) {
-            if (fm->selected == clicked_idx) {
-                // Double-click: navigate into directory
-                if (fm->is_dir[clicked_idx]) {
-                    filemanager_navigate(fm, fm->entry_names[clicked_idx]);
-                }
-            } else {
-                fm->selected = clicked_idx;
-            }
-        }
-    }
-
-    // Scroll handling
-    if (ev.scroll != 0) {
-        fm->scroll_offset -= ev.scroll;
-        if (fm->scroll_offset < 0) fm->scroll_offset = 0;
-        int max_off = fm->entry_count - ((cr.h - 26) / 24);
-        if (max_off < 0) max_off = 0;
-        if (fm->scroll_offset > max_off) fm->scroll_offset = max_off;
-    }
-}
-
-static void filemanager_on_key(Window* win, const Zenith::KeyEvent& key) {
-    FileManagerState* fm = (FileManagerState*)win->app_data;
-    if (!fm || !key.pressed) return;
-
-    if (key.ascii == '\b' || key.scancode == 0x0E) {
-        filemanager_go_up(fm);
-    } else if (key.scancode == 0x48) {
-        // Up arrow
-        if (fm->selected > 0) fm->selected--;
-    } else if (key.scancode == 0x50) {
-        // Down arrow
-        if (fm->selected < fm->entry_count - 1) fm->selected++;
-    } else if (key.ascii == '\n' || key.ascii == '\r') {
-        if (fm->selected >= 0 && fm->selected < fm->entry_count) {
-            if (fm->is_dir[fm->selected]) {
-                filemanager_navigate(fm, fm->entry_names[fm->selected]);
-            }
-        }
-    }
-}
-
-static void filemanager_on_close(Window* win) {
-    if (win->app_data) {
-        zenith::mfree(win->app_data);
-        win->app_data = nullptr;
-    }
-}
-
-// ============================================================================
-// System Info Application
-// ============================================================================
-
-struct SysInfoState {
-    Zenith::SysInfo sys_info;
-    Zenith::NetCfg net_cfg;
-    uint64_t uptime_ms;
-};
-
-static void draw_text_to_pixels(uint32_t* pixels, int pw, int ph,
-                                int tx, int ty, const char* text, uint32_t color_px) {
-    for (int i = 0; text[i] && tx + (i + 1) * FONT_WIDTH <= pw; i++) {
-        const uint8_t* glyph = &font_data[(unsigned char)text[i] * FONT_HEIGHT];
-        int cx = tx + i * FONT_WIDTH;
-        for (int fy = 0; fy < FONT_HEIGHT && ty + fy < ph; fy++) {
-            uint8_t bits = glyph[fy];
-            for (int fx = 0; fx < FONT_WIDTH; fx++) {
-                if (bits & (0x80 >> fx)) {
-                    int dx = cx + fx;
-                    int dy = ty + fy;
-                    if (dx >= 0 && dx < pw && dy >= 0 && dy < ph)
-                        pixels[dy * pw + dx] = color_px;
-                }
-            }
-        }
-    }
-}
-
-static void sysinfo_on_draw(Window* win, Framebuffer& fb) {
-    SysInfoState* si = (SysInfoState*)win->app_data;
-    if (!si) return;
-
-    // Refresh uptime
-    si->uptime_ms = zenith::get_milliseconds();
-
-    Rect cr = win->content_rect();
-    int cw = cr.w;
-    int ch = cr.h;
-    uint32_t* pixels = win->content;
-
-    // Fill background
-    uint32_t bg_px = colors::WINDOW_BG.to_pixel();
-    for (int i = 0; i < cw * ch; i++) pixels[i] = bg_px;
-
-    uint32_t text_px = colors::TEXT_COLOR.to_pixel();
-    uint32_t accent_px = colors::ACCENT.to_pixel();
-    int y = 16;
-    int x = 16;
-    char line[128];
-
-    // Title
-    draw_text_to_pixels(pixels, cw, ch, x, y, "System Information", accent_px);
-    y += FONT_HEIGHT + 12;
-
-    // Separator
-    uint32_t sep_px = colors::BORDER.to_pixel();
-    for (int sx = x; sx < cw - x && y < ch; sx++)
-        pixels[y * cw + sx] = sep_px;
-    y += 8;
-
-    // OS Name
-    snprintf(line, sizeof(line), "OS:       %s", si->sys_info.osName);
-    draw_text_to_pixels(pixels, cw, ch, x, y, line, text_px);
-    y += FONT_HEIGHT + 6;
-
-    // OS Version
-    snprintf(line, sizeof(line), "Version:  %s", si->sys_info.osVersion);
-    draw_text_to_pixels(pixels, cw, ch, x, y, line, text_px);
-    y += FONT_HEIGHT + 6;
-
-    // API Version
-    snprintf(line, sizeof(line), "API:      %d", (int)si->sys_info.apiVersion);
-    draw_text_to_pixels(pixels, cw, ch, x, y, line, text_px);
-    y += FONT_HEIGHT + 6;
-
-    // Max Processes
-    snprintf(line, sizeof(line), "Max PIDs: %d", (int)si->sys_info.maxProcesses);
-    draw_text_to_pixels(pixels, cw, ch, x, y, line, text_px);
-    y += FONT_HEIGHT + 12;
-
-    // Uptime
-    int up_sec = (int)(si->uptime_ms / 1000);
-    int up_min = up_sec / 60;
-    int up_hr = up_min / 60;
-    snprintf(line, sizeof(line), "Uptime:   %d:%02d:%02d", up_hr, up_min % 60, up_sec % 60);
-    draw_text_to_pixels(pixels, cw, ch, x, y, line, text_px);
-    y += FONT_HEIGHT + 12;
-
-    // Network section
-    draw_text_to_pixels(pixels, cw, ch, x, y, "Network", accent_px);
-    y += FONT_HEIGHT + 8;
-
-    for (int sx = x; sx < cw - x && y < ch; sx++)
-        pixels[y * cw + sx] = sep_px;
-    y += 8;
-
-    // IP Address
-    uint32_t ip = si->net_cfg.ipAddress;
-    snprintf(line, sizeof(line), "IP:       %d.%d.%d.%d",
-        (int)(ip & 0xFF), (int)((ip >> 8) & 0xFF),
-        (int)((ip >> 16) & 0xFF), (int)((ip >> 24) & 0xFF));
-    draw_text_to_pixels(pixels, cw, ch, x, y, line, text_px);
-    y += FONT_HEIGHT + 6;
-
-    // Subnet
-    uint32_t mask = si->net_cfg.subnetMask;
-    snprintf(line, sizeof(line), "Subnet:   %d.%d.%d.%d",
-        (int)(mask & 0xFF), (int)((mask >> 8) & 0xFF),
-        (int)((mask >> 16) & 0xFF), (int)((mask >> 24) & 0xFF));
-    draw_text_to_pixels(pixels, cw, ch, x, y, line, text_px);
-    y += FONT_HEIGHT + 6;
-
-    // Gateway
-    uint32_t gw = si->net_cfg.gateway;
-    snprintf(line, sizeof(line), "Gateway:  %d.%d.%d.%d",
-        (int)(gw & 0xFF), (int)((gw >> 8) & 0xFF),
-        (int)((gw >> 16) & 0xFF), (int)((gw >> 24) & 0xFF));
-    draw_text_to_pixels(pixels, cw, ch, x, y, line, text_px);
-    y += FONT_HEIGHT + 6;
-
-    // DNS
-    uint32_t dns = si->net_cfg.dnsServer;
-    snprintf(line, sizeof(line), "DNS:      %d.%d.%d.%d",
-        (int)(dns & 0xFF), (int)((dns >> 8) & 0xFF),
-        (int)((dns >> 16) & 0xFF), (int)((dns >> 24) & 0xFF));
-    draw_text_to_pixels(pixels, cw, ch, x, y, line, text_px);
-    y += FONT_HEIGHT + 6;
-
-    // MAC Address
-    snprintf(line, sizeof(line), "MAC:      %02x:%02x:%02x:%02x:%02x:%02x",
-        (unsigned)si->net_cfg.macAddress[0], (unsigned)si->net_cfg.macAddress[1],
-        (unsigned)si->net_cfg.macAddress[2], (unsigned)si->net_cfg.macAddress[3],
-        (unsigned)si->net_cfg.macAddress[4], (unsigned)si->net_cfg.macAddress[5]);
-    draw_text_to_pixels(pixels, cw, ch, x, y, line, text_px);
-}
-
-static void sysinfo_on_close(Window* win) {
-    if (win->app_data) {
-        zenith::mfree(win->app_data);
-        win->app_data = nullptr;
-    }
-}
-
-// ============================================================================
-// Terminal Application
-// ============================================================================
-
-static void terminal_on_draw(Window* win, Framebuffer& fb) {
-    TerminalState* ts = (TerminalState*)win->app_data;
-    if (!ts) return;
-
-    Rect cr = win->content_rect();
-    terminal_render(ts, win->content, cr.w, cr.h);
-}
-
-static void terminal_on_mouse(Window* win, MouseEvent& ev) {
-    // Terminal doesn't need mouse handling for now
-}
-
-static void terminal_on_key(Window* win, const Zenith::KeyEvent& key) {
-    TerminalState* ts = (TerminalState*)win->app_data;
-    if (!ts) return;
-    terminal_handle_key(ts, key);
-}
-
-static void terminal_on_close(Window* win) {
-    TerminalState* ts = (TerminalState*)win->app_data;
-    if (ts) {
-        if (ts->cells) zenith::mfree(ts->cells);
-        zenith::mfree(ts);
-        win->app_data = nullptr;
-    }
-}
-
-// ============================================================================
-// Application Launchers
-// ============================================================================
-
-static DesktopState* g_desktop;
-
-static void open_terminal(DesktopState* ds) {
-    int idx = desktop_create_window(ds, "Terminal", 200, 80, 648, 480);
-    if (idx < 0) return;
-
-    Window* win = &ds->windows[idx];
-    Rect cr = win->content_rect();
-    int cols = cr.w / FONT_WIDTH;
-    int rows = cr.h / FONT_HEIGHT;
-
-    TerminalState* ts = (TerminalState*)zenith::malloc(sizeof(TerminalState));
-    zenith::memset(ts, 0, sizeof(TerminalState));
-    terminal_init(ts, cols, rows);
-
-    win->app_data = ts;
-    win->on_draw = terminal_on_draw;
-    win->on_mouse = terminal_on_mouse;
-    win->on_key = terminal_on_key;
-    win->on_close = terminal_on_close;
-}
-
-static void open_filemanager(DesktopState* ds) {
-    int idx = desktop_create_window(ds, "Files", 150, 120, 500, 400);
-    if (idx < 0) return;
-
-    Window* win = &ds->windows[idx];
-    FileManagerState* fm = (FileManagerState*)zenith::malloc(sizeof(FileManagerState));
-    zenith::memset(fm, 0, sizeof(FileManagerState));
-    zenith::strcpy(fm->current_path, "0:/");
-    fm->selected = -1;
-    filemanager_read_dir(fm);
-
-    win->app_data = fm;
-    win->on_draw = filemanager_on_draw;
-    win->on_mouse = filemanager_on_mouse;
-    win->on_key = filemanager_on_key;
-    win->on_close = filemanager_on_close;
-}
-
-static void open_sysinfo(DesktopState* ds) {
-    int idx = desktop_create_window(ds, "System Info", 300, 100, 400, 380);
-    if (idx < 0) return;
-
-    Window* win = &ds->windows[idx];
-    SysInfoState* si = (SysInfoState*)zenith::malloc(sizeof(SysInfoState));
-    zenith::memset(si, 0, sizeof(SysInfoState));
-    zenith::get_info(&si->sys_info);
-    zenith::get_netcfg(&si->net_cfg);
-    si->uptime_ms = zenith::get_milliseconds();
-
-    win->app_data = si;
-    win->on_draw = sysinfo_on_draw;
-    win->on_mouse = nullptr;
-    win->on_key = nullptr;
-    win->on_close = sysinfo_on_close;
-}
-
-// App menu click callbacks
-static void on_click_terminal(void* ud) {
-    DesktopState* ds = (DesktopState*)ud;
-    open_terminal(ds);
-    ds->app_menu_open = false;
-}
-
-static void on_click_filemanager(void* ud) {
-    DesktopState* ds = (DesktopState*)ud;
-    open_filemanager(ds);
-    ds->app_menu_open = false;
-}
-
-static void on_click_sysinfo(void* ud) {
-    DesktopState* ds = (DesktopState*)ud;
-    open_sysinfo(ds);
-    ds->app_menu_open = false;
-}
+#include "apps_common.hpp"
 
 // ============================================================================
 // Desktop Implementation
 // ============================================================================
+
+static const char* month_names[] = {
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+};
 
 void gui::desktop_init(DesktopState* ds) {
     ds->screen_w = ds->fb.width();
@@ -606,7 +31,7 @@ void gui::desktop_init(DesktopState* ds) {
     zenith::memset(&ds->mouse, 0, sizeof(Zenith::MouseState));
     zenith::set_mouse_bounds(ds->screen_w - 1, ds->screen_h - 1);
 
-    // Load SVG icons (filenames match those copied by scripts/copy_icons.sh)
+    // Load SVG icons
     ds->icon_terminal    = svg_load("0:/icons/utilities-terminal-symbolic.svg",        20, 20, colors::ICON_COLOR);
     ds->icon_filemanager = svg_load("0:/icons/system-file-manager-symbolic.svg",       20, 20, colors::ICON_COLOR);
     ds->icon_sysinfo     = svg_load("0:/icons/preferences-desktop-apps-symbolic.svg",  20, 20, colors::ICON_COLOR);
@@ -614,9 +39,21 @@ void gui::desktop_init(DesktopState* ds) {
     ds->icon_folder      = svg_load("0:/icons/folder-symbolic.svg",                    16, 16, Color::from_rgb(0xFF, 0xBD, 0x2E));
     ds->icon_file        = svg_load("0:/icons/text-x-generic-symbolic.svg",            16, 16, colors::ICON_COLOR);
     ds->icon_computer    = svg_load("0:/icons/computer-symbolic.svg",                  20, 20, colors::ICON_COLOR);
+    ds->icon_network     = svg_load("0:/icons/network-wired-symbolic.svg",             16, 16, colors::PANEL_TEXT);
+    ds->icon_calculator  = svg_load("0:/icons/accessories-calculator-symbolic.svg",    20, 20, colors::ICON_COLOR);
+    ds->icon_texteditor  = svg_load("0:/icons/accessories-text-editor-symbolic.svg",   20, 20, colors::ICON_COLOR);
+    ds->icon_go_up       = svg_load("0:/icons/go-up-symbolic.svg",                    16, 16, colors::ICON_COLOR);
+    ds->icon_go_back     = svg_load("0:/icons/go-previous-symbolic.svg",              16, 16, colors::ICON_COLOR);
+    ds->icon_go_forward  = svg_load("0:/icons/go-next-symbolic.svg",                  16, 16, colors::ICON_COLOR);
+    ds->icon_save        = svg_load("0:/icons/document-save-symbolic.svg",            16, 16, colors::ICON_COLOR);
+    ds->icon_home        = svg_load("0:/icons/user-home-symbolic.svg",                16, 16, colors::ICON_COLOR);
+    ds->icon_exec        = svg_load("0:/icons/application-x-executable-symbolic.svg", 16, 16, Color::from_rgb(0x4E, 0x9A, 0x06));
 
-    // Open initial terminal window
-    open_terminal(ds);
+    ds->net_popup_open = false;
+    zenith::get_netcfg(&ds->cached_net_cfg);
+    ds->net_cfg_last_poll = zenith::get_milliseconds();
+    ds->net_icon_rect = {0, 0, 0, 0};
+
 }
 
 int gui::desktop_create_window(DesktopState* ds, const char* title, int x, int y, int w, int h) {
@@ -648,6 +85,7 @@ int gui::desktop_create_window(DesktopState* ds, const char* title, int x, int y
     win->on_mouse = nullptr;
     win->on_key = nullptr;
     win->on_close = nullptr;
+    win->on_poll = nullptr;
     win->app_data = nullptr;
 
     // Unfocus previous window
@@ -779,8 +217,17 @@ void gui::desktop_draw_panel(DesktopState* ds) {
     Framebuffer& fb = ds->fb;
     int sw = ds->screen_w;
 
-    // Panel background
-    fb.fill_rect(0, 0, sw, PANEL_HEIGHT, colors::PANEL_BG);
+    // Panel gradient background (slightly lighter at top)
+    for (int y = 0; y < PANEL_HEIGHT; y++) {
+        int t = y * 255 / PANEL_HEIGHT;
+        uint8_t r = colors::PANEL_BG.r + (10 - t * 10 / 255);
+        uint8_t g = colors::PANEL_BG.g + (10 - t * 10 / 255);
+        uint8_t b = colors::PANEL_BG.b + (10 - t * 10 / 255);
+        fb.fill_rect(0, y, sw, 1, Color::from_rgb(r, g, b));
+    }
+
+    // Bottom highlight line
+    fb.fill_rect(0, PANEL_HEIGHT - 1, sw, 1, Color::from_rgba(0xFF, 0xFF, 0xFF, 0x10));
 
     // App menu button (left side)
     int btn_x = 4;
@@ -788,13 +235,11 @@ void gui::desktop_draw_panel(DesktopState* ds) {
     int btn_w = 28;
     int btn_h = 28;
 
-    // Draw grid icon for app menu (3x3 dots)
     if (ds->icon_appmenu.pixels) {
         int ix = btn_x + (btn_w - ds->icon_appmenu.width) / 2;
         int iy = btn_y + (btn_h - ds->icon_appmenu.height) / 2;
         fb.blit_alpha(ix, iy, ds->icon_appmenu.width, ds->icon_appmenu.height, ds->icon_appmenu.pixels);
     } else {
-        // Fallback: draw 3x3 grid of small squares
         for (int gr = 0; gr < 3; gr++) {
             for (int gc = 0; gc < 3; gc++) {
                 int dx = btn_x + 6 + gc * 6;
@@ -804,7 +249,7 @@ void gui::desktop_draw_panel(DesktopState* ds) {
         }
     }
 
-    // Window indicator buttons (center area)
+    // Window indicator pills (center area)
     int indicator_x = 40;
     for (int i = 0; i < ds->window_count; i++) {
         Window* win = &ds->windows[i];
@@ -815,11 +260,17 @@ void gui::desktop_draw_panel(DesktopState* ds) {
         int iw = tw + pad * 2;
         if (iw > 150) iw = 150;
 
-        Color btn_bg = (i == ds->focused_window)
-            ? Color::from_rgba(0xFF, 0xFF, 0xFF, 0x30)
-            : Color::from_rgba(0xFF, 0xFF, 0xFF, 0x10);
+        // Pre-blended indicator pill colors (opaque, blended against PANEL_BG)
+        Color pill_bg = (i == ds->focused_window)
+            ? colors::PANEL_INDICATOR_ACTIVE
+            : colors::PANEL_INDICATOR_INACTIVE;
 
-        fb.fill_rect_alpha(indicator_x, 4, iw, 24, btn_bg);
+        fill_rounded_rect(fb, indicator_x, 4, iw, 24, 6, pill_bg);
+
+        // Active window accent underline bar
+        if (i == ds->focused_window) {
+            fb.fill_rect(indicator_x + 4, 26, iw - 8, 2, colors::ACCENT);
+        }
 
         // Truncate title if too long
         char short_title[20];
@@ -832,50 +283,104 @@ void gui::desktop_draw_panel(DesktopState* ds) {
         indicator_x += iw + 4;
     }
 
-    // Clock (right side)
+    // Date + Clock (right side)
     Zenith::DateTime dt;
     zenith::gettime(&dt);
+
     char clock_str[8];
     snprintf(clock_str, sizeof(clock_str), "%02d:%02d", (int)dt.Hour, (int)dt.Minute);
     int clock_w = text_width(clock_str);
     int clock_x = sw - clock_w - 12;
     int clock_y = (PANEL_HEIGHT - FONT_HEIGHT) / 2;
     draw_text(fb, clock_x, clock_y, clock_str, colors::PANEL_TEXT);
+
+    // Date before clock
+    char date_str[12];
+    int month_idx = dt.Month > 0 && dt.Month <= 12 ? dt.Month - 1 : 0;
+    snprintf(date_str, sizeof(date_str), "%s %d", month_names[month_idx], (int)dt.Day);
+    int date_w = text_width(date_str);
+    int date_x = clock_x - date_w - 16;
+    draw_text(fb, date_x, clock_y, date_str, colors::PANEL_TEXT);
+
+    // Network icon (to the left of the date)
+    uint64_t now = zenith::get_milliseconds();
+    if (now - ds->net_cfg_last_poll > 5000) {
+        zenith::get_netcfg(&ds->cached_net_cfg);
+        ds->net_cfg_last_poll = now;
+    }
+
+    int net_icon_x = date_x - 16 - 12;
+    int net_icon_y = (PANEL_HEIGHT - 16) / 2;
+    ds->net_icon_rect = {net_icon_x, net_icon_y, 16, 16};
+
+    if (ds->icon_network.pixels) {
+        if (ds->cached_net_cfg.ipAddress == 0) {
+            uint32_t* src = ds->icon_network.pixels;
+            int npx = 16 * 16;
+            uint32_t tinted[256];
+            for (int p = 0; p < npx; p++) {
+                uint32_t px = src[p];
+                uint8_t a = (px >> 24) & 0xFF;
+                tinted[p] = ((uint32_t)a << 24) | 0x004444CC;
+            }
+            fb.blit_alpha(net_icon_x, net_icon_y, 16, 16, tinted);
+        } else {
+            fb.blit_alpha(net_icon_x, net_icon_y, ds->icon_network.width, ds->icon_network.height, ds->icon_network.pixels);
+        }
+    }
 }
+
+// ============================================================================
+// App Menu (5 items with separator and rounded corners)
+// ============================================================================
+
+static constexpr int MENU_ITEM_COUNT = 6;
+static constexpr int MENU_W = 220;
+static constexpr int MENU_ITEM_H = 40;
 
 static void desktop_draw_app_menu(DesktopState* ds) {
     Framebuffer& fb = ds->fb;
 
     int menu_x = 4;
     int menu_y = PANEL_HEIGHT + 2;
-    int menu_w = 200;
-    int item_h = 36;
-    int menu_h = item_h * 3 + 8;
+    int menu_h = MENU_ITEM_H * MENU_ITEM_COUNT + 10; // +10 for padding + separator
 
     // Menu shadow
-    draw_shadow(fb, menu_x, menu_y, menu_w, menu_h, 4, colors::SHADOW);
+    draw_shadow(fb, menu_x, menu_y, MENU_W, menu_h, 4, colors::SHADOW);
 
-    // Menu background
-    fb.fill_rect(menu_x, menu_y, menu_w, menu_h, colors::MENU_BG);
-    draw_rect(fb, menu_x, menu_y, menu_w, menu_h, colors::BORDER);
+    // Menu background with rounded corners
+    fill_rounded_rect(fb, menu_x, menu_y, MENU_W, menu_h, 8, colors::MENU_BG);
+    draw_rect(fb, menu_x, menu_y, MENU_W, menu_h, colors::BORDER);
 
     // Menu items
     struct MenuItem {
         const char* label;
         SvgIcon* icon;
     };
-    MenuItem items[3] = {
+    MenuItem items[MENU_ITEM_COUNT] = {
         { "Terminal",     &ds->icon_terminal },
         { "Files",        &ds->icon_filemanager },
-        { "System Info",  &ds->icon_sysinfo }
+        { "System Info",  &ds->icon_sysinfo },
+        { "Calculator",   &ds->icon_calculator },
+        { "Text Editor",  &ds->icon_texteditor },
+        { "Kernel Log",   &ds->icon_terminal },
     };
 
     int mx = ds->mouse.x;
     int my = ds->mouse.y;
 
-    for (int i = 0; i < 3; i++) {
-        int iy = menu_y + 4 + i * item_h;
-        Rect item_rect = {menu_x + 4, iy, menu_w - 8, item_h};
+    for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+        int iy = menu_y + 4 + i * MENU_ITEM_H;
+
+        // Thin separator line after System Info (before utility apps)
+        if (i == 3) {
+            int sep_y = iy - 1;
+            for (int sx = menu_x + 8; sx < menu_x + MENU_W - 8; sx++)
+                fb.put_pixel(sx, sep_y, colors::BORDER);
+            iy += 1;
+        }
+
+        Rect item_rect = {menu_x + 4, iy, MENU_W - 8, MENU_ITEM_H};
 
         // Hover highlight
         if (item_rect.contains(mx, my)) {
@@ -884,32 +389,106 @@ static void desktop_draw_app_menu(DesktopState* ds) {
 
         // Icon
         int icon_x = item_rect.x + 8;
-        int icon_y = item_rect.y + (item_h - 20) / 2;
+        int icon_y = item_rect.y + (MENU_ITEM_H - 20) / 2;
         if (items[i].icon && items[i].icon->pixels) {
             fb.blit_alpha(icon_x, icon_y, items[i].icon->width, items[i].icon->height, items[i].icon->pixels);
         }
 
         // Label
         int tx = icon_x + 28;
-        int ty = item_rect.y + (item_h - FONT_HEIGHT) / 2;
+        int ty = item_rect.y + (MENU_ITEM_H - FONT_HEIGHT) / 2;
         draw_text(fb, tx, ty, items[i].label, colors::TEXT_COLOR);
     }
+}
+
+static void desktop_draw_net_popup(DesktopState* ds) {
+    Framebuffer& fb = ds->fb;
+
+    int popup_w = 220;
+    int popup_h = 130;
+    int popup_x = ds->net_icon_rect.x + ds->net_icon_rect.w - popup_w;
+    int popup_y = PANEL_HEIGHT + 2;
+    if (popup_x < 4) popup_x = 4;
+
+    draw_shadow(fb, popup_x, popup_y, popup_w, popup_h, 4, colors::SHADOW);
+    fb.fill_rect(popup_x, popup_y, popup_w, popup_h, colors::MENU_BG);
+    draw_rect(fb, popup_x, popup_y, popup_w, popup_h, colors::BORDER);
+
+    int tx = popup_x + 12;
+    int ty = popup_y + 10;
+    int line_h = FONT_HEIGHT + 6;
+    char line[64];
+
+    Zenith::NetCfg& nc = ds->cached_net_cfg;
+
+    if (nc.ipAddress != 0) {
+        char ipbuf[20];
+        format_ip(ipbuf, nc.ipAddress);
+        snprintf(line, sizeof(line), "IP:      %s", ipbuf);
+    } else {
+        snprintf(line, sizeof(line), "IP:      Not connected");
+    }
+    draw_text(fb, tx, ty, line, colors::TEXT_COLOR);
+    ty += line_h;
+
+    char buf[20];
+    format_ip(buf, nc.subnetMask);
+    snprintf(line, sizeof(line), "Subnet:  %s", buf);
+    draw_text(fb, tx, ty, line, colors::TEXT_COLOR);
+    ty += line_h;
+
+    format_ip(buf, nc.gateway);
+    snprintf(line, sizeof(line), "Gateway: %s", buf);
+    draw_text(fb, tx, ty, line, colors::TEXT_COLOR);
+    ty += line_h;
+
+    format_ip(buf, nc.dnsServer);
+    snprintf(line, sizeof(line), "DNS:     %s", buf);
+    draw_text(fb, tx, ty, line, colors::TEXT_COLOR);
+    ty += line_h;
+
+    format_mac(buf, nc.macAddress);
+    snprintf(line, sizeof(line), "MAC:     %s", buf);
+    draw_text(fb, tx, ty, line, colors::TEXT_COLOR);
 }
 
 void gui::desktop_compose(DesktopState* ds) {
     Framebuffer& fb = ds->fb;
 
-    // Desktop background
-    fb.clear(colors::DESKTOP_BG);
+    // Desktop background gradient
+    int sw = ds->screen_w;
+    int sh = ds->screen_h;
+    int grad_start = PANEL_HEIGHT;
+    int grad_range = sh - grad_start;
+    if (grad_range < 1) grad_range = 1;
 
-    // Draw windows from bottom to top (index 0 = bottom)
+    uint32_t* buf = fb.buffer();
+    int pitch = fb.pitch();
+
+    for (int y = 0; y < sh; y++) {
+        uint32_t* row = (uint32_t*)((uint8_t*)buf + y * pitch);
+        if (y < grad_start) {
+            // Panel area - will be overwritten by panel drawing
+            uint32_t px = colors::PANEL_BG.to_pixel();
+            for (int x = 0; x < sw; x++) row[x] = px;
+        } else {
+            int t = y - grad_start;
+            uint8_t r = 0xD0 - (0xD0 - 0xA0) * t / grad_range;
+            uint8_t g = 0xD8 - (0xD8 - 0xA8) * t / grad_range;
+            uint8_t b = 0xE8 - (0xE8 - 0xB8) * t / grad_range;
+            uint32_t px = 0xFF000000 | ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+            for (int x = 0; x < sw; x++) row[x] = px;
+        }
+    }
+
+    // Draw windows from bottom to top
     for (int i = 0; i < ds->window_count; i++) {
         if (ds->windows[i].state != WIN_MINIMIZED && ds->windows[i].state != WIN_CLOSED) {
             desktop_draw_window(ds, i);
         }
     }
 
-    // Draw panel on top of everything
+    // Draw panel on top
     desktop_draw_panel(ds);
 
     // Draw app menu if open
@@ -917,7 +496,12 @@ void gui::desktop_compose(DesktopState* ds) {
         desktop_draw_app_menu(ds);
     }
 
-    // Draw cursor last (on top of everything)
+    // Draw network popup if open
+    if (ds->net_popup_open) {
+        desktop_draw_net_popup(ds);
+    }
+
+    // Draw cursor last
     draw_cursor(fb, ds->mouse.x, ds->mouse.y);
 }
 
@@ -930,7 +514,6 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
     bool left_held = (buttons & 0x01);
     bool left_released = !(buttons & 0x01) && (prev & 0x01);
 
-    // Build mouse event
     MouseEvent ev;
     ev.x = mx;
     ev.y = my;
@@ -945,7 +528,6 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
             if (left_held) {
                 win->frame.x = mx - win->drag_offset_x;
                 win->frame.y = my - win->drag_offset_y;
-                // Clamp to screen
                 if (win->frame.x < -win->frame.w + 50) win->frame.x = -win->frame.w + 50;
                 if (win->frame.y < 0) win->frame.y = 0;
                 if (win->frame.x > ds->screen_w - 50) win->frame.x = ds->screen_w - 50;
@@ -962,26 +544,42 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
     if (ds->app_menu_open && left_pressed) {
         int menu_x = 4;
         int menu_y = PANEL_HEIGHT + 2;
-        int menu_w = 200;
-        int item_h = 36;
-        int menu_h = item_h * 3 + 8;
-        Rect menu_rect = {menu_x, menu_y, menu_w, menu_h};
+        int menu_h = MENU_ITEM_H * MENU_ITEM_COUNT + 10;
+        Rect menu_rect = {menu_x, menu_y, MENU_W, menu_h};
 
         if (menu_rect.contains(mx, my)) {
-            // Which item was clicked?
             int rel_y = my - menu_y - 4;
-            int item_idx = rel_y / item_h;
-            if (item_idx >= 0 && item_idx < 3) {
+            int item_idx = rel_y / MENU_ITEM_H;
+            if (item_idx >= 0 && item_idx < MENU_ITEM_COUNT) {
                 switch (item_idx) {
-                case 0: on_click_terminal(ds); break;
-                case 1: on_click_filemanager(ds); break;
-                case 2: on_click_sysinfo(ds); break;
+                case 0: open_terminal(ds); break;
+                case 1: open_filemanager(ds); break;
+                case 2: open_sysinfo(ds); break;
+                case 3: open_calculator(ds); break;
+                case 4: open_texteditor(ds); break;
+                case 5: open_klog(ds); break;
                 }
+                ds->app_menu_open = false;
             }
             return;
         } else {
             ds->app_menu_open = false;
-            // Fall through to handle click on other things
+        }
+    }
+
+    // Handle net popup clicks
+    if (ds->net_popup_open && left_pressed) {
+        int popup_w = 220;
+        int popup_h = 130;
+        int popup_x = ds->net_icon_rect.x + ds->net_icon_rect.w - popup_w;
+        int popup_y = PANEL_HEIGHT + 2;
+        if (popup_x < 4) popup_x = 4;
+        Rect popup_rect = {popup_x, popup_y, popup_w, popup_h};
+
+        if (popup_rect.contains(mx, my)) {
+            return;
+        } else if (!ds->net_icon_rect.contains(mx, my)) {
+            ds->net_popup_open = false;
         }
     }
 
@@ -990,6 +588,14 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
         // App menu button
         if (mx < 36) {
             ds->app_menu_open = !ds->app_menu_open;
+            ds->net_popup_open = false;
+            return;
+        }
+
+        // Network icon
+        if (ds->net_icon_rect.w > 0 && ds->net_icon_rect.contains(mx, my)) {
+            ds->net_popup_open = !ds->net_popup_open;
+            ds->app_menu_open = false;
             return;
         }
 
@@ -1036,7 +642,6 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
                 win->state = WIN_MINIMIZED;
                 if (ds->focused_window == i) {
                     ds->focused_window = -1;
-                    // Focus next visible window
                     for (int j = ds->window_count - 1; j >= 0; j--) {
                         if (ds->windows[j].state == WIN_NORMAL || ds->windows[j].state == WIN_MAXIMIZED) {
                             ds->focused_window = j;
@@ -1052,16 +657,13 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
             Rect max_r = win->max_btn_rect();
             if (max_r.contains(mx, my)) {
                 if (win->state == WIN_MAXIMIZED) {
-                    // Restore
                     win->frame = win->saved_frame;
                     win->state = WIN_NORMAL;
                 } else {
-                    // Maximize
                     win->saved_frame = win->frame;
                     win->frame = {0, PANEL_HEIGHT, ds->screen_w, ds->screen_h - PANEL_HEIGHT};
                     win->state = WIN_MAXIMIZED;
                 }
-                // Reallocate content buffer for new size
                 Rect cr = win->content_rect();
                 if (cr.w != win->content_w || cr.h != win->content_h) {
                     if (win->content) zenith::free(win->content);
@@ -1080,9 +682,7 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
                 win->dragging = true;
                 win->drag_offset_x = mx - win->frame.x;
                 win->drag_offset_y = my - win->frame.y;
-                desktop_raise_window(ds, ds->window_count - 1 == i ? i : i);
-                // After raise, this window is at the end
-                // Need to update the reference since raise moved it
+                desktop_raise_window(ds, i);
                 int new_idx = ds->window_count - 1;
                 ds->windows[new_idx].dragging = true;
                 ds->windows[new_idx].drag_offset_x = mx - ds->windows[new_idx].frame.x;
@@ -1094,7 +694,6 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
             Rect cr = win->content_rect();
             if (cr.contains(mx, my)) {
                 desktop_raise_window(ds, i);
-                // Dispatch mouse event to app
                 int new_idx = ds->window_count - 1;
                 if (ds->windows[new_idx].on_mouse) {
                     ev.x = mx;
@@ -1104,14 +703,13 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
                 return;
             }
 
-            // Check full frame (catches border clicks)
+            // Check full frame
             if (win->frame.contains(mx, my)) {
                 desktop_raise_window(ds, i);
                 return;
             }
         }
 
-        // Clicked on desktop background - close app menu
         ds->app_menu_open = false;
     }
 
@@ -1142,6 +740,18 @@ void gui::desktop_handle_keyboard(DesktopState* ds, const Zenith::KeyEvent& key)
             open_sysinfo(ds);
             return;
         }
+        if (key.ascii == 'c' || key.ascii == 'C') {
+            open_calculator(ds);
+            return;
+        }
+        if (key.ascii == 'e' || key.ascii == 'E') {
+            open_texteditor(ds);
+            return;
+        }
+        if (key.ascii == 'k' || key.ascii == 'K') {
+            open_klog(ds);
+            return;
+        }
     }
 
     // Dispatch to focused window
@@ -1166,13 +776,12 @@ void gui::desktop_run(DesktopState* ds) {
             desktop_handle_keyboard(ds, key);
         }
 
-        // Poll terminal I/O for all terminal windows
+        // Poll windows that have a poll callback
         for (int i = 0; i < ds->window_count; i++) {
             Window* win = &ds->windows[i];
             if (win->state == WIN_CLOSED) continue;
-            if (win->app_data && win->on_draw == terminal_on_draw) {
-                TerminalState* ts = (TerminalState*)win->app_data;
-                terminal_poll(ts);
+            if (win->on_poll) {
+                win->on_poll(win);
             }
         }
 
@@ -1191,6 +800,8 @@ void gui::desktop_run(DesktopState* ds) {
 // ============================================================================
 // Entry Point
 // ============================================================================
+
+static DesktopState* g_desktop;
 
 extern "C" void _start() {
     DesktopState* ds = (DesktopState*)zenith::malloc(sizeof(DesktopState));

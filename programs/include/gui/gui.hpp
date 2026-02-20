@@ -58,6 +58,8 @@ namespace colors {
     static constexpr Color MENU_HOVER    = {0xE8, 0xF0, 0xFE, 0xFF};
     static constexpr Color TERM_BG       = {0x2D, 0x2D, 0x2D, 0xFF};
     static constexpr Color TERM_FG       = {0xCC, 0xCC, 0xCC, 0xFF};
+    static constexpr Color PANEL_INDICATOR_ACTIVE   = {0x45, 0x58, 0x6A, 0xFF};
+    static constexpr Color PANEL_INDICATOR_INACTIVE = {0x35, 0x48, 0x5A, 0xFF};
 }
 
 struct Point {

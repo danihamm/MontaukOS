@@ -63,7 +63,7 @@ LDFLAGS := \
 
 # ---- Source files ----
 
-SRCS := main.cpp font_data.cpp
+SRCS := main.cpp font_data.cpp app_terminal.cpp app_filemanager.cpp app_sysinfo.cpp app_calculator.cpp app_texteditor.cpp app_klog.cpp
 OBJS := $(addprefix $(OBJDIR)/,$(SRCS:.cpp=.o))
 
 # ---- Target ----

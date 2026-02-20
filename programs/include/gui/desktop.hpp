@@ -36,6 +36,20 @@ struct DesktopState {
     SvgIcon icon_folder;
     SvgIcon icon_file;
     SvgIcon icon_computer;
+    SvgIcon icon_network;
+    SvgIcon icon_calculator;
+    SvgIcon icon_texteditor;
+    SvgIcon icon_go_up;
+    SvgIcon icon_go_back;
+    SvgIcon icon_go_forward;
+    SvgIcon icon_save;
+    SvgIcon icon_home;
+    SvgIcon icon_exec;
+
+    bool net_popup_open;
+    Zenith::NetCfg cached_net_cfg;
+    uint64_t net_cfg_last_poll;
+    Rect net_icon_rect;
 
     int screen_w, screen_h;
 };

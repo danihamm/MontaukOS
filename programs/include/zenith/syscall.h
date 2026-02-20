@@ -262,6 +262,11 @@ namespace zenith {
         syscall2(Zenith::SYS_SETMOUSEBOUNDS, (uint64_t)maxX, (uint64_t)maxY);
     }
 
+    // Kernel log
+    inline int64_t read_klog(char* buf, uint64_t size) {
+        return syscall2(Zenith::SYS_KLOG, (uint64_t)buf, size);
+    }
+
     // I/O redirection
     inline int spawn_redir(const char* path, const char* args = nullptr) {
         return (int)syscall2(Zenith::SYS_SPAWN_REDIR, (uint64_t)path, (uint64_t)args);

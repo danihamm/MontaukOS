@@ -80,7 +80,8 @@ static inline void terminal_scroll_up(TerminalState* t) {
     }
 }
 
-static inline void terminal_init(TerminalState* t, int cols, int rows) {
+// Initialize only the cell grid (no child process). Used by viewers like klog.
+static inline void terminal_init_cells(TerminalState* t, int cols, int rows) {
     t->cols = cols;
     t->rows = rows;
     t->cursor_x = 0;
@@ -91,13 +92,14 @@ static inline void terminal_init(TerminalState* t, int cols, int rows) {
     t->total_rows = rows;
     t->current_fg = colors::TERM_FG;
     t->current_bg = colors::TERM_BG;
-    t->cursor_visible = true;
+    t->cursor_visible = false;
     t->alt_screen_active = false;
     t->reverse_video = false;
     t->parse_state = TerminalState::STATE_NORMAL;
     t->csi_private = false;
     t->csi_param_count = 0;
     t->csi_current_param = 0;
+    t->child_pid = 0;
 
     int total_cells = cols * rows;
     t->cells = (TermCell*)zenith::alloc(total_cells * sizeof(TermCell));
@@ -106,6 +108,11 @@ static inline void terminal_init(TerminalState* t, int cols, int rows) {
         t->cells[i] = {' ', colors::TERM_FG, colors::TERM_BG};
         t->alt_cells[i] = {' ', colors::TERM_FG, colors::TERM_BG};
     }
+}
+
+static inline void terminal_init(TerminalState* t, int cols, int rows) {
+    terminal_init_cells(t, cols, rows);
+    t->cursor_visible = true;
 
     t->child_pid = zenith::spawn_redir("0:/os/shell.elf");
     zenith::childio_settermsz(t->child_pid, cols, rows);
