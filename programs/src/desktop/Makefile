@@ -61,7 +61,7 @@ LDFLAGS := \
 
 # ---- C++ source files ----
 
-SRCS := main.cpp font_data.cpp stb_truetype_impl.cpp app_terminal.cpp app_filemanager.cpp app_sysinfo.cpp app_calculator.cpp app_texteditor.cpp app_klog.cpp app_wiki.cpp app_procmgr.cpp app_mandelbrot.cpp app_devexplorer.cpp app_settings.cpp app_doom.cpp
+SRCS := main.cpp font_data.cpp stb_truetype_impl.cpp app_terminal.cpp app_filemanager.cpp app_sysinfo.cpp app_calculator.cpp app_texteditor.cpp app_klog.cpp app_wiki.cpp app_weather.cpp app_procmgr.cpp app_mandelbrot.cpp app_devexplorer.cpp app_settings.cpp app_doom.cpp
 OBJS := $(addprefix $(OBJDIR)/,$(SRCS:.cpp=.o))
 
 # ---- Target ----

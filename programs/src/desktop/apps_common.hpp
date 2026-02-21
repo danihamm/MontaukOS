@@ -167,6 +167,7 @@ void open_texteditor(DesktopState* ds);
 void open_texteditor_with_file(DesktopState* ds, const char* path);
 void open_klog(DesktopState* ds);
 void open_wiki(DesktopState* ds);
+void open_weather(DesktopState* ds);
 void open_procmgr(DesktopState* ds);
 void open_mandelbrot(DesktopState* ds);
 void open_devexplorer(DesktopState* ds);

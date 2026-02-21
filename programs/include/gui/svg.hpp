@@ -78,6 +78,52 @@ struct SvgGradientTable {
 };
 
 // ---------------------------------------------------------------------------
+// CSS class color table  (.ClassName { color: #rrggbb; })
+// Used to resolve fill:currentColor via the element's class= attribute.
+// ---------------------------------------------------------------------------
+static constexpr int SVG_MAX_CSS_CLASSES = 8;
+
+struct SvgCssClass {
+    char name[48];
+    Color color;
+};
+
+struct SvgCssTable {
+    SvgCssClass entries[SVG_MAX_CSS_CLASSES];
+    int count;
+
+    void clear() { count = 0; }
+
+    void add(const char* name, Color c) {
+        if (count >= SVG_MAX_CSS_CLASSES) return;
+        int i = 0;
+        while (name[i] && i < 47) { entries[count].name[i] = name[i]; i++; }
+        entries[count].name[i] = '\0';
+        entries[count].color = c;
+        count++;
+    }
+
+    // Look up class by name (first token if multiple classes are listed).
+    // Returns true if found.
+    bool lookup(const char* cls, Color* out) const {
+        for (int i = 0; i < count; i++) {
+            const char* a = entries[i].name;
+            const char* b = cls;
+            bool match = true;
+            while (*a && *b) {
+                if (*a != *b) { match = false; break; }
+                a++; b++;
+            }
+            if (match && *a == '\0' && (*b == '\0' || *b == ' ')) {
+                *out = entries[i].color;
+                return true;
+            }
+        }
+        return false;
+    }
+};
+
+// ---------------------------------------------------------------------------
 // Fixed-point number parser (NO floating point)
 // Parses strings like "3.25", "-0.5", ".1115", "16"
 // Returns the number of characters consumed.
@@ -816,6 +862,52 @@ inline void svg_rasterize(const SvgEdgeList& el, uint32_t* pixels, int w, int h,
 }
 
 // ---------------------------------------------------------------------------
+// Parse CSS class color mappings out of a <style> block.
+// Handles:  .ClassName { color: #rrggbb; }
+// ---------------------------------------------------------------------------
+inline void svg_parse_css_table(const char* style_data, int style_len, SvgCssTable* css) {
+    const char* p   = style_data;
+    const char* end = style_data + style_len;
+    while (p < end && css->count < SVG_MAX_CSS_CLASSES) {
+        // Find next '.' that starts a class selector
+        while (p < end && *p != '.') ++p;
+        if (p >= end) break;
+        ++p; // skip '.'
+
+        // Read class name (stops at whitespace or '{')
+        char name[48]; int ni = 0;
+        while (p < end && *p != ' ' && *p != '\t' && *p != '{' && ni < 47)
+            name[ni++] = *p++;
+        name[ni] = '\0';
+
+        // Find opening brace
+        while (p < end && *p != '{') ++p;
+        if (p >= end) break;
+        const char* brace_open = p++;
+
+        // Find closing brace
+        const char* brace_close = brace_open;
+        while (brace_close < end && *brace_close != '}') ++brace_close;
+
+        // Search for "color:" inside the braces (not "background-color:" etc.)
+        int block_len = (int)(brace_close - brace_open);
+        const char* cp = svg_strstr(brace_open, block_len, "color:");
+        if (cp) {
+            // Make sure it's not prefixed (e.g. "background-color:")
+            if (cp > brace_open && *(cp - 1) != '-') {
+                cp += 6;
+                while (cp < brace_close && (*cp == ' ' || *cp == '\t')) ++cp;
+                if (cp < brace_close && *cp == '#') {
+                    Color c = svg_parse_hex_color(cp);
+                    css->add(name, c);
+                }
+            }
+        }
+        p = brace_close + 1;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Resolve a fill value that might be url(#id) against gradient table
 // Returns: 1 = resolved, 0 = not a url() ref, -1 = fill="none"
 // ---------------------------------------------------------------------------
@@ -840,10 +932,28 @@ inline int svg_resolve_fill_value(const char* val, Color* out_color, const SvgGr
 // ---------------------------------------------------------------------------
 // Per-element fill color extraction
 // Returns: 1 = color found in out_color, 0 = use default, -1 = fill="none"
+// When fill:currentColor is encountered and css != nullptr, the element's
+// class= attribute is looked up to resolve the actual color.
 // ---------------------------------------------------------------------------
 inline int svg_get_element_fill(const char* elem, int elemLen, Color* out_color,
-                                const SvgGradientTable* grads = nullptr) {
+                                const SvgGradientTable* grads = nullptr,
+                                const SvgCssTable* css = nullptr) {
     char buf[128];
+
+    // Helper: try to resolve currentColor via the element's class= attribute.
+    // ColorScheme-Text is the "foreground" color — callers control it via fill_color,
+    // so we skip it here and let the fallback fill_color apply.
+    // Accent classes (Highlight, NeutralText, etc.) use their CSS-defined colors.
+    auto resolve_current_color = [&]() -> int {
+        if (!css || css->count == 0) return 0; // fall back to fill_color
+        char cls[64];
+        int cLen = svg_get_attr(elem, elemLen, " class", cls, sizeof(cls));
+        if (cLen <= 0) return 0;
+        if (svg_strncmp(cls, "ColorScheme-Text", 16)) return 0; // use fill_color
+        Color c;
+        if (css->lookup(cls, &c)) { *out_color = c; return 1; }
+        return 0;
+    };
 
     // Check style="..." first (higher CSS priority)
     int sLen = svg_get_attr(elem, elemLen, " style", buf, sizeof(buf));
@@ -857,6 +967,9 @@ inline int svg_get_element_fill(const char* elem, int elemLen, Color* out_color,
             } else {
                 fp += 5;
                 while (*fp == ' ') ++fp;
+                // Check for currentColor before calling resolve_fill_value
+                if (svg_strncmp(fp, "currentColor", 12))
+                    return resolve_current_color();
                 return svg_resolve_fill_value(fp, out_color, grads);
             }
         }
@@ -865,6 +978,8 @@ inline int svg_get_element_fill(const char* elem, int elemLen, Color* out_color,
     // Check fill="..." attribute
     int fLen = svg_get_attr(elem, elemLen, " fill", buf, sizeof(buf));
     if (fLen > 0) {
+        if (svg_strncmp(buf, "currentColor", 12))
+            return resolve_current_color();
         return svg_resolve_fill_value(buf, out_color, grads);
     }
 
@@ -1070,6 +1185,21 @@ inline SvgIcon svg_render(const char* svg_data, int svg_len, int target_w, int t
         }
     }
 
+    // Pre-parse CSS class color mappings from <style> block
+    SvgCssTable css;
+    css.clear();
+    {
+        const char* sp = svg_strstr(svg_data, svg_len, "<style");
+        if (sp) {
+            // Advance past the opening tag to the content
+            while (sp < svg_data + svg_len && *sp != '>') ++sp;
+            if (sp < svg_data + svg_len) ++sp; // skip '>'
+            const char* se = svg_strstr(sp, (int)(svg_data + svg_len - sp), "</style>");
+            if (se)
+                svg_parse_css_table(sp, (int)(se - sp), &css);
+        }
+    }
+
     // Shared edge list (cleared per element for multi-color support)
     SvgEdgeList el;
     el.init(SVG_MAX_EDGES);
@@ -1113,7 +1243,7 @@ inline SvgIcon svg_render(const char* svg_data, int svg_len, int target_w, int t
 
             // Determine fill color for this element
             Color elem_color = fill_color;
-            int fillResult = svg_get_element_fill(elem_start, elem_len, &elem_color, &grads);
+            int fillResult = svg_get_element_fill(elem_start, elem_len, &elem_color, &grads, &css);
             if (fillResult == -1) { p = elem_end; continue; } // fill="none"
 
             int alpha = svg_get_element_opacity(elem_start, elem_len);
@@ -1146,7 +1276,7 @@ inline SvgIcon svg_render(const char* svg_data, int svg_len, int target_w, int t
             }
 
             Color elem_color = fill_color;
-            int fillResult = svg_get_element_fill(elem_start, elem_len, &elem_color, &grads);
+            int fillResult = svg_get_element_fill(elem_start, elem_len, &elem_color, &grads, &css);
             if (fillResult == -1) { p = elem_end; continue; }
 
             int alpha = svg_get_element_opacity(elem_start, elem_len);
@@ -1189,7 +1319,7 @@ inline SvgIcon svg_render(const char* svg_data, int svg_len, int target_w, int t
             }
 
             Color elem_color = fill_color;
-            int fillResult = svg_get_element_fill(elem_start, elem_len, &elem_color, &grads);
+            int fillResult = svg_get_element_fill(elem_start, elem_len, &elem_color, &grads, &css);
             if (fillResult == -1) { p = elem_end; continue; }
 
             int alpha = svg_get_element_opacity(elem_start, elem_len);

@@ -57,7 +57,7 @@ BINDIR := bin
 PROGRAMS := $(notdir $(wildcard src/*))
 
 # Programs with custom Makefiles (built separately).
-CUSTOM_BUILDS := doom fetch wiki wikipedia desktop
+CUSTOM_BUILDS := doom fetch wiki wikipedia weather desktop
 SYSTEM_PROGRAMS := $(filter-out $(CUSTOM_BUILDS),$(PROGRAMS))
 
 # Build targets: system programs go to bin/os/, games are handled separately.
@@ -82,9 +82,9 @@ CA_CERTS := $(BINDIR)/etc/ca-certificates.crt
 # Home directory placeholder.
 HOMEKEEP := $(BINDIR)/home/.keep
 
-.PHONY: all clean doom fetch wiki wikipedia desktop icons fonts bearssl libc
+.PHONY: all clean doom fetch wiki wikipedia weather desktop icons fonts bearssl libc tls
 
-all: bearssl libc $(TARGETS) fetch wiki wikipedia doom desktop icons fonts $(GAME_DATA) $(MANDST) $(WWWDST) $(CA_CERTS) $(HOMEKEEP)
+all: bearssl libc tls $(TARGETS) fetch wiki wikipedia weather doom desktop icons fonts $(GAME_DATA) $(MANDST) $(WWWDST) $(CA_CERTS) $(HOMEKEEP)
 
 # Build BearSSL static library.
 bearssl:
@@ -94,17 +94,25 @@ bearssl:
 libc:
 	$(MAKE) -C lib/libc
 
-# Build fetch via its own Makefile (depends on bearssl and libc).
-fetch: bearssl libc
+# Build shared TLS helper library.
+tls: bearssl libc
+	$(MAKE) -C lib/tls
+
+# Build fetch via its own Makefile (depends on bearssl, libc, and tls).
+fetch: bearssl libc tls
 	$(MAKE) -C src/fetch
 
-# Build wiki via its own Makefile (depends on bearssl and libc).
-wiki: bearssl libc
+# Build wiki via its own Makefile (depends on bearssl, libc, and tls).
+wiki: bearssl libc tls
 	$(MAKE) -C src/wiki
 
-# Build wikipedia standalone GUI client (depends on bearssl and libc).
-wikipedia: bearssl libc
+# Build wikipedia standalone GUI client (depends on bearssl, libc, and tls).
+wikipedia: bearssl libc tls
 	$(MAKE) -C src/wikipedia
+
+# Build weather standalone GUI client (depends on bearssl, libc, and tls).
+weather: bearssl libc tls
+	$(MAKE) -C src/weather
 
 # Build desktop via its own Makefile.
 desktop:
@@ -157,7 +165,9 @@ clean:
 	rm -rf $(BINDIR) obj
 	$(MAKE) -C lib/bearssl clean
 	$(MAKE) -C lib/libc clean
+	$(MAKE) -C lib/tls clean
 	$(MAKE) -C src/fetch clean
 	$(MAKE) -C src/doom clean
 	$(MAKE) -C src/desktop clean
 	$(MAKE) -C src/wikipedia clean
+	$(MAKE) -C src/weather clean

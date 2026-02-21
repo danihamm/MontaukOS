@@ -320,5 +320,11 @@ namespace zenith {
     inline uint64_t win_resize(int id, int w, int h) {
         return (uint64_t)syscall3(Zenith::SYS_WINRESIZE, (uint64_t)id, (uint64_t)w, (uint64_t)h);
     }
+    inline int win_setscale(int scale) {
+        return (int)syscall1(Zenith::SYS_WINSETSCALE, (uint64_t)scale);
+    }
+    inline int win_getscale() {
+        return (int)syscall0(Zenith::SYS_WINGETSCALE);
+    }
 
 }

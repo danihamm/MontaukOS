@@ -75,6 +75,8 @@ namespace Zenith {
     static constexpr uint64_t SYS_WINMAP       = 59;
     static constexpr uint64_t SYS_WINSENDEVENT = 60;
     static constexpr uint64_t SYS_WINRESIZE   = 64;
+    static constexpr uint64_t SYS_WINSETSCALE = 65;
+    static constexpr uint64_t SYS_WINGETSCALE = 66;
 
     // Process management syscalls
     static constexpr uint64_t SYS_PROCLIST    = 61;
@@ -135,12 +137,13 @@ namespace Zenith {
 
     // Window server shared types
     struct WinEvent {
-        uint8_t type;     // 0=key, 1=mouse, 2=resize, 3=close
+        uint8_t type;     // 0=key, 1=mouse, 2=resize, 3=close, 4=scale
         uint8_t _pad[3];
         union {
             KeyEvent key;
             struct { int32_t x, y, scroll; uint8_t buttons, prev_buttons; } mouse;
             struct { int32_t w, h; } resize;
+            struct { int32_t scale; } scale;
         };
     };
 

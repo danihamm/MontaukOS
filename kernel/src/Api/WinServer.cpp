@@ -14,6 +14,7 @@
 namespace WinServer {
 
     static WindowSlot g_slots[MaxWindows];
+    static int g_uiScale = 1;
 
     int Create(int ownerPid, uint64_t ownerPml4, const char* title, int w, int h,
                uint64_t& heapNext, uint64_t& outVa) {
@@ -199,6 +200,28 @@ namespace WinServer {
 
         outVa = userVa;
         return 0;
+    }
+
+    int SetScale(int scale) {
+        if (scale < 0) scale = 0;
+        if (scale > 2) scale = 2;
+        g_uiScale = scale;
+
+        // Broadcast scale event to all active windows
+        Zenith::WinEvent ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.type = 4;
+        ev.scale.scale = scale;
+        for (int i = 0; i < MaxWindows; i++) {
+            if (g_slots[i].used) {
+                SendEvent(i, &ev);
+            }
+        }
+        return 0;
+    }
+
+    int GetScale() {
+        return g_uiScale;
     }
 
     void CleanupProcess(int pid) {

@@ -73,6 +73,8 @@ struct DesktopState {
     SvgIcon icon_settings;
     SvgIcon icon_reboot;
 
+    SvgIcon icon_weather;
+
     SvgIcon icon_doom;
     SvgIcon icon_procmgr;
     SvgIcon icon_mandelbrot;

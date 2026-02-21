@@ -458,18 +458,21 @@ static void settings_on_mouse(Window* win, MouseEvent& ev) {
         if (mx >= bx && mx < bx + sbw && cy >= y && cy < y + btn_h) {
             s.ui_scale = 0;
             apply_ui_scale(0);
+            zenith::win_setscale(0);
             return;
         }
         // Default
         if (mx >= bx + sbw + 8 && mx < bx + sbw * 2 + 8 && cy >= y && cy < y + btn_h) {
             s.ui_scale = 1;
             apply_ui_scale(1);
+            zenith::win_setscale(1);
             return;
         }
         // Large
         if (mx >= bx + (sbw + 8) * 2 && mx < bx + sbw * 3 + 16 && cy >= y && cy < y + btn_h) {
             s.ui_scale = 2;
             apply_ui_scale(2);
+            zenith::win_setscale(2);
             return;
         }
     }

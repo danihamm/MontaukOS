@@ -50,7 +50,7 @@ struct CachedGlyph {
 };
 
 struct GlyphCache {
-    CachedGlyph glyphs[128];
+    CachedGlyph glyphs[256];  // Latin-1 Supplement (U+0080..U+00FF) included
     int pixel_size;
     float scale;
     int ascent, descent, line_gap;
@@ -127,7 +127,7 @@ struct TrueTypeFont {
     }
 
     CachedGlyph* get_glyph(GlyphCache* gc, int codepoint) {
-        if (codepoint < 0 || codepoint >= 128) return nullptr;
+        if (codepoint < 0 || codepoint >= 256) return nullptr;
         CachedGlyph* g = &gc->glyphs[codepoint];
         if (g->loaded) return g;
 

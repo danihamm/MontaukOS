@@ -61,6 +61,8 @@ void gui::desktop_init(DesktopState* ds) {
     ds->icon_settings = svg_load("0:/icons/help-about.svg",     20, 20, defColor);
     ds->icon_reboot   = svg_load("0:/icons/system-reboot.svg", 20, 20, defColor);
 
+    ds->icon_weather = svg_load("0:/icons/weather-widget.svg", 20, 20, defColor);
+
     ds->icon_doom     = svg_load("0:/icons/doom.svg", 20, 20, defColor);
     ds->icon_procmgr  = svg_load("0:/icons/system-monitor.svg", 20, 20, defColor);
     ds->icon_mandelbrot = svg_load("0:/icons/applications-science.svg", 20, 20, defColor);
@@ -76,6 +78,7 @@ void gui::desktop_init(DesktopState* ds) {
     ds->settings.show_shadows = true;
     ds->settings.clock_24h = true;
     ds->settings.ui_scale = 1;
+    zenith::win_setscale(1);
 
     ds->ctx_menu_open = false;
     ds->ctx_menu_x = 0;
@@ -421,7 +424,7 @@ struct MenuRow {
     int app_id;           // -1 for category headers / dividers
 };
 
-static constexpr int MENU_ROW_COUNT = 18;
+static constexpr int MENU_ROW_COUNT = 19;
 static const MenuRow menu_rows[MENU_ROW_COUNT] = {
     { true,  "Applications", -1 },
     { false, "Terminal",      0 },
@@ -430,6 +433,7 @@ static const MenuRow menu_rows[MENU_ROW_COUNT] = {
     { false, "Calculator",    3 },
     { true,  "Internet",     -1 },
     { false, "Wikipedia",     9 },
+    { false, "Weather",      13 },
     { true,  "System",       -1 },
     { false, "System Info",   2 },
     { false, "Kernel Log",    5 },
@@ -470,7 +474,7 @@ static void desktop_draw_app_menu(DesktopState* ds) {
     draw_rect(fb, menu_x, menu_y, MENU_W, menu_h, colors::BORDER);
 
     // Icon lookup by app_id
-    SvgIcon* icons[13] = {
+    SvgIcon* icons[14] = {
         &ds->icon_terminal,     // 0
         &ds->icon_filemanager,  // 1
         &ds->icon_sysinfo,      // 2
@@ -484,6 +488,7 @@ static void desktop_draw_app_menu(DesktopState* ds) {
         &ds->icon_doom,         // 10
         &ds->icon_settings,     // 11
         &ds->icon_reboot,       // 12
+        &ds->icon_weather,      // 13
     };
 
     int mx = ds->mouse.x;
@@ -519,7 +524,7 @@ static void desktop_draw_app_menu(DesktopState* ds) {
             // Icon
             int icon_x = item_rect.x + 8;
             int icon_y = item_rect.y + (row_h - 20) / 2;
-            if (row.app_id >= 0 && row.app_id < 13) {
+            if (row.app_id >= 0 && row.app_id < 14) {
                 SvgIcon* icon = icons[row.app_id];
                 if (icon && icon->pixels) {
                     fb.blit_alpha(icon_x, icon_y, icon->width, icon->height, icon->pixels);
@@ -1099,6 +1104,7 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
                         case 10: open_doom(ds); break;
                         case 11: open_settings(ds); break;
                         case 12: open_reboot_dialog(ds); break;
+                        case 13: open_weather(ds); break;
                         }
                         ds->app_menu_open = false;
                     }

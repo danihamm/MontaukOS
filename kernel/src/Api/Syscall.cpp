@@ -789,6 +789,16 @@ namespace Zenith {
         return count;
     }
 
+    // ---- Window scale syscalls ----
+
+    static int Sys_WinSetScale(int scale) {
+        return WinServer::SetScale(scale);
+    }
+
+    static int Sys_WinGetScale() {
+        return WinServer::GetScale();
+    }
+
     // ---- Window server syscalls ----
 
     static int Sys_WinCreate(const char* title, int w, int h, WinCreateResult* result) {
@@ -1003,6 +1013,10 @@ namespace Zenith {
                 return (int64_t)Sys_Kill((int)frame->arg1);
             case SYS_DEVLIST:
                 return (int64_t)Sys_DevList((DevInfo*)frame->arg1, (int)frame->arg2);
+            case SYS_WINSETSCALE:
+                return (int64_t)Sys_WinSetScale((int)frame->arg1);
+            case SYS_WINGETSCALE:
+                return (int64_t)Sys_WinGetScale();
             default:
                 return -1;
         }

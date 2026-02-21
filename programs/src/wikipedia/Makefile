@@ -16,6 +16,7 @@ endif
 # ---- Paths ----
 
 BEARSSL  := ../../lib/bearssl
+TLS_LIB  := ../../lib/tls
 LIBC_LIB := ../../lib/libc
 LIBC_INC := ../../include/libc
 PROG_INC := ../../include
@@ -66,7 +67,7 @@ LDFLAGS := \
 
 # ---- Libraries ----
 
-LIBS := $(BEARSSL)/libbearssl.a $(LIBC_LIB)/liblibc.a
+LIBS := $(TLS_LIB)/libtls.a $(BEARSSL)/libbearssl.a $(LIBC_LIB)/liblibc.a
 
 # ---- Source files ----
 

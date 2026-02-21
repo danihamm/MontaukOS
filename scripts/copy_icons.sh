@@ -57,6 +57,30 @@ ICONS=(
     "apps/scalable/applications-science.svg"
     "apps/scalable/hardware.svg"
     "apps/scalable/unsettings.svg" # settings icon; toolbox in flat remix
+    # Weather app icon (for desktop app menu launcher)
+    "apps/scalable/weather-widget.svg"
+    # Weather condition icons (panel, colorful, used by weather.elf)
+    "panel/weather-clear.svg"
+    "panel/weather-clear-night.svg"
+    "panel/weather-few-clouds.svg"
+    "panel/weather-few-clouds-night.svg"
+    "panel/weather-clouds.svg"
+    "panel/weather-clouds-night.svg"
+    "panel/weather-overcast.svg"
+    "panel/weather-mist.svg"
+    "panel/weather-fog.svg"
+    "panel/weather-showers.svg"
+    "panel/weather-showers-scattered.svg"
+    "panel/weather-snow.svg"
+    "panel/weather-snow-scattered.svg"
+    "panel/weather-snow-rain.svg"
+    "panel/weather-freezing-rain.svg"
+    "panel/weather-hail.svg"
+    "panel/weather-storm.svg"
+    "panel/weather-many-clouds.svg"
+    "panel/weather-windy.svg"
+    "panel/weather-severe-alert.svg"
+    "panel/weather-none-available.svg"
 )
 
 copied=0
