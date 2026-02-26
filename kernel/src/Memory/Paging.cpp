@@ -240,6 +240,34 @@ namespace Memory::VMM {
         pageEntry->Address = physicalAddress >> 12;
     }
 
+    void Paging::UnmapUserIn(std::uint64_t pml4Phys, std::uint64_t virtualAddress) {
+        VirtualAddress va(virtualAddress);
+
+        // Walk without allocating — if any level is absent, nothing is mapped.
+        auto walkRead = [](PageTable* table, uint64_t index) -> PageTable* {
+            PageTableEntry* entry = (PageTableEntry*)Memory::HHDM(&table->entries[index]);
+            if (!entry->Present) return nullptr;
+            return (PageTable*)(entry->Address << 12);
+        };
+
+        PageTable* pml4 = (PageTable*)pml4Phys;
+        auto pml3 = walkRead(pml4, va.GetL4Index());
+        if (!pml3) return;
+        auto pml2 = walkRead(pml3, va.GetL3Index());
+        if (!pml2) return;
+        auto pml1 = walkRead(pml2, va.GetL2Index());
+        if (!pml1) return;
+
+        PageTableEntry* pageEntry = (PageTableEntry*)Memory::HHDM(&pml1->entries[va.GetPageIndex()]);
+        if (!pageEntry->Present) return;
+
+        // Clear the entire 8-byte PTE
+        *(uint64_t*)pageEntry = 0;
+
+        // Invalidate TLB for this virtual address
+        asm volatile("invlpg (%0)" :: "r"(virtualAddress) : "memory");
+    }
+
     std::uint64_t Paging::GetPhysAddr(std::uint64_t pml4, std::uint64_t virtualAddress, bool use40BitL1) {
         VirtualAddress virtualAddressObj(virtualAddress);
 

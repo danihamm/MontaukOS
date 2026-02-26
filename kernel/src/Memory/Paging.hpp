@@ -109,6 +109,9 @@ public:
         // Map a page into an arbitrary PML4 with User + Write-Combining attributes.
         static void MapUserInWC(std::uint64_t pml4Phys, std::uint64_t physicalAddress, std::uint64_t virtualAddress);
 
+        // Unmap a single page from an arbitrary PML4 (clears PTE + invalidates TLB).
+        static void UnmapUserIn(std::uint64_t pml4Phys, std::uint64_t virtualAddress);
+
         // Identity-map EFI runtime service regions so firmware code can
         // reference its own data at physical addresses.
         void MapEfiRuntime(limine_efi_memmap_response* efiMemmap);
