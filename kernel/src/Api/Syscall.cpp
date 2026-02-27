@@ -39,9 +39,14 @@ namespace Zenith {
 
     extern "C" int64_t SyscallDispatch(SyscallFrame* frame) {
         switch (frame->syscall_nr) {
-            case SYS_EXIT:
+            case SYS_EXIT: {
+                int slot = GetCurrentSlot();
+                auto* proc = Sched::GetCurrentProcessPtr();
+                if (slot >= 0 && proc)
+                    CleanupHeapForSlot(slot, proc->pml4Phys);
                 Sys_Exit((int)frame->arg1);
                 return 0;
+            }
             case SYS_YIELD:
                 Sys_Yield();
                 return 0;
@@ -192,8 +197,16 @@ namespace Zenith {
                 return (int64_t)Sys_WinResize((int)frame->arg1, (int)frame->arg2, (int)frame->arg3);
             case SYS_PROCLIST:
                 return (int64_t)Sys_ProcList((ProcInfo*)frame->arg1, (int)frame->arg2);
-            case SYS_KILL:
+            case SYS_KILL: {
+                // Free heap allocations for the target process before killing it
+                auto* target = Sched::GetProcessByPid((int)frame->arg1);
+                if (target) {
+                    auto* slot0 = Sched::GetProcessSlot(0);
+                    int targetSlot = (int)(target - slot0);
+                    CleanupHeapForSlot(targetSlot, target->pml4Phys);
+                }
                 return (int64_t)Sys_Kill((int)frame->arg1);
+            }
             case SYS_DEVLIST:
                 return (int64_t)Sys_DevList((DevInfo*)frame->arg1, (int)frame->arg2);
             case SYS_WINSETSCALE:
