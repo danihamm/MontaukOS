@@ -4,15 +4,15 @@
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
-#include <zenith/string.h>
+#include <montauk/syscall.h>
+#include <montauk/string.h>
 
-using zenith::starts_with;
-using zenith::skip_spaces;
+using montauk::starts_with;
+using montauk::skip_spaces;
 
 static void print_int(uint64_t n) {
     if (n == 0) {
-        zenith::putchar('0');
+        montauk::putchar('0');
         return;
     }
     char buf[20];
@@ -22,17 +22,17 @@ static void print_int(uint64_t n) {
         n /= 10;
     }
     for (int j = i - 1; j >= 0; j--) {
-        zenith::putchar(buf[j]);
+        montauk::putchar(buf[j]);
     }
 }
 
 static void print_ip(uint32_t ip) {
     print_int(ip & 0xFF);
-    zenith::putchar('.');
+    montauk::putchar('.');
     print_int((ip >> 8) & 0xFF);
-    zenith::putchar('.');
+    montauk::putchar('.');
     print_int((ip >> 16) & 0xFF);
-    zenith::putchar('.');
+    montauk::putchar('.');
     print_int((ip >> 24) & 0xFF);
 }
 
@@ -66,31 +66,31 @@ static bool parse_ip(const char* s, uint32_t* out) {
 
 extern "C" void _start() {
     char args[256];
-    int len = zenith::getargs(args, sizeof(args));
+    int len = montauk::getargs(args, sizeof(args));
 
     if (len <= 0 || args[0] == '\0') {
         // Show current network configuration
-        Zenith::NetCfg cfg;
-        zenith::get_netcfg(&cfg);
-        zenith::print("  IP Address:   ");
+        Montauk::NetCfg cfg;
+        montauk::get_netcfg(&cfg);
+        montauk::print("  IP Address:   ");
         print_ip(cfg.ipAddress);
-        zenith::putchar('\n');
-        zenith::print("  Subnet Mask:  ");
+        montauk::putchar('\n');
+        montauk::print("  Subnet Mask:  ");
         print_ip(cfg.subnetMask);
-        zenith::putchar('\n');
-        zenith::print("  Gateway:      ");
+        montauk::putchar('\n');
+        montauk::print("  Gateway:      ");
         print_ip(cfg.gateway);
-        zenith::putchar('\n');
-        zenith::print("  DNS Server:   ");
+        montauk::putchar('\n');
+        montauk::print("  DNS Server:   ");
         print_ip(cfg.dnsServer);
-        zenith::putchar('\n');
-        zenith::exit(0);
+        montauk::putchar('\n');
+        montauk::exit(0);
     }
 
     if (!starts_with(args, "set ")) {
-        zenith::print("Usage: ifconfig              Show network config\n");
-        zenith::print("       ifconfig set <ip> <mask> <gateway>\n");
-        zenith::exit(1);
+        montauk::print("Usage: ifconfig              Show network config\n");
+        montauk::print("       ifconfig set <ip> <mask> <gateway>\n");
+        montauk::exit(1);
     }
 
     // Parse: set <ip> <mask> <gateway>
@@ -103,10 +103,10 @@ extern "C" void _start() {
     tok[i] = '\0';
     uint32_t ip;
     if (!parse_ip(tok, &ip)) {
-        zenith::print("Invalid IP address: ");
-        zenith::print(tok);
-        zenith::putchar('\n');
-        zenith::exit(1);
+        montauk::print("Invalid IP address: ");
+        montauk::print(tok);
+        montauk::putchar('\n');
+        montauk::exit(1);
     }
     p = skip_spaces(p + i);
 
@@ -116,10 +116,10 @@ extern "C" void _start() {
     tok[i] = '\0';
     uint32_t mask;
     if (!parse_ip(tok, &mask)) {
-        zenith::print("Invalid subnet mask: ");
-        zenith::print(tok);
-        zenith::putchar('\n');
-        zenith::exit(1);
+        montauk::print("Invalid subnet mask: ");
+        montauk::print(tok);
+        montauk::putchar('\n');
+        montauk::exit(1);
     }
     p = skip_spaces(p + i);
 
@@ -129,24 +129,24 @@ extern "C" void _start() {
     tok[i] = '\0';
     uint32_t gw;
     if (!parse_ip(tok, &gw)) {
-        zenith::print("Invalid gateway: ");
-        zenith::print(tok);
-        zenith::putchar('\n');
-        zenith::exit(1);
+        montauk::print("Invalid gateway: ");
+        montauk::print(tok);
+        montauk::putchar('\n');
+        montauk::exit(1);
     }
 
-    Zenith::NetCfg cfg;
+    Montauk::NetCfg cfg;
     cfg.ipAddress  = ip;
     cfg.subnetMask = mask;
     cfg.gateway    = gw;
-    if (zenith::set_netcfg(&cfg) < 0) {
-        zenith::print("Error: failed to set network config\n");
-        zenith::exit(1);
+    if (montauk::set_netcfg(&cfg) < 0) {
+        montauk::print("Error: failed to set network config\n");
+        montauk::exit(1);
     }
 
-    zenith::print("Network config updated:\n");
-    zenith::print("  IP Address:   "); print_ip(ip); zenith::putchar('\n');
-    zenith::print("  Subnet Mask:  "); print_ip(mask); zenith::putchar('\n');
-    zenith::print("  Gateway:      "); print_ip(gw); zenith::putchar('\n');
-    zenith::exit(0);
+    montauk::print("Network config updated:\n");
+    montauk::print("  IP Address:   "); print_ip(ip); montauk::putchar('\n');
+    montauk::print("  Subnet Mask:  "); print_ip(mask); montauk::putchar('\n');
+    montauk::print("  Gateway:      "); print_ip(gw); montauk::putchar('\n');
+    montauk::exit(0);
 }

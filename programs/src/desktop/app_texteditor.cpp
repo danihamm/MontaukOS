@@ -1,6 +1,6 @@
 /*
     * app_texteditor.cpp
-    * ZenithOS Desktop - Text Editor application
+    * MontaukOS Desktop - Text Editor application
     * Single-buffer text editor with line numbers, cursor, scrolling, file I/O
     * Copyright (c) 2026 Daniel Hammer
 */
@@ -48,7 +48,7 @@ struct TextEditorState {
 
 static void te_recompute_lines(TextEditorState* te) {
     if (!te->line_offsets) {
-        te->line_offsets = (int*)zenith::malloc(TE_MAX_LINES * sizeof(int));
+        te->line_offsets = (int*)montauk::malloc(TE_MAX_LINES * sizeof(int));
     }
 
     te->line_count = 0;
@@ -94,7 +94,7 @@ static void te_ensure_capacity(TextEditorState* te, int needed) {
     int new_cap = te->buf_cap * 2;
     if (new_cap > TE_MAX_CAP) new_cap = TE_MAX_CAP;
     if (new_cap < te->buf_len + needed) new_cap = te->buf_len + needed;
-    te->buffer = (char*)zenith::realloc(te->buffer, new_cap);
+    te->buffer = (char*)montauk::realloc(te->buffer, new_cap);
     te->buf_cap = new_cap;
 }
 
@@ -236,21 +236,21 @@ static void te_ensure_cursor_visible(TextEditorState* te, int visible_lines, int
 // ============================================================================
 
 static void te_load_file(TextEditorState* te, const char* path) {
-    int fd = zenith::open(path);
+    int fd = montauk::open(path);
     if (fd < 0) return;
 
-    uint64_t size = zenith::getsize(fd);
+    uint64_t size = montauk::getsize(fd);
     if (size > TE_MAX_CAP) size = TE_MAX_CAP;
 
     if ((int)size >= te->buf_cap) {
         int new_cap = (int)size + 1024;
         if (new_cap > TE_MAX_CAP) new_cap = TE_MAX_CAP;
-        te->buffer = (char*)zenith::realloc(te->buffer, new_cap);
+        te->buffer = (char*)montauk::realloc(te->buffer, new_cap);
         te->buf_cap = new_cap;
     }
 
-    zenith::read(fd, (uint8_t*)te->buffer, 0, size);
-    zenith::close(fd);
+    montauk::read(fd, (uint8_t*)te->buffer, 0, size);
+    montauk::close(fd);
 
     te->buf_len = (int)size;
     te->cursor_pos = 0;
@@ -258,7 +258,7 @@ static void te_load_file(TextEditorState* te, const char* path) {
     te->scroll_x = 0;
     te->modified = false;
 
-    zenith::strncpy(te->filepath, path, 255);
+    montauk::strncpy(te->filepath, path, 255);
 
     // Extract filename from path
     int last_slash = -1;
@@ -266,9 +266,9 @@ static void te_load_file(TextEditorState* te, const char* path) {
         if (path[i] == '/') last_slash = i;
     }
     if (last_slash >= 0) {
-        zenith::strncpy(te->filename, path + last_slash + 1, 63);
+        montauk::strncpy(te->filename, path + last_slash + 1, 63);
     } else {
-        zenith::strncpy(te->filename, path, 63);
+        montauk::strncpy(te->filename, path, 63);
     }
 
     te_recompute_lines(te);
@@ -278,11 +278,11 @@ static void te_load_file(TextEditorState* te, const char* path) {
 static void te_save_file(TextEditorState* te) {
     if (te->filepath[0] == '\0') return;
 
-    int fd = zenith::fcreate(te->filepath);
+    int fd = montauk::fcreate(te->filepath);
     if (fd < 0) return;
 
-    zenith::fwrite(fd, (const uint8_t*)te->buffer, 0, te->buf_len);
-    zenith::close(fd);
+    montauk::fwrite(fd, (const uint8_t*)te->buffer, 0, te->buf_len);
+    montauk::close(fd);
 
     te->modified = false;
 }
@@ -502,8 +502,8 @@ static void texteditor_on_mouse(Window* win, MouseEvent& ev) {
             te->show_pathbar = !te->show_pathbar;
             if (te->show_pathbar) {
                 // Pre-fill with current filepath
-                zenith::strncpy(te->pathbar_text, te->filepath, 255);
-                te->pathbar_len = zenith::slen(te->pathbar_text);
+                montauk::strncpy(te->pathbar_text, te->filepath, 255);
+                te->pathbar_len = montauk::slen(te->pathbar_text);
                 te->pathbar_cursor = te->pathbar_len;
             }
             return;
@@ -529,7 +529,7 @@ static void texteditor_on_mouse(Window* win, MouseEvent& ev) {
                     // Update window title
                     char title[64];
                     snprintf(title, 64, "%s - Editor", te->filename);
-                    zenith::strncpy(win->title, title, 63);
+                    montauk::strncpy(win->title, title, 63);
                     te->show_pathbar = false;
                 }
             }
@@ -566,7 +566,7 @@ static void texteditor_on_mouse(Window* win, MouseEvent& ev) {
 // Keyboard handling
 // ============================================================================
 
-static void texteditor_on_key(Window* win, const Zenith::KeyEvent& key) {
+static void texteditor_on_key(Window* win, const Montauk::KeyEvent& key) {
     TextEditorState* te = (TextEditorState*)win->app_data;
     if (!te || !key.pressed) return;
 
@@ -577,7 +577,7 @@ static void texteditor_on_key(Window* win, const Zenith::KeyEvent& key) {
                 te_load_file(te, te->pathbar_text);
                 char title[64];
                 snprintf(title, 64, "%s - Editor", te->filename);
-                zenith::strncpy(win->title, title, 63);
+                montauk::strncpy(win->title, title, 63);
                 te->show_pathbar = false;
             }
             return;
@@ -628,8 +628,8 @@ static void texteditor_on_key(Window* win, const Zenith::KeyEvent& key) {
     if (key.ctrl && (key.ascii == 'o' || key.ascii == 'O')) {
         te->show_pathbar = !te->show_pathbar;
         if (te->show_pathbar) {
-            zenith::strncpy(te->pathbar_text, te->filepath, 255);
-            te->pathbar_len = zenith::slen(te->pathbar_text);
+            montauk::strncpy(te->pathbar_text, te->filepath, 255);
+            te->pathbar_len = montauk::slen(te->pathbar_text);
             te->pathbar_cursor = te->pathbar_len;
         }
         return;
@@ -678,9 +678,9 @@ static void texteditor_on_key(Window* win, const Zenith::KeyEvent& key) {
 static void texteditor_on_close(Window* win) {
     TextEditorState* te = (TextEditorState*)win->app_data;
     if (te) {
-        if (te->buffer) zenith::mfree(te->buffer);
-        if (te->line_offsets) zenith::mfree(te->line_offsets);
-        zenith::mfree(te);
+        if (te->buffer) montauk::mfree(te->buffer);
+        if (te->line_offsets) montauk::mfree(te->line_offsets);
+        montauk::mfree(te);
         win->app_data = nullptr;
     }
 }
@@ -694,10 +694,10 @@ void open_texteditor(DesktopState* ds) {
     if (idx < 0) return;
 
     Window* win = &ds->windows[idx];
-    TextEditorState* te = (TextEditorState*)zenith::malloc(sizeof(TextEditorState));
-    zenith::memset(te, 0, sizeof(TextEditorState));
+    TextEditorState* te = (TextEditorState*)montauk::malloc(sizeof(TextEditorState));
+    montauk::memset(te, 0, sizeof(TextEditorState));
 
-    te->buffer = (char*)zenith::malloc(TE_INIT_CAP);
+    te->buffer = (char*)montauk::malloc(TE_INIT_CAP);
     te->buf_cap = TE_INIT_CAP;
     te->buf_len = 0;
     te->modified = false;
@@ -731,10 +731,10 @@ void open_texteditor_with_file(DesktopState* ds, const char* path) {
     if (idx < 0) return;
 
     Window* win = &ds->windows[idx];
-    TextEditorState* te = (TextEditorState*)zenith::malloc(sizeof(TextEditorState));
-    zenith::memset(te, 0, sizeof(TextEditorState));
+    TextEditorState* te = (TextEditorState*)montauk::malloc(sizeof(TextEditorState));
+    montauk::memset(te, 0, sizeof(TextEditorState));
 
-    te->buffer = (char*)zenith::malloc(TE_INIT_CAP);
+    te->buffer = (char*)montauk::malloc(TE_INIT_CAP);
     te->buf_cap = TE_INIT_CAP;
     te->buf_len = 0;
     te->modified = false;

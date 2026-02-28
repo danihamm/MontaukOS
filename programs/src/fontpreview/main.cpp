@@ -1,13 +1,13 @@
 /*
  * main.cpp
- * ZenithOS Font Preview app
+ * MontaukOS Font Preview app
  * Displays TTF font samples at multiple sizes with vertical scrolling
  * Copyright (c) 2026 Daniel Hammer
  */
 
-#include <zenith/syscall.h>
-#include <zenith/string.h>
-#include <zenith/heap.h>
+#include <montauk/syscall.h>
+#include <montauk/string.h>
+#include <montauk/heap.h>
 #include <gui/gui.hpp>
 #include <gui/truetype.hpp>
 
@@ -115,7 +115,7 @@ static void int_to_str(char* buf, int val) {
 }
 
 static void str_append(char* dst, const char* src, int maxlen) {
-    int len = zenith::slen(dst);
+    int len = montauk::slen(dst);
     int i = 0;
     while (src[i] && len + i < maxlen - 1) {
         dst[len + i] = src[i];
@@ -161,7 +161,7 @@ static void prerrender_glyphs() {
             g->yoff = y0;
 
             if (g->width > 0 && g->height > 0) {
-                g->bitmap = (uint8_t*)zenith::malloc(g->width * g->height);
+                g->bitmap = (uint8_t*)montauk::malloc(g->width * g->height);
                 if (g->bitmap) {
                     stbtt_MakeCodepointBitmap(&g_preview_info, g->bitmap,
                         g->width, g->height, g->width, scale, scale, cp);
@@ -334,15 +334,15 @@ static void clamp_scroll() {
 
 extern "C" void _start() {
     char filepath[512] = {};
-    int arglen = zenith::getargs(filepath, sizeof(filepath));
-    if (arglen <= 0) zenith::strcpy(filepath, "");
+    int arglen = montauk::getargs(filepath, sizeof(filepath));
+    if (arglen <= 0) montauk::strcpy(filepath, "");
 
     // Load UI font for labels
     auto load_font = [](const char* path) -> TrueTypeFont* {
-        TrueTypeFont* f = (TrueTypeFont*)zenith::malloc(sizeof(TrueTypeFont));
+        TrueTypeFont* f = (TrueTypeFont*)montauk::malloc(sizeof(TrueTypeFont));
         if (!f) return nullptr;
-        zenith::memset(f, 0, sizeof(TrueTypeFont));
-        if (!f->init(path)) { zenith::mfree(f); return nullptr; }
+        montauk::memset(f, 0, sizeof(TrueTypeFont));
+        if (!f->init(path)) { montauk::mfree(f); return nullptr; }
         return f;
     };
     g_ui_font = load_font("0:/fonts/Roboto-Medium.ttf");
@@ -351,25 +351,25 @@ extern "C" void _start() {
     char title[64] = "Font Preview";
     if (filepath[0]) {
         const char* name = basename(filepath);
-        if (name[0]) zenith::strncpy(title, name, 63);
+        if (name[0]) montauk::strncpy(title, name, 63);
     }
 
     // Load preview font via stbtt
     if (filepath[0]) {
-        int fd = zenith::open(filepath);
+        int fd = montauk::open(filepath);
         if (fd >= 0) {
-            uint64_t size = zenith::getsize(fd);
+            uint64_t size = montauk::getsize(fd);
             if (size > 0 && size <= 1024 * 1024) {
-                g_preview_data = (uint8_t*)zenith::malloc(size);
+                g_preview_data = (uint8_t*)montauk::malloc(size);
                 if (g_preview_data) {
-                    zenith::read(fd, g_preview_data, 0, size);
+                    montauk::read(fd, g_preview_data, 0, size);
                     if (stbtt_InitFont(&g_preview_info, g_preview_data,
                                        stbtt_GetFontOffsetForIndex(g_preview_data, 0))) {
                         g_load_ok = true;
                     }
                 }
             }
-            zenith::close(fd);
+            montauk::close(fd);
         }
     }
 
@@ -379,24 +379,24 @@ extern "C" void _start() {
     g_content_h = calc_content_height();
 
     // Create window
-    Zenith::WinCreateResult wres;
-    if (zenith::win_create(title, INIT_W, INIT_H, &wres) < 0 || wres.id < 0)
-        zenith::exit(1);
+    Montauk::WinCreateResult wres;
+    if (montauk::win_create(title, INIT_W, INIT_H, &wres) < 0 || wres.id < 0)
+        montauk::exit(1);
 
     int       win_id = wres.id;
     uint32_t* pixels = (uint32_t*)(uintptr_t)wres.pixelVa;
 
     render(pixels);
-    zenith::win_present(win_id);
+    montauk::win_present(win_id);
 
     while (true) {
-        Zenith::WinEvent ev;
-        int r = zenith::win_poll(win_id, &ev);
+        Montauk::WinEvent ev;
+        int r = montauk::win_poll(win_id, &ev);
 
         if (r < 0) break;
 
         if (r == 0) {
-            zenith::sleep_ms(16);
+            montauk::sleep_ms(16);
             continue;
         }
 
@@ -405,10 +405,10 @@ extern "C" void _start() {
         if (ev.type == 2) {
             g_win_w = ev.resize.w;
             g_win_h = ev.resize.h;
-            pixels = (uint32_t*)(uintptr_t)zenith::win_resize(win_id, g_win_w, g_win_h);
+            pixels = (uint32_t*)(uintptr_t)montauk::win_resize(win_id, g_win_w, g_win_h);
             clamp_scroll();
             render(pixels);
-            zenith::win_present(win_id);
+            montauk::win_present(win_id);
             continue;
         }
 
@@ -428,7 +428,7 @@ extern "C" void _start() {
             if (redraw) {
                 clamp_scroll();
                 render(pixels);
-                zenith::win_present(win_id);
+                montauk::win_present(win_id);
             }
             continue;
         }
@@ -438,12 +438,12 @@ extern "C" void _start() {
                 g_scroll_y -= ev.mouse.scroll * SCROLL_STEP;
                 clamp_scroll();
                 render(pixels);
-                zenith::win_present(win_id);
+                montauk::win_present(win_id);
             }
             continue;
         }
     }
 
-    zenith::win_destroy(win_id);
-    zenith::exit(0);
+    montauk::win_destroy(win_id);
+    montauk::exit(0);
 }

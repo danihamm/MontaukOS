@@ -1,15 +1,15 @@
 /*
     * heap.h
-    * Userspace heap allocator for ZenithOS programs
+    * Userspace heap allocator for MontaukOS programs
     * Free-list allocator backed by SYS_ALLOC page requests.
     * Adapted from the kernel HeapAllocator.
     * Copyright (c) 2025 Daniel Hammer
 */
 
 #pragma once
-#include <zenith/syscall.h>
+#include <montauk/syscall.h>
 
-namespace zenith {
+namespace montauk {
 namespace heap_detail {
 
     static constexpr uint64_t HEADER_MAGIC = 0x5A484541;  // "ZHEA"
@@ -43,7 +43,7 @@ namespace heap_detail {
         uint64_t pages = (bytes + 0xFFF) / 0x1000;
         if (pages < 4) pages = 4;          // grow at least 16 KiB at a time
 
-        void* mem = zenith::alloc(pages * 0x1000);
+        void* mem = montauk::alloc(pages * 0x1000);
         if (mem == nullptr) return false;
         insert_free(mem, pages * 0x1000);
         return true;
@@ -132,4 +132,4 @@ namespace heap_detail {
         return newBlock;
     }
 
-} // namespace zenith
+} // namespace montauk

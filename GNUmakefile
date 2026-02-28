@@ -8,7 +8,7 @@ ARCH := x86_64
 # Default user QEMU flags. These are appended to the QEMU command calls.
 QEMUFLAGS := -m 2G -d int -D qemu.log
 
-override IMAGE_NAME := os220-$(ARCH)
+override IMAGE_NAME := montauk-$(ARCH)
 
 # Toolchain for building the 'limine' executable for the host.
 HOST_CC := cc

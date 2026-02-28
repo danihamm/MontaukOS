@@ -1,6 +1,6 @@
 /*
     * widgets.hpp
-    * ZenithOS GUI widget toolkit (Label, Button, TextBox, Scrollbar)
+    * MontaukOS GUI widget toolkit (Label, Button, TextBox, Scrollbar)
     * Copyright (c) 2025 Daniel Hammer
 */
 
@@ -227,7 +227,7 @@ struct TextBox {
         }
     }
 
-    void handle_key(const Zenith::KeyEvent& key) {
+    void handle_key(const Montauk::KeyEvent& key) {
         if (!focused || !key.pressed) return;
 
         if (key.ascii == '\b' || key.scancode == 0x0E) {

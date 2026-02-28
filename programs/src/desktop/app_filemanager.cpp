@@ -1,6 +1,6 @@
 /*
     * app_filemanager.cpp
-    * ZenithOS Desktop - Enhanced File Manager application
+    * MontaukOS Desktop - Enhanced File Manager application
     * Copyright (c) 2026 Daniel Hammer
 */
 
@@ -44,8 +44,8 @@ static constexpr int FM_GRID_PAD    = 4;
 // ============================================================================
 
 static bool str_ends_with(const char* s, const char* suffix) {
-    int slen = zenith::slen(s);
-    int suflen = zenith::slen(suffix);
+    int slen = montauk::slen(s);
+    int suflen = montauk::slen(suffix);
     if (suflen > slen) return false;
     for (int i = 0; i < suflen; i++) {
         char sc = s[slen - suflen + i];
@@ -77,7 +77,7 @@ static int detect_file_type(const char* name, bool is_dir) {
 
 static void filemanager_read_dir(FileManagerState* fm) {
     const char* names[64];
-    fm->entry_count = zenith::readdir(fm->current_path, names, 64);
+    fm->entry_count = montauk::readdir(fm->current_path, names, 64);
     if (fm->entry_count < 0) fm->entry_count = 0;
 
     // readdir returns full paths from the VFS (e.g. "man/fetch.1" instead
@@ -92,8 +92,8 @@ static void filemanager_read_dir(FileManagerState* fm) {
     char prefix[256] = {0};
     int prefix_len = 0;
     if (after_drive[0] != '\0') {
-        zenith::strcpy(prefix, after_drive);
-        prefix_len = zenith::slen(prefix);
+        montauk::strcpy(prefix, after_drive);
+        prefix_len = montauk::slen(prefix);
         if (prefix_len > 0 && prefix[prefix_len - 1] != '/') {
             prefix[prefix_len++] = '/';
             prefix[prefix_len] = '\0';
@@ -110,8 +110,8 @@ static void filemanager_read_dir(FileManagerState* fm) {
             }
             if (match) raw += prefix_len;
         }
-        zenith::strncpy(fm->entry_names[i], raw, 63);
-        int len = zenith::slen(fm->entry_names[i]);
+        montauk::strncpy(fm->entry_names[i], raw, 63);
+        int len = montauk::slen(fm->entry_names[i]);
 
         // Detect directory
         if (len > 0 && fm->entry_names[i][len - 1] == '/') {
@@ -131,16 +131,16 @@ static void filemanager_read_dir(FileManagerState* fm) {
         fm->entry_sizes[i] = 0;
         if (!fm->is_dir[i]) {
             char fullpath[512];
-            zenith::strcpy(fullpath, fm->current_path);
-            int plen = zenith::slen(fullpath);
+            montauk::strcpy(fullpath, fm->current_path);
+            int plen = montauk::slen(fullpath);
             if (plen > 0 && fullpath[plen - 1] != '/') {
                 str_append(fullpath, "/", 512);
             }
             str_append(fullpath, fm->entry_names[i], 512);
-            int fd = zenith::open(fullpath);
+            int fd = montauk::open(fullpath);
             if (fd >= 0) {
-                fm->entry_sizes[i] = (int)zenith::getsize(fd);
-                zenith::close(fd);
+                fm->entry_sizes[i] = (int)montauk::getsize(fd);
+                montauk::close(fd);
             }
         }
     }
@@ -151,7 +151,7 @@ static void filemanager_read_dir(FileManagerState* fm) {
         int tmp_type = fm->entry_types[i];
         int tmp_size = fm->entry_sizes[i];
         bool tmp_isdir = fm->is_dir[i];
-        zenith::strcpy(tmp_name, fm->entry_names[i]);
+        montauk::strcpy(tmp_name, fm->entry_names[i]);
 
         int j = i - 1;
         while (j >= 0) {
@@ -165,13 +165,13 @@ static void filemanager_read_dir(FileManagerState* fm) {
             }
             if (!swap) break;
 
-            zenith::strcpy(fm->entry_names[j + 1], fm->entry_names[j]);
+            montauk::strcpy(fm->entry_names[j + 1], fm->entry_names[j]);
             fm->entry_types[j + 1] = fm->entry_types[j];
             fm->entry_sizes[j + 1] = fm->entry_sizes[j];
             fm->is_dir[j + 1] = fm->is_dir[j];
             j--;
         }
-        zenith::strcpy(fm->entry_names[j + 1], tmp_name);
+        montauk::strcpy(fm->entry_names[j + 1], tmp_name);
         fm->entry_types[j + 1] = tmp_type;
         fm->entry_sizes[j + 1] = tmp_size;
         fm->is_dir[j + 1] = tmp_isdir;
@@ -190,16 +190,16 @@ static void filemanager_read_dir(FileManagerState* fm) {
 static void filemanager_push_history(FileManagerState* fm) {
     // Don't push if same as current position
     if (fm->history_count > 0 && fm->history_pos >= 0) {
-        if (zenith::streq(fm->history[fm->history_pos], fm->current_path)) return;
+        if (montauk::streq(fm->history[fm->history_pos], fm->current_path)) return;
     }
     fm->history_pos++;
     if (fm->history_pos >= 16) fm->history_pos = 15;
-    zenith::strcpy(fm->history[fm->history_pos], fm->current_path);
+    montauk::strcpy(fm->history[fm->history_pos], fm->current_path);
     fm->history_count = fm->history_pos + 1;
 }
 
 static void filemanager_navigate(FileManagerState* fm, const char* name) {
-    int path_len = zenith::slen(fm->current_path);
+    int path_len = montauk::slen(fm->current_path);
     if (path_len > 0 && fm->current_path[path_len - 1] != '/') {
         str_append(fm->current_path, "/", 256);
     }
@@ -209,7 +209,7 @@ static void filemanager_navigate(FileManagerState* fm, const char* name) {
 }
 
 static void filemanager_go_up(FileManagerState* fm) {
-    int len = zenith::slen(fm->current_path);
+    int len = montauk::slen(fm->current_path);
     if (len <= 3) return; // "0:/" is root
 
     if (len > 0 && fm->current_path[len - 1] == '/') {
@@ -231,19 +231,19 @@ static void filemanager_go_up(FileManagerState* fm) {
 static void filemanager_go_back(FileManagerState* fm) {
     if (fm->history_pos <= 0) return;
     fm->history_pos--;
-    zenith::strcpy(fm->current_path, fm->history[fm->history_pos]);
+    montauk::strcpy(fm->current_path, fm->history[fm->history_pos]);
     filemanager_read_dir(fm);
 }
 
 static void filemanager_go_forward(FileManagerState* fm) {
     if (fm->history_pos >= fm->history_count - 1) return;
     fm->history_pos++;
-    zenith::strcpy(fm->current_path, fm->history[fm->history_pos]);
+    montauk::strcpy(fm->current_path, fm->history[fm->history_pos]);
     filemanager_read_dir(fm);
 }
 
 static void filemanager_go_home(FileManagerState* fm) {
-    zenith::strcpy(fm->current_path, "0:/");
+    montauk::strcpy(fm->current_path, "0:/");
     filemanager_push_history(fm);
     filemanager_read_dir(fm);
 }
@@ -368,14 +368,14 @@ static void filemanager_on_draw(Window* win, Framebuffer& fb) {
 
             // Filename centered below icon, truncated if needed
             char label[16];
-            int nlen = zenith::slen(fm->entry_names[i]);
+            int nlen = montauk::slen(fm->entry_names[i]);
             if (nlen > 9) {
                 for (int k = 0; k < 9; k++) label[k] = fm->entry_names[i][k];
                 label[9] = '.';
                 label[10] = '.';
                 label[11] = '\0';
             } else {
-                zenith::strncpy(label, fm->entry_names[i], 15);
+                montauk::strncpy(label, fm->entry_names[i], 15);
             }
             int tw = text_width(label);
             int tx = cell_x + (FM_GRID_CELL_W - tw) / 2;
@@ -539,7 +539,7 @@ static void filemanager_on_mouse(Window* win, MouseEvent& ev) {
                 int clicked_idx = row * cols + col;
 
                 if (clicked_idx >= 0 && clicked_idx < fm->entry_count && col < cols) {
-                    uint64_t now = zenith::get_milliseconds();
+                    uint64_t now = montauk::get_milliseconds();
 
                     if (fm->last_click_item == clicked_idx &&
                         (now - fm->last_click_time) < 400) {
@@ -547,16 +547,16 @@ static void filemanager_on_mouse(Window* win, MouseEvent& ev) {
                             filemanager_navigate(fm, fm->entry_names[clicked_idx]);
                         } else {
                             char fullpath[512];
-                            zenith::strcpy(fullpath, fm->current_path);
-                            int plen = zenith::slen(fullpath);
+                            montauk::strcpy(fullpath, fm->current_path);
+                            int plen = montauk::slen(fullpath);
                             if (plen > 0 && fullpath[plen - 1] != '/') {
                                 str_append(fullpath, "/", 512);
                             }
                             str_append(fullpath, fm->entry_names[clicked_idx], 512);
                             if (is_image_file(fm->entry_names[clicked_idx])) {
-                                zenith::spawn("0:/os/imageviewer.elf", fullpath);
+                                montauk::spawn("0:/os/imageviewer.elf", fullpath);
                             } else if (is_font_file(fm->entry_names[clicked_idx])) {
-                                zenith::spawn("0:/os/fontpreview.elf", fullpath);
+                                montauk::spawn("0:/os/fontpreview.elf", fullpath);
                             } else if (fm->desktop) {
                                 open_texteditor_with_file(fm->desktop, fullpath);
                             }
@@ -578,7 +578,7 @@ static void filemanager_on_mouse(Window* win, MouseEvent& ev) {
                 int clicked_idx = rel_y / FM_ITEM_H;
 
                 if (clicked_idx >= 0 && clicked_idx < fm->entry_count) {
-                    uint64_t now = zenith::get_milliseconds();
+                    uint64_t now = montauk::get_milliseconds();
 
                     // Double-click detection
                     if (fm->last_click_item == clicked_idx &&
@@ -588,16 +588,16 @@ static void filemanager_on_mouse(Window* win, MouseEvent& ev) {
                         } else {
                             // Open file in appropriate viewer
                             char fullpath[512];
-                            zenith::strcpy(fullpath, fm->current_path);
-                            int plen = zenith::slen(fullpath);
+                            montauk::strcpy(fullpath, fm->current_path);
+                            int plen = montauk::slen(fullpath);
                             if (plen > 0 && fullpath[plen - 1] != '/') {
                                 str_append(fullpath, "/", 512);
                             }
                             str_append(fullpath, fm->entry_names[clicked_idx], 512);
                             if (is_image_file(fm->entry_names[clicked_idx])) {
-                                zenith::spawn("0:/os/imageviewer.elf", fullpath);
+                                montauk::spawn("0:/os/imageviewer.elf", fullpath);
                             } else if (is_font_file(fm->entry_names[clicked_idx])) {
-                                zenith::spawn("0:/os/fontpreview.elf", fullpath);
+                                montauk::spawn("0:/os/fontpreview.elf", fullpath);
                             } else if (fm->desktop) {
                                 open_texteditor_with_file(fm->desktop, fullpath);
                             }
@@ -633,7 +633,7 @@ static void filemanager_on_mouse(Window* win, MouseEvent& ev) {
 // Keyboard handling
 // ============================================================================
 
-static void filemanager_on_key(Window* win, const Zenith::KeyEvent& key) {
+static void filemanager_on_key(Window* win, const Montauk::KeyEvent& key) {
     FileManagerState* fm = (FileManagerState*)win->app_data;
     if (!fm || !key.pressed) return;
 
@@ -682,7 +682,7 @@ static void filemanager_on_key(Window* win, const Zenith::KeyEvent& key) {
 
 static void filemanager_on_close(Window* win) {
     if (win->app_data) {
-        zenith::mfree(win->app_data);
+        montauk::mfree(win->app_data);
         win->app_data = nullptr;
     }
 }
@@ -696,9 +696,9 @@ void open_filemanager(DesktopState* ds) {
     if (idx < 0) return;
 
     Window* win = &ds->windows[idx];
-    FileManagerState* fm = (FileManagerState*)zenith::malloc(sizeof(FileManagerState));
-    zenith::memset(fm, 0, sizeof(FileManagerState));
-    zenith::strcpy(fm->current_path, "0:/");
+    FileManagerState* fm = (FileManagerState*)montauk::malloc(sizeof(FileManagerState));
+    montauk::memset(fm, 0, sizeof(FileManagerState));
+    montauk::strcpy(fm->current_path, "0:/");
     fm->selected = -1;
     fm->last_click_item = -1;
     fm->history_pos = -1;

@@ -33,7 +33,7 @@
 // Assembly entry point
 extern "C" void SyscallEntry();
 
-namespace Zenith {
+namespace Montauk {
 
     // ---- Dispatch ----
 

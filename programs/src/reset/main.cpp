@@ -4,9 +4,9 @@
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
+#include <montauk/syscall.h>
 
 extern "C" void _start() {
-    zenith::print("Rebooting...\n");
-    zenith::reset();
+    montauk::print("Rebooting...\n");
+    montauk::reset();
 }

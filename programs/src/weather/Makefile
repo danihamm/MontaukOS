@@ -1,4 +1,4 @@
-# Makefile for weather (standalone Weather GUI client) on ZenithOS
+# Makefile for weather (standalone Weather GUI client) on MontaukOS
 # Copyright (c) 2026 Daniel Hammer
 
 MAKEFLAGS += -rR

@@ -3,14 +3,14 @@
     malloc, mfree, realloc - userspace heap allocation
 
 .SH SYNOPSIS
-.BI     void* zenith::malloc(uint64_t size);
-.BI     void zenith::mfree(void* ptr);
-.BI     void* zenith::realloc(void* ptr, uint64_t size);
+.BI     void* montauk::malloc(uint64_t size);
+.BI     void montauk::mfree(void* ptr);
+.BI     void* montauk::realloc(void* ptr, uint64_t size);
 
 .SH DESCRIPTION
     The userspace heap provides dynamic memory allocation on top of
     the kernel's page-mapping syscall (SYS_ALLOC). Include the
-    header <zenith/heap.h> to use these functions.
+    header <montauk/heap.h> to use these functions.
 
 .SS malloc
     Allocates 'size' bytes from the free list. Returns a 16-byte
@@ -18,21 +18,21 @@
     empty, it requests more pages from the kernel via SYS_ALLOC
     (minimum 16 KiB growth, initial seed of 64 KiB).
 
-        char* buf = (char*)zenith::malloc(1024);
+        char* buf = (char*)montauk::malloc(1024);
 
 .SS mfree
     Returns the block to the userspace free list. No syscall is
     made -- the memory stays mapped and is immediately reusable.
     Passing nullptr is a safe no-op.
 
-        zenith::mfree(buf);
+        montauk::mfree(buf);
 
 .SS realloc
     Resizes the allocation to 'size' bytes. Allocates a new block,
     copies the smaller of old/new sizes, and frees the old block.
     If ptr is nullptr, behaves like malloc.
 
-        buf = (char*)zenith::realloc(buf, 2048);
+        buf = (char*)montauk::realloc(buf, 2048);
 
 .SH IMPLEMENTATION
     The allocator uses a linked free-list with first-fit search.
@@ -47,8 +47,8 @@
 .SH LOW-LEVEL PAGE API
     For large allocations or when direct page control is needed:
 
-        void* zenith::alloc(uint64_t size);  // SYS_ALLOC
-        void  zenith::free(void* ptr);       // SYS_FREE (no-op)
+        void* montauk::alloc(uint64_t size);  // SYS_ALLOC
+        void  montauk::free(void* ptr);       // SYS_FREE (no-op)
 
     alloc() maps zeroed pages starting at 0x40000000 and growing
     upward. Size is rounded up to 4 KiB page boundaries.

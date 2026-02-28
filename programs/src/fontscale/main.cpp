@@ -4,8 +4,8 @@
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
-#include <zenith/string.h>
+#include <montauk/syscall.h>
+#include <montauk/string.h>
 
 static int atoi(const char* s) {
     int n = 0;
@@ -20,69 +20,69 @@ static void print_int(int n) {
     char buf[16];
     int i = 0;
     if (n == 0) {
-        zenith::putchar('0');
+        montauk::putchar('0');
         return;
     }
     while (n > 0 && i < 15) {
         buf[i++] = '0' + (n % 10);
         n /= 10;
     }
-    while (i > 0) zenith::putchar(buf[--i]);
+    while (i > 0) montauk::putchar(buf[--i]);
 }
 
 extern "C" void _start() {
     char args[128];
-    int len = zenith::getargs(args, sizeof(args));
+    int len = montauk::getargs(args, sizeof(args));
 
     if (len <= 0 || args[0] == '\0') {
         // No args: show current scale
         int sx, sy;
-        zenith::get_termscale(&sx, &sy);
+        montauk::get_termscale(&sx, &sy);
         int cols, rows;
-        zenith::termsize(&cols, &rows);
+        montauk::termsize(&cols, &rows);
 
-        zenith::print("Font scale: ");
+        montauk::print("Font scale: ");
         print_int(sx);
-        zenith::print("x");
+        montauk::print("x");
         print_int(sy);
-        zenith::print("  Terminal: ");
+        montauk::print("  Terminal: ");
         print_int(cols);
-        zenith::print("x");
+        montauk::print("x");
         print_int(rows);
-        zenith::putchar('\n');
-        zenith::exit(0);
+        montauk::putchar('\n');
+        montauk::exit(0);
     }
 
     // Parse arguments
-    const char* p = zenith::skip_spaces(args);
+    const char* p = montauk::skip_spaces(args);
     int scale_x = atoi(p);
 
     // Skip past first number to find optional second
     while (*p >= '0' && *p <= '9') p++;
-    p = zenith::skip_spaces(p);
+    p = montauk::skip_spaces(p);
     int scale_y = (*p >= '1' && *p <= '8') ? atoi(p) : scale_x;
 
     if (scale_x < 1 || scale_x > 8 || scale_y < 1 || scale_y > 8) {
-        zenith::print("fontscale: scale must be 1-8\n");
-        zenith::exit(1);
+        montauk::print("fontscale: scale must be 1-8\n");
+        montauk::exit(1);
     }
 
-    zenith::termscale(scale_x, scale_y);
+    montauk::termscale(scale_x, scale_y);
 
     // Clear and show result
-    zenith::print("\033[2J\033[H");
+    montauk::print("\033[2J\033[H");
 
     int cols, rows;
-    zenith::termsize(&cols, &rows);
-    zenith::print("Font scale set to ");
+    montauk::termsize(&cols, &rows);
+    montauk::print("Font scale set to ");
     print_int(scale_x);
-    zenith::print("x");
+    montauk::print("x");
     print_int(scale_y);
-    zenith::print("  (");
+    montauk::print("  (");
     print_int(cols);
-    zenith::print("x");
+    montauk::print("x");
     print_int(rows);
-    zenith::print(")\n");
+    montauk::print(")\n");
 
-    zenith::exit(0);
+    montauk::exit(0);
 }

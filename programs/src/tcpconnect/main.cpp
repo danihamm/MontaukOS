@@ -4,14 +4,14 @@
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
-#include <zenith/string.h>
+#include <montauk/syscall.h>
+#include <montauk/string.h>
 
-using zenith::skip_spaces;
+using montauk::skip_spaces;
 
 static void print_int(uint64_t n) {
     if (n == 0) {
-        zenith::putchar('0');
+        montauk::putchar('0');
         return;
     }
     char buf[20];
@@ -21,7 +21,7 @@ static void print_int(uint64_t n) {
         n /= 10;
     }
     for (int j = i - 1; j >= 0; j--) {
-        zenith::putchar(buf[j]);
+        montauk::putchar(buf[j]);
     }
 }
 
@@ -55,11 +55,11 @@ static bool parse_ip(const char* s, uint32_t* out) {
 
 static void print_ip(uint32_t ip) {
     print_int(ip & 0xFF);
-    zenith::putchar('.');
+    montauk::putchar('.');
     print_int((ip >> 8) & 0xFF);
-    zenith::putchar('.');
+    montauk::putchar('.');
     print_int((ip >> 16) & 0xFF);
-    zenith::putchar('.');
+    montauk::putchar('.');
     print_int((ip >> 24) & 0xFF);
 }
 
@@ -78,11 +78,11 @@ static bool parse_uint16(const char* s, uint16_t* out) {
 
 extern "C" void _start() {
     char args[256];
-    int len = zenith::getargs(args, sizeof(args));
+    int len = montauk::getargs(args, sizeof(args));
 
     if (len <= 0 || args[0] == '\0') {
-        zenith::print("Usage: tcpconnect <host> <port>\n");
-        zenith::exit(1);
+        montauk::print("Usage: tcpconnect <host> <port>\n");
+        montauk::exit(1);
     }
 
     // Parse host (IP or hostname)
@@ -96,49 +96,49 @@ extern "C" void _start() {
 
     uint32_t ip;
     if (!parse_ip(hostStr, &ip)) {
-        ip = zenith::resolve(hostStr);
+        ip = montauk::resolve(hostStr);
         if (ip == 0) {
-            zenith::print("Could not resolve: ");
-            zenith::print(hostStr);
-            zenith::putchar('\n');
-            zenith::exit(1);
+            montauk::print("Could not resolve: ");
+            montauk::print(hostStr);
+            montauk::putchar('\n');
+            montauk::exit(1);
         }
     }
 
     // Parse port
     const char* portStr = skip_spaces(args + i);
     if (*portStr == '\0') {
-        zenith::print("Usage: tcpconnect <ip> <port>\n");
-        zenith::exit(1);
+        montauk::print("Usage: tcpconnect <ip> <port>\n");
+        montauk::exit(1);
     }
     uint16_t port;
     if (!parse_uint16(portStr, &port)) {
-        zenith::print("Invalid port: ");
-        zenith::print(portStr);
-        zenith::putchar('\n');
-        zenith::exit(1);
+        montauk::print("Invalid port: ");
+        montauk::print(portStr);
+        montauk::putchar('\n');
+        montauk::exit(1);
     }
 
     // Create socket
-    int fd = zenith::socket(Zenith::SOCK_TCP);
+    int fd = montauk::socket(Montauk::SOCK_TCP);
     if (fd < 0) {
-        zenith::print("Error: failed to create socket\n");
-        zenith::exit(1);
+        montauk::print("Error: failed to create socket\n");
+        montauk::exit(1);
     }
 
-    zenith::print("Connecting to ");
+    montauk::print("Connecting to ");
     print_ip(ip);
-    zenith::putchar(':');
+    montauk::putchar(':');
     print_int(port);
-    zenith::print("...\n");
+    montauk::print("...\n");
 
-    if (zenith::connect(fd, ip, port) < 0) {
-        zenith::print("Error: connection failed\n");
-        zenith::closesocket(fd);
-        zenith::exit(1);
+    if (montauk::connect(fd, ip, port) < 0) {
+        montauk::print("Error: connection failed\n");
+        montauk::closesocket(fd);
+        montauk::exit(1);
     }
 
-    zenith::print("Connected! Type to send, Ctrl+Q to disconnect.\n");
+    montauk::print("Connected! Type to send, Ctrl+Q to disconnect.\n");
 
     // Interactive send/receive loop
     char sendBuf[256];
@@ -147,51 +147,51 @@ extern "C" void _start() {
 
     while (true) {
         // Poll for received data (non-blocking)
-        int r = zenith::recv(fd, recvBuf, sizeof(recvBuf) - 1);
+        int r = montauk::recv(fd, recvBuf, sizeof(recvBuf) - 1);
         if (r < 0) {
-            zenith::print("\nConnection closed by remote.\n");
+            montauk::print("\nConnection closed by remote.\n");
             break;
         }
         if (r > 0) {
             recvBuf[r] = '\0';
-            zenith::print((const char*)recvBuf);
+            montauk::print((const char*)recvBuf);
         }
 
         // Poll keyboard
-        if (zenith::is_key_available()) {
-            Zenith::KeyEvent ev;
-            zenith::getkey(&ev);
+        if (montauk::is_key_available()) {
+            Montauk::KeyEvent ev;
+            montauk::getkey(&ev);
 
             if (!ev.pressed) continue;
 
             // Ctrl+Q to quit
             if (ev.ctrl && (ev.ascii == 'q' || ev.ascii == 'Q')) {
-                zenith::print("\nDisconnecting...\n");
+                montauk::print("\nDisconnecting...\n");
                 break;
             }
 
             if (ev.ascii == '\n') {
                 sendBuf[sendPos++] = '\n';
-                zenith::putchar('\n');
-                zenith::send(fd, sendBuf, sendPos);
+                montauk::putchar('\n');
+                montauk::send(fd, sendBuf, sendPos);
                 sendPos = 0;
             } else if (ev.ascii == '\b') {
                 if (sendPos > 0) {
                     sendPos--;
-                    zenith::putchar('\b');
-                    zenith::putchar(' ');
-                    zenith::putchar('\b');
+                    montauk::putchar('\b');
+                    montauk::putchar(' ');
+                    montauk::putchar('\b');
                 }
             } else if (ev.ascii >= ' ' && sendPos < 254) {
                 sendBuf[sendPos++] = ev.ascii;
-                zenith::putchar(ev.ascii);
+                montauk::putchar(ev.ascii);
             }
         } else {
             // No key and no data -- yield to avoid busy-spinning
-            zenith::yield();
+            montauk::yield();
         }
     }
 
-    zenith::closesocket(fd);
-    zenith::exit(0);
+    montauk::closesocket(fd);
+    montauk::exit(0);
 }

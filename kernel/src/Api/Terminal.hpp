@@ -10,7 +10,7 @@
 
 #include "Common.hpp"
 
-namespace Zenith {
+namespace Montauk {
 
     static void Sys_Print(const char* text) {
         auto* proc = Sched::GetCurrentProcessPtr();

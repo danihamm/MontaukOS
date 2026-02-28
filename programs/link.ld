@@ -1,6 +1,6 @@
 /*
     * link.ld
-    * Linker script for ZenithOS userspace programs
+    * Linker script for MontaukOS userspace programs
     * Copyright (c) 2025 Daniel Hammer
     *
     * Programs are loaded at a standard user-space address.

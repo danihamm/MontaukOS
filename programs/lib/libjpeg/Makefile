@@ -1,4 +1,4 @@
-# Makefile for libjpeg (JPEG decoding via stb_image) on ZenithOS
+# Makefile for libjpeg (JPEG decoding via stb_image) on MontaukOS
 # Copyright (c) 2026 Daniel Hammer
 
 MAKEFLAGS += -rR

@@ -76,7 +76,7 @@ namespace Kt {
 
         bool *glyph = &fbctx->font_bool[c->c * fbctx->font_height * fbctx->font_width];
 
-        // Only ROTATE_0 is used in ZenithOS
+        // Only ROTATE_0 is used in MontaukOS
         volatile uint32_t *dest = fbctx->framebuffer + x + y * (fbctx->pitch / 4);
         size_t stride = fbctx->pitch / 4;
 

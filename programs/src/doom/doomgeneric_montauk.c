@@ -1,6 +1,6 @@
 /*
-    * doomgeneric_zenith.c
-    * DOOM platform implementation for ZenithOS (standalone window server client)
+    * doomgeneric_montauk.c
+    * DOOM platform implementation for MontaukOS (standalone window server client)
     * Copyright (c) 2025 Daniel Hammer
 */
 
@@ -66,7 +66,7 @@ static inline long _zos_syscall4(long nr, long a1, long a2, long a3, long a4) {
 #define SYS_WINPRESENT      56
 #define SYS_WINPOLL         57
 
-/* Window server structs (must match Zenith::WinCreateResult and Zenith::WinEvent) */
+/* Window server structs (must match Montauk::WinCreateResult and Montauk::WinEvent) */
 struct WinCreateResult {
     int      id;        /* -1 on failure */
     unsigned _pad;

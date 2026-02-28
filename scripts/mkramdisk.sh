@@ -1,5 +1,5 @@
 #!/bin/bash
-# mkramdisk.sh - Create a USTAR tar archive for the ZenithOS ramdisk
+# mkramdisk.sh - Create a USTAR tar archive for the MontaukOS ramdisk
 # Usage: ./scripts/mkramdisk.sh [input_dir] [output_path]
 
 set -e
@@ -11,7 +11,7 @@ if [ ! -d "$INPUT_DIR" ]; then
     echo "mkramdisk: input directory '$INPUT_DIR' does not exist, creating empty ramdisk"
     mkdir -p "$INPUT_DIR"
     # Create a placeholder file so the tar isn't completely empty
-    echo "ZenithOS ramdisk" > "$INPUT_DIR/readme.txt"
+    echo "MontaukOS ramdisk" > "$INPUT_DIR/readme.txt"
 fi
 
 # Create USTAR tar archive

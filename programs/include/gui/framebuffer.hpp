@@ -1,12 +1,12 @@
 /*
     * framebuffer.hpp
-    * ZenithOS double-buffered framebuffer abstraction
+    * MontaukOS double-buffered framebuffer abstraction
     * Copyright (c) 2025 Daniel Hammer
 */
 
 #pragma once
 #include <cstdint>
-#include <zenith/syscall.h>
+#include <montauk/syscall.h>
 #include "gui/gui.hpp"
 
 namespace gui {
@@ -20,15 +20,15 @@ class Framebuffer {
 
 public:
     Framebuffer() : hw_fb(nullptr), back_buf(nullptr), fb_width(0), fb_height(0), fb_pitch(0) {
-        Zenith::FbInfo info;
-        zenith::fb_info(&info);
+        Montauk::FbInfo info;
+        montauk::fb_info(&info);
 
         fb_width  = (int)info.width;
         fb_height = (int)info.height;
         fb_pitch  = (int)info.pitch;
 
-        hw_fb = (uint32_t*)zenith::fb_map();
-        back_buf = (uint32_t*)zenith::alloc((uint64_t)fb_height * fb_pitch);
+        hw_fb = (uint32_t*)montauk::fb_map();
+        back_buf = (uint32_t*)montauk::alloc((uint64_t)fb_height * fb_pitch);
     }
 
     int width() const { return fb_width; }

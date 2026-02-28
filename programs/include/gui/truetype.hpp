@@ -1,14 +1,14 @@
 /*
     * truetype.hpp
-    * ZenithOS TrueType font rendering via stb_truetype
+    * MontaukOS TrueType font rendering via stb_truetype
     * Copyright (c) 2026 Daniel Hammer
 */
 
 #pragma once
 #include <cstdint>
-#include <zenith/syscall.h>
-#include <zenith/heap.h>
-#include <zenith/string.h>
+#include <montauk/syscall.h>
+#include <montauk/heap.h>
+#include <montauk/string.h>
 #include "gui/gui.hpp"
 #include "gui/framebuffer.hpp"
 
@@ -29,11 +29,11 @@
 #define STBTT_cos(x)      stb_cos(x)
 #define STBTT_acos(x)     stb_acos(x)
 #define STBTT_fabs(x)     stb_fabs(x)
-#define STBTT_malloc(x,u)  ((void)(u), zenith::malloc(x))
-#define STBTT_free(x,u)    ((void)(u), zenith::mfree(x))
-#define STBTT_memcpy(d,s,n) zenith::memcpy(d,s,n)
-#define STBTT_memset(d,v,n) zenith::memset(d,v,n)
-#define STBTT_strlen(x)    zenith::slen(x)
+#define STBTT_malloc(x,u)  ((void)(u), montauk::malloc(x))
+#define STBTT_free(x,u)    ((void)(u), montauk::mfree(x))
+#define STBTT_memcpy(d,s,n) montauk::memcpy(d,s,n)
+#define STBTT_memset(d,v,n) montauk::memset(d,v,n)
+#define STBTT_strlen(x)    montauk::slen(x)
 #define STBTT_assert(x)    ((void)(x))
 #endif
 
@@ -69,26 +69,26 @@ struct TrueTypeFont {
         data = nullptr;
         cache_count = 0;
 
-        int fd = zenith::open(vfs_path);
+        int fd = montauk::open(vfs_path);
         if (fd < 0) return false;
 
-        uint64_t size = zenith::getsize(fd);
+        uint64_t size = montauk::getsize(fd);
         if (size == 0 || size > 1024 * 1024) {
-            zenith::close(fd);
+            montauk::close(fd);
             return false;
         }
 
-        data = (uint8_t*)zenith::alloc(size);
+        data = (uint8_t*)montauk::alloc(size);
         if (!data) {
-            zenith::close(fd);
+            montauk::close(fd);
             return false;
         }
 
-        zenith::read(fd, data, 0, size);
-        zenith::close(fd);
+        montauk::read(fd, data, 0, size);
+        montauk::close(fd);
 
         if (!stbtt_InitFont(&info, data, stbtt_GetFontOffsetForIndex(data, 0))) {
-            zenith::free(data);
+            montauk::free(data);
             data = nullptr;
             return false;
         }
@@ -145,7 +145,7 @@ struct TrueTypeFont {
         g->yoff = y0;
 
         if (g->width > 0 && g->height > 0) {
-            g->bitmap = (uint8_t*)zenith::malloc(g->width * g->height);
+            g->bitmap = (uint8_t*)montauk::malloc(g->width * g->height);
             stbtt_MakeCodepointBitmap(&info, g->bitmap, g->width, g->height,
                                       g->width, gc->scale, gc->scale, codepoint);
         }
@@ -314,10 +314,10 @@ namespace fonts {
 
     inline bool init() {
         auto load = [](const char* path) -> TrueTypeFont* {
-            TrueTypeFont* f = (TrueTypeFont*)zenith::malloc(sizeof(TrueTypeFont));
-            zenith::memset(f, 0, sizeof(TrueTypeFont));
+            TrueTypeFont* f = (TrueTypeFont*)montauk::malloc(sizeof(TrueTypeFont));
+            montauk::memset(f, 0, sizeof(TrueTypeFont));
             if (!f->init(path)) {
-                zenith::mfree(f);
+                montauk::mfree(f);
                 return nullptr;
             }
             return f;

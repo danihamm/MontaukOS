@@ -1,7 +1,7 @@
 #ifndef _LIBC_SYS_TIME_H
 #define _LIBC_SYS_TIME_H
 
-/* Stub header for ZenithOS */
+/* Stub header for MontaukOS */
 
 #ifdef __cplusplus
 extern "C" {

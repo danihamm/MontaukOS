@@ -1,4 +1,4 @@
-# Makefile for shared TLS helper library on ZenithOS
+# Makefile for shared TLS helper library on MontaukOS
 # Copyright (c) 2026 Daniel Hammer
 
 MAKEFLAGS += -rR

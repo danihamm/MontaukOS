@@ -1,4 +1,4 @@
-# Makefile for fetch (HTTP/HTTPS client) on ZenithOS
+# Makefile for fetch (HTTP/HTTPS client) on MontaukOS
 # Copyright (c) 2025-2026 Daniel Hammer
 
 MAKEFLAGS += -rR

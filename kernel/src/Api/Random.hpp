@@ -7,7 +7,7 @@
 #pragma once
 #include <cstdint>
 
-namespace Zenith {
+namespace Montauk {
 
     // ---- Random number generation ----
     // Uses RDTSC mixed with xorshift64* PRNG for entropy.

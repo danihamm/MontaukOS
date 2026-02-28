@@ -1,14 +1,14 @@
 /*
     * wallpaper.hpp
-    * ZenithOS Desktop - JPEG wallpaper loading, scaling, and directory scanning
+    * MontaukOS Desktop - JPEG wallpaper loading, scaling, and directory scanning
     * Copyright (c) 2026 Daniel Hammer
 */
 
 #pragma once
 
-#include <zenith/syscall.h>
-#include <zenith/string.h>
-#include <zenith/heap.h>
+#include <montauk/syscall.h>
+#include <montauk/string.h>
+#include <montauk/heap.h>
 #include <gui/gui.hpp>
 #include <gui/desktop.hpp>
 
@@ -35,41 +35,41 @@ inline bool wallpaper_load(DesktopSettings* s, const char* path,
                            int screen_w, int screen_h) {
     // Free existing wallpaper
     if (s->bg_wallpaper) {
-        zenith::mfree(s->bg_wallpaper);
+        montauk::mfree(s->bg_wallpaper);
         s->bg_wallpaper = nullptr;
         s->bg_wallpaper_w = 0;
         s->bg_wallpaper_h = 0;
     }
 
     // Read file
-    int fd = zenith::open(path);
+    int fd = montauk::open(path);
     if (fd < 0) return false;
 
-    uint64_t size = zenith::getsize(fd);
+    uint64_t size = montauk::getsize(fd);
     if (size == 0 || size > 16 * 1024 * 1024) {
-        zenith::close(fd);
+        montauk::close(fd);
         return false;
     }
 
-    uint8_t* filedata = (uint8_t*)zenith::malloc(size);
-    if (!filedata) { zenith::close(fd); return false; }
+    uint8_t* filedata = (uint8_t*)montauk::malloc(size);
+    if (!filedata) { montauk::close(fd); return false; }
 
-    int bytes_read = zenith::read(fd, filedata, 0, size);
-    zenith::close(fd);
-    if (bytes_read <= 0) { zenith::mfree(filedata); return false; }
+    int bytes_read = montauk::read(fd, filedata, 0, size);
+    montauk::close(fd);
+    if (bytes_read <= 0) { montauk::mfree(filedata); return false; }
 
     // Decode JPEG
     int img_w, img_h, channels;
     unsigned char* rgb = stbi_load_from_memory(filedata, bytes_read,
                                                &img_w, &img_h, &channels, 3);
-    zenith::mfree(filedata);
+    montauk::mfree(filedata);
     if (!rgb) return false;
 
     // Scale to cover screen (crop to fill, maintain aspect ratio)
     int dst_w = screen_w;
     int dst_h = screen_h;
 
-    uint32_t* scaled = (uint32_t*)zenith::malloc((uint64_t)dst_w * dst_h * 4);
+    uint32_t* scaled = (uint32_t*)montauk::malloc((uint64_t)dst_w * dst_h * 4);
     if (!scaled) { stbi_image_free(rgb); return false; }
 
     // Compute source crop region for "cover" scaling
@@ -110,7 +110,7 @@ inline bool wallpaper_load(DesktopSettings* s, const char* path,
     s->bg_wallpaper   = scaled;
     s->bg_wallpaper_w = dst_w;
     s->bg_wallpaper_h = dst_h;
-    zenith::strncpy(s->bg_image_path, path, 127);
+    montauk::strncpy(s->bg_image_path, path, 127);
     s->bg_image = true;
     s->bg_gradient = false;
 
@@ -119,7 +119,7 @@ inline bool wallpaper_load(DesktopSettings* s, const char* path,
 
 inline void wallpaper_free(DesktopSettings* s) {
     if (s->bg_wallpaper) {
-        zenith::mfree(s->bg_wallpaper);
+        montauk::mfree(s->bg_wallpaper);
         s->bg_wallpaper = nullptr;
         s->bg_wallpaper_w = 0;
         s->bg_wallpaper_h = 0;
@@ -143,7 +143,7 @@ inline void wallpaper_scan_dir(const char* dir_path, WallpaperFileList* list) {
     list->count = 0;
 
     const char* raw_names[64];
-    int total = zenith::readdir(dir_path, raw_names, 64);
+    int total = montauk::readdir(dir_path, raw_names, 64);
     if (total <= 0) return;
 
     // Compute prefix to strip (readdir returns full paths from VFS root)
@@ -157,8 +157,8 @@ inline void wallpaper_scan_dir(const char* dir_path, WallpaperFileList* list) {
     char prefix[256] = {0};
     int prefix_len = 0;
     if (after_drive[0] != '\0') {
-        zenith::strcpy(prefix, after_drive);
-        prefix_len = zenith::slen(prefix);
+        montauk::strcpy(prefix, after_drive);
+        prefix_len = montauk::slen(prefix);
         if (prefix_len > 0 && prefix[prefix_len - 1] != '/') {
             prefix[prefix_len++] = '/';
             prefix[prefix_len] = '\0';
@@ -181,7 +181,7 @@ inline void wallpaper_scan_dir(const char* dir_path, WallpaperFileList* list) {
             if (match) name += prefix_len;
         }
 
-        int nlen = zenith::slen(name);
+        int nlen = montauk::slen(name);
 
         // Skip directories
         if (nlen > 0 && name[nlen - 1] == '/') continue;
@@ -206,7 +206,7 @@ inline void wallpaper_scan_dir(const char* dir_path, WallpaperFileList* list) {
         }
 
         if (is_jpeg) {
-            zenith::strncpy(list->names[list->count], name, 63);
+            montauk::strncpy(list->names[list->count], name, 63);
             list->count++;
         }
     }

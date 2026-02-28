@@ -1,15 +1,15 @@
 /*
     * main.cpp
-    * DHCP client for ZenithOS
+    * DHCP client for MontaukOS
     * Obtains network configuration automatically via DHCP (RFC 2131)
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
-#include <zenith/string.h>
+#include <montauk/syscall.h>
+#include <montauk/string.h>
 
-using zenith::memcpy;
-using zenith::memset;
+using montauk::memcpy;
+using montauk::memset;
 
 // ---- Minimal snprintf (no libc available) ----
 
@@ -332,62 +332,62 @@ static constexpr uint32_t BROADCAST_IP = 0xFFFFFFFF;
 extern "C" void _start() {
     char msg[256];
 
-    zenith::print("ZenithOS DHCP Client\n");
+    montauk::print("MontaukOS DHCP Client\n");
 
     // 1. Get MAC address
-    Zenith::NetCfg origCfg;
-    zenith::get_netcfg(&origCfg);
+    Montauk::NetCfg origCfg;
+    montauk::get_netcfg(&origCfg);
 
     char macStr[32];
     format_mac(macStr, sizeof(macStr), origCfg.macAddress);
     snprintf(msg, sizeof(msg), "MAC address: %s\n", macStr);
-    zenith::print(msg);
+    montauk::print(msg);
 
     // 2. Set IP to 0.0.0.0 to allow broadcast send/receive
-    Zenith::NetCfg zeroCfg;
+    Montauk::NetCfg zeroCfg;
     zeroCfg.ipAddress  = 0;
     zeroCfg.subnetMask = 0;
     zeroCfg.gateway    = 0;
-    zenith::set_netcfg(&zeroCfg);
+    montauk::set_netcfg(&zeroCfg);
 
     // 3. Create UDP socket and bind to port 68
-    int fd = zenith::socket(Zenith::SOCK_UDP);
+    int fd = montauk::socket(Montauk::SOCK_UDP);
     if (fd < 0) {
-        zenith::print("Error: failed to create UDP socket\n");
-        zenith::set_netcfg(&origCfg);
-        zenith::exit(1);
+        montauk::print("Error: failed to create UDP socket\n");
+        montauk::set_netcfg(&origCfg);
+        montauk::exit(1);
     }
 
-    if (zenith::bind(fd, DHCP_CLIENT_PORT) < 0) {
-        zenith::print("Error: failed to bind to port 68\n");
-        zenith::closesocket(fd);
-        zenith::set_netcfg(&origCfg);
-        zenith::exit(1);
+    if (montauk::bind(fd, DHCP_CLIENT_PORT) < 0) {
+        montauk::print("Error: failed to bind to port 68\n");
+        montauk::closesocket(fd);
+        montauk::set_netcfg(&origCfg);
+        montauk::exit(1);
     }
 
     // 4. Send DISCOVER
     DhcpPacket pkt;
     int pktLen = build_discover(&pkt, origCfg.macAddress);
 
-    zenith::print("Sending DHCPDISCOVER...\n");
-    if (zenith::sendto(fd, (const void*)&pkt, pktLen, BROADCAST_IP, DHCP_SERVER_PORT) < 0) {
-        zenith::print("Error: failed to send DISCOVER\n");
-        zenith::closesocket(fd);
-        zenith::set_netcfg(&origCfg);
-        zenith::exit(1);
+    montauk::print("Sending DHCPDISCOVER...\n");
+    if (montauk::sendto(fd, (const void*)&pkt, pktLen, BROADCAST_IP, DHCP_SERVER_PORT) < 0) {
+        montauk::print("Error: failed to send DISCOVER\n");
+        montauk::closesocket(fd);
+        montauk::set_netcfg(&origCfg);
+        montauk::exit(1);
     }
 
     // 5. Wait for OFFER
     DhcpPacket resp;
     DhcpOffer offer;
-    uint64_t startMs = zenith::get_milliseconds();
+    uint64_t startMs = montauk::get_milliseconds();
     bool gotOffer = false;
 
-    zenith::print("Waiting for DHCPOFFER...\n");
-    while (zenith::get_milliseconds() - startMs < 10000) {
+    montauk::print("Waiting for DHCPOFFER...\n");
+    while (montauk::get_milliseconds() - startMs < 10000) {
         uint32_t srcIp;
         uint16_t srcPort;
-        int r = zenith::recvfrom(fd, (void*)&resp, sizeof(resp), &srcIp, &srcPort);
+        int r = montauk::recvfrom(fd, (void*)&resp, sizeof(resp), &srcIp, &srcPort);
         if (r > 0) {
             if (resp.op == BOOTREPLY && resp.xid == g_xid) {
                 parse_options(&resp, &offer);
@@ -397,41 +397,41 @@ extern "C" void _start() {
                 }
             }
         }
-        zenith::yield();
+        montauk::yield();
     }
 
     if (!gotOffer) {
-        zenith::print("Error: no DHCPOFFER received (timeout)\n");
-        zenith::closesocket(fd);
-        zenith::set_netcfg(&origCfg);
-        zenith::exit(1);
+        montauk::print("Error: no DHCPOFFER received (timeout)\n");
+        montauk::closesocket(fd);
+        montauk::set_netcfg(&origCfg);
+        montauk::exit(1);
     }
 
     char ipStr[32];
     format_ip(ipStr, sizeof(ipStr), offer.offeredIp);
     snprintf(msg, sizeof(msg), "Received OFFER: %s\n", ipStr);
-    zenith::print(msg);
+    montauk::print(msg);
 
     // 6. Send REQUEST
     pktLen = build_request(&pkt, origCfg.macAddress, offer.offeredIp, offer.serverId);
 
-    zenith::print("Sending DHCPREQUEST...\n");
-    if (zenith::sendto(fd, (const void*)&pkt, pktLen, BROADCAST_IP, DHCP_SERVER_PORT) < 0) {
-        zenith::print("Error: failed to send REQUEST\n");
-        zenith::closesocket(fd);
-        zenith::set_netcfg(&origCfg);
-        zenith::exit(1);
+    montauk::print("Sending DHCPREQUEST...\n");
+    if (montauk::sendto(fd, (const void*)&pkt, pktLen, BROADCAST_IP, DHCP_SERVER_PORT) < 0) {
+        montauk::print("Error: failed to send REQUEST\n");
+        montauk::closesocket(fd);
+        montauk::set_netcfg(&origCfg);
+        montauk::exit(1);
     }
 
     // 7. Wait for ACK
     bool gotAck = false;
-    startMs = zenith::get_milliseconds();
+    startMs = montauk::get_milliseconds();
 
-    zenith::print("Waiting for DHCPACK...\n");
-    while (zenith::get_milliseconds() - startMs < 10000) {
+    montauk::print("Waiting for DHCPACK...\n");
+    while (montauk::get_milliseconds() - startMs < 10000) {
         uint32_t srcIp;
         uint16_t srcPort;
-        int r = zenith::recvfrom(fd, (void*)&resp, sizeof(resp), &srcIp, &srcPort);
+        int r = montauk::recvfrom(fd, (void*)&resp, sizeof(resp), &srcIp, &srcPort);
         if (r > 0) {
             if (resp.op == BOOTREPLY && resp.xid == g_xid) {
                 parse_options(&resp, &offer);
@@ -440,57 +440,57 @@ extern "C" void _start() {
                     break;
                 }
                 if (offer.valid && offer.msgType == DHCPNAK) {
-                    zenith::print("Error: received DHCPNAK from server\n");
-                    zenith::closesocket(fd);
-                    zenith::set_netcfg(&origCfg);
-                    zenith::exit(1);
+                    montauk::print("Error: received DHCPNAK from server\n");
+                    montauk::closesocket(fd);
+                    montauk::set_netcfg(&origCfg);
+                    montauk::exit(1);
                 }
             }
         }
-        zenith::yield();
+        montauk::yield();
     }
 
-    zenith::closesocket(fd);
+    montauk::closesocket(fd);
 
     if (!gotAck) {
-        zenith::print("Error: no DHCPACK received (timeout)\n");
-        zenith::set_netcfg(&origCfg);
-        zenith::exit(1);
+        montauk::print("Error: no DHCPACK received (timeout)\n");
+        montauk::set_netcfg(&origCfg);
+        montauk::exit(1);
     }
 
     // 8. Apply configuration
-    Zenith::NetCfg newCfg;
+    Montauk::NetCfg newCfg;
     newCfg.ipAddress  = offer.offeredIp;
     newCfg.subnetMask = offer.subnetMask;
     newCfg.gateway    = offer.router;
     newCfg.dnsServer  = offer.dns;
-    zenith::set_netcfg(&newCfg);
+    montauk::set_netcfg(&newCfg);
 
     // 9. Print results
-    zenith::print("\nDHCP configuration applied:\n");
+    montauk::print("\nDHCP configuration applied:\n");
 
     format_ip(ipStr, sizeof(ipStr), offer.offeredIp);
     snprintf(msg, sizeof(msg), "  IP Address:  %s\n", ipStr);
-    zenith::print(msg);
+    montauk::print(msg);
 
     format_ip(ipStr, sizeof(ipStr), offer.subnetMask);
     snprintf(msg, sizeof(msg), "  Subnet Mask: %s\n", ipStr);
-    zenith::print(msg);
+    montauk::print(msg);
 
     format_ip(ipStr, sizeof(ipStr), offer.router);
     snprintf(msg, sizeof(msg), "  Gateway:     %s\n", ipStr);
-    zenith::print(msg);
+    montauk::print(msg);
 
     if (offer.dns != 0) {
         format_ip(ipStr, sizeof(ipStr), offer.dns);
         snprintf(msg, sizeof(msg), "  DNS Server:  %s\n", ipStr);
-        zenith::print(msg);
+        montauk::print(msg);
     }
 
     if (offer.leaseTime != 0) {
         snprintf(msg, sizeof(msg), "  Lease Time:  %u seconds\n", offer.leaseTime);
-        zenith::print(msg);
+        montauk::print(msg);
     }
 
-    zenith::exit(0);
+    montauk::exit(0);
 }

@@ -1,6 +1,6 @@
 /*
     * canvas.hpp
-    * ZenithOS Canvas — drawing primitives for pixel buffer (uint32_t*) targets
+    * MontaukOS Canvas — drawing primitives for pixel buffer (uint32_t*) targets
     * Mirrors Framebuffer API but operates directly on app content buffers.
     * Copyright (c) 2026 Daniel Hammer
 */

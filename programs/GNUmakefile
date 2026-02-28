@@ -9,8 +9,10 @@ ARCH := x86_64
 TOOLCHAIN_PREFIX := $(shell cd .. && pwd)/toolchain/local/bin/x86_64-elf-
 ifneq ($(wildcard $(TOOLCHAIN_PREFIX)gcc),)
     CXX := $(TOOLCHAIN_PREFIX)g++
+    CC  := $(TOOLCHAIN_PREFIX)gcc
 else
     CXX := g++
+    CC  := gcc
 endif
 
 # Compiler flags: freestanding, no stdlib, kernel-mode compatible.
@@ -86,9 +88,16 @@ HOMEKEEP := $(BINDIR)/home/.keep
 
 all: bearssl libc libjpeg tls $(TARGETS) fetch wiki wikipedia weather imageviewer fontpreview doom desktop icons fonts $(GAME_DATA) $(MANDST) $(WWWDST) $(CA_CERTS) $(HOMEKEEP)
 
-# Build BearSSL static library.
-bearssl:
-	$(MAKE) -C lib/bearssl
+# Build BearSSL static library (cross-compiled for freestanding x86_64).
+BEARSSL_INCLUDES := -isystem $(shell cd .. && pwd)/kernel/freestnd-c-hdrs/x86_64/include -isystem $(abspath include/libc)
+
+lib/bearssl/build/libbearssl.a:
+	$(MAKE) -C lib/bearssl CONF=MontaukOS \
+		BEARSSL_CC="$(CC)" \
+		BEARSSL_AR="$(TOOLCHAIN_PREFIX)ar" \
+		BEARSSL_INCLUDES="$(BEARSSL_INCLUDES)"
+
+bearssl: lib/bearssl/build/libbearssl.a
 
 # Build shared libc static library.
 libc:

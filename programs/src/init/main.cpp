@@ -1,11 +1,11 @@
 /*
     * main.cpp
-    * Init system for ZenithOS (PID 0)
+    * Init system for MontaukOS (PID 0)
     * Chains system services then launches the shell.
     * Copyright (c) 2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
+#include <montauk/syscall.h>
 
 // ---- Minimal snprintf ----
 
@@ -90,8 +90,8 @@ static int snprintf(char* buf, int size, const char* fmt, ...) {
 // ---- Logging ----
 
 static void log_timestamp(char* buf, int size) {
-    Zenith::DateTime dt;
-    zenith::gettime(&dt);
+    Montauk::DateTime dt;
+    montauk::gettime(&dt);
     snprintf(buf, size, "%02d:%02d:%02d", dt.Hour, dt.Minute, dt.Second);
 }
 
@@ -114,7 +114,7 @@ static void log(LogLevel level, const char* msg) {
     snprintf(line, sizeof(line),
         C_DIM "%s" C_RESET "  %s%s" C_RESET "  " C_BOLD "init" C_RESET "  %s\n",
         ts, color, tag, msg);
-    zenith::print(line);
+    montauk::print(line);
 }
 
 static void log_ok(const char* msg)   { log(LOG_OK, msg); }
@@ -130,14 +130,14 @@ static bool run_service(const char* path, const char* name) {
     snprintf(msg, sizeof(msg), "Starting %s", name);
     log_info(msg);
 
-    int pid = zenith::spawn(path);
+    int pid = montauk::spawn(path);
     if (pid < 0) {
         snprintf(msg, sizeof(msg), "Failed to start %s", name);
         log_err(msg);
         return false;
     }
 
-    zenith::waitpid(pid);
+    montauk::waitpid(pid);
 
     snprintf(msg, sizeof(msg), "%s finished (pid %d)", name, pid);
     log_ok(msg);
@@ -148,7 +148,7 @@ static bool run_service(const char* path, const char* name) {
 
 extern "C" void _start() {
 
-    log_info("The ZenithOS Operating System");
+    log_info("The MontaukOS Operating System");
 
     // ---- Stage 1: Network configuration ----
     run_service("0:/os/dhcp.elf", "dhcp");
@@ -162,6 +162,6 @@ extern "C" void _start() {
     log_warn("All services exited");
 
     for (;;) {
-        zenith::yield();
+        montauk::yield();
     }
 }

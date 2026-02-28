@@ -4,15 +4,15 @@
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
+#include <montauk/syscall.h>
 
 extern "C" void _start() {
     char args[256];
-    int len = zenith::getargs(args, sizeof(args));
+    int len = montauk::getargs(args, sizeof(args));
 
     if (len <= 0 || args[0] == '\0') {
-        zenith::print("Usage: cat <filename>\n");
-        zenith::exit(1);
+        montauk::print("Usage: cat <filename>\n");
+        montauk::exit(1);
     }
 
     // Build VFS path. If the path already starts with "<digit>:", use as-is.
@@ -34,18 +34,18 @@ extern "C" void _start() {
     }
     path[i] = '\0';
 
-    int handle = zenith::open(path);
+    int handle = montauk::open(path);
     if (handle < 0) {
-        zenith::print("cat: cannot open '");
-        zenith::print(args);
-        zenith::print("'\n");
-        zenith::exit(1);
+        montauk::print("cat: cannot open '");
+        montauk::print(args);
+        montauk::print("'\n");
+        montauk::exit(1);
     }
 
-    uint64_t size = zenith::getsize(handle);
+    uint64_t size = montauk::getsize(handle);
     if (size == 0) {
-        zenith::close(handle);
-        zenith::exit(0);
+        montauk::close(handle);
+        montauk::exit(0);
     }
 
     uint8_t buf[512];
@@ -53,14 +53,14 @@ extern "C" void _start() {
     while (offset < size) {
         uint64_t chunk = size - offset;
         if (chunk > sizeof(buf) - 1) chunk = sizeof(buf) - 1;
-        int bytesRead = zenith::read(handle, buf, offset, chunk);
+        int bytesRead = montauk::read(handle, buf, offset, chunk);
         if (bytesRead <= 0) break;
         buf[bytesRead] = '\0';
-        zenith::print((const char*)buf);
+        montauk::print((const char*)buf);
         offset += bytesRead;
     }
 
-    zenith::close(handle);
-    zenith::putchar('\n');
-    zenith::exit(0);
+    montauk::close(handle);
+    montauk::putchar('\n');
+    montauk::exit(0);
 }

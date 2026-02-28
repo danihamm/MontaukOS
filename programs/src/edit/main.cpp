@@ -1,16 +1,16 @@
 /*
     * main.cpp
-    * edit - Text editor for ZenithOS
+    * edit - Text editor for MontaukOS
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
-#include <zenith/heap.h>
-#include <zenith/string.h>
+#include <montauk/syscall.h>
+#include <montauk/heap.h>
+#include <montauk/string.h>
 
-using zenith::slen;
-using zenith::memcpy;
-using zenith::memmove;
+using montauk::slen;
+using montauk::memcpy;
+using montauk::memmove;
 
 // ---- Integer to string ----
 
@@ -30,8 +30,8 @@ static int itoa(int val, char* buf) {
 
 // ---- Terminal output helpers ----
 
-static void print(const char* s) { zenith::print(s); }
-static void putch(char c) { zenith::putchar(c); }
+static void print(const char* s) { montauk::print(s); }
+static void putch(char c) { montauk::putchar(c); }
 
 static void print_int(int v) {
     char buf[12];
@@ -105,7 +105,7 @@ static uint64_t statusMsgTime = 0;
 
 static void line_init(Line* ln) {
     ln->cap = INITIAL_LINE_CAP;
-    ln->data = (char*)zenith::malloc(ln->cap);
+    ln->data = (char*)montauk::malloc(ln->cap);
     ln->len = 0;
     ln->data[0] = '\0';
 }
@@ -114,7 +114,7 @@ static void line_ensure(Line* ln, int needed) {
     if (needed + 1 <= ln->cap) return;
     int newCap = ln->cap;
     while (newCap < needed + 1) newCap *= 2;
-    ln->data = (char*)zenith::realloc(ln->data, newCap);
+    ln->data = (char*)montauk::realloc(ln->data, newCap);
     ln->cap = newCap;
 }
 
@@ -165,7 +165,7 @@ static void delete_line(int at) {
         lines[at].data[0] = '\0';
         return;
     }
-    zenith::mfree(lines[at].data);
+    montauk::mfree(lines[at].data);
     for (int i = at; i < numLines - 1; i++) {
         lines[i] = lines[i + 1];
     }
@@ -188,7 +188,7 @@ static void set_status(const char* msg) {
     int i = 0;
     while (msg[i] && i < 126) { statusMsg[i] = msg[i]; i++; }
     statusMsg[i] = '\0';
-    statusMsgTime = zenith::get_milliseconds();
+    statusMsgTime = montauk::get_milliseconds();
 }
 
 // Build VFS path from filename
@@ -210,7 +210,7 @@ static void load_file(const char* fname) {
     char path[256];
     build_path(fname, path, sizeof(path));
 
-    int handle = zenith::open(path);
+    int handle = montauk::open(path);
     if (handle < 0) {
         // New file
         numLines = 1;
@@ -219,21 +219,21 @@ static void load_file(const char* fname) {
         return;
     }
 
-    uint64_t size = zenith::getsize(handle);
+    uint64_t size = montauk::getsize(handle);
 
     // Read entire file into a temp buffer
     uint8_t* buf = nullptr;
     if (size > 0) {
-        buf = (uint8_t*)zenith::malloc(size + 1);
+        buf = (uint8_t*)montauk::malloc(size + 1);
         uint64_t off = 0;
         while (off < size) {
-            int r = zenith::read(handle, buf + off, off, size - off);
+            int r = montauk::read(handle, buf + off, off, size - off);
             if (r <= 0) break;
             off += r;
         }
         buf[size] = '\0';
     }
-    zenith::close(handle);
+    montauk::close(handle);
 
     // Parse into lines
     numLines = 0;
@@ -253,7 +253,7 @@ static void load_file(const char* fname) {
         }
     }
 
-    if (buf) zenith::mfree(buf);
+    if (buf) montauk::mfree(buf);
 
     if (numLines == 0) {
         numLines = 1;
@@ -280,10 +280,10 @@ static bool save_file() {
     }
 
     // Try to open existing file first
-    int handle = zenith::open(path);
+    int handle = montauk::open(path);
     if (handle < 0) {
         // Create new file
-        handle = zenith::fcreate(path);
+        handle = montauk::fcreate(path);
         if (handle < 0) {
             set_status("Error: could not create file");
             return false;
@@ -291,7 +291,7 @@ static bool save_file() {
     }
 
     // Build content buffer and write
-    uint8_t* buf = (uint8_t*)zenith::malloc(totalSize + 1);
+    uint8_t* buf = (uint8_t*)montauk::malloc(totalSize + 1);
     uint64_t off = 0;
     for (int i = 0; i < numLines; i++) {
         if (lines[i].len > 0) {
@@ -303,9 +303,9 @@ static bool save_file() {
         }
     }
 
-    int result = zenith::fwrite(handle, buf, 0, totalSize);
-    zenith::close(handle);
-    zenith::mfree(buf);
+    int result = montauk::fwrite(handle, buf, 0, totalSize);
+    montauk::close(handle);
+    montauk::mfree(buf);
 
     if (result < 0) {
         set_status("Error: write failed");
@@ -332,13 +332,13 @@ static int prompt_input(const char* promptStr, char* out, int outMax) {
     out[0] = '\0';
 
     while (true) {
-        if (!zenith::is_key_available()) {
-            zenith::yield();
+        if (!montauk::is_key_available()) {
+            montauk::yield();
             continue;
         }
 
-        Zenith::KeyEvent ev;
-        zenith::getkey(&ev);
+        Montauk::KeyEvent ev;
+        montauk::getkey(&ev);
         if (!ev.pressed) continue;
 
         if (ev.ascii == '\033' || (ev.ctrl && ev.ascii == 'q')) {
@@ -416,7 +416,7 @@ static void draw_hint_bar() {
     clear_line();
 
     // Show status message if recent (within 3 seconds)
-    uint64_t now = zenith::get_milliseconds();
+    uint64_t now = montauk::get_milliseconds();
     if (statusMsg[0] && (now - statusMsgTime) < 3000) {
         print("  ");
         print(statusMsg);
@@ -647,7 +647,7 @@ static constexpr uint8_t SC_DELETE = 0x53;
 
 // ---- Input handling ----
 
-static void handle_key(const Zenith::KeyEvent& ev) {
+static void handle_key(const Montauk::KeyEvent& ev) {
     if (!ev.pressed) return;
 
     // Ctrl key combinations
@@ -781,15 +781,15 @@ static void handle_key(const Zenith::KeyEvent& ev) {
 
 extern "C" void _start() {
     // Allocate line buffer
-    lines = (Line*)zenith::malloc(sizeof(Line) * MAX_LINES);
+    lines = (Line*)montauk::malloc(sizeof(Line) * MAX_LINES);
 
     // Get terminal size
-    zenith::termsize(&screenCols, &screenRows);
+    montauk::termsize(&screenCols, &screenRows);
     editorRows = screenRows - 2;
 
     // Parse arguments
     char args[256];
-    int argLen = zenith::getargs(args, sizeof(args));
+    int argLen = montauk::getargs(args, sizeof(args));
 
     if (argLen > 0 && args[0] != '\0') {
         // Copy filename
@@ -814,12 +814,12 @@ extern "C" void _start() {
         render();
 
         // Wait for input
-        while (!zenith::is_key_available()) {
-            zenith::yield();
+        while (!montauk::is_key_available()) {
+            montauk::yield();
         }
 
-        Zenith::KeyEvent ev;
-        zenith::getkey(&ev);
+        Montauk::KeyEvent ev;
+        montauk::getkey(&ev);
         handle_key(ev);
     }
 
@@ -828,5 +828,5 @@ extern "C" void _start() {
     show_cursor();
     reset_attrs();
 
-    zenith::exit(0);
+    montauk::exit(0);
 }

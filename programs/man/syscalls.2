@@ -1,9 +1,9 @@
 .TH SYSCALLS 2
 .SH NAME
-    syscalls - overview of ZenithOS system calls
+    syscalls - overview of MontaukOS system calls
 
 .SH DESCRIPTION
-    ZenithOS provides 46 system calls (numbers 0-45) for userspace
+    MontaukOS provides 46 system calls (numbers 0-45) for userspace
     programs. Syscalls use the x86-64 SYSCALL instruction with the
     following register convention:
 
@@ -15,119 +15,119 @@
         R8    Argument 5
         R9    Argument 6
 
-    Include <zenith/syscall.h> for typed wrappers in the zenith::
+    Include <montauk/syscall.h> for typed wrappers in the montauk::
     namespace.
 
 .SH PROCESS MANAGEMENT
 .B SYS_EXIT (0)
     Terminate the calling process.
-        void zenith::exit(int code = 0);
+        void montauk::exit(int code = 0);
 
 .B SYS_YIELD (1)
     Yield the remainder of the time slice.
-        void zenith::yield();
+        void montauk::yield();
 
 .B SYS_SLEEP_MS (2)
     Sleep for at least the given number of milliseconds.
-        void zenith::sleep_ms(uint64_t ms);
+        void montauk::sleep_ms(uint64_t ms);
 
 .B SYS_GETPID (3)
     Return the PID of the calling process.
-        int zenith::getpid();
+        int montauk::getpid();
 
 .B SYS_SPAWN (20)
     Spawn a new process from an ELF binary on the VFS.
-        int zenith::spawn(const char* path, const char* args = nullptr);
+        int montauk::spawn(const char* path, const char* args = nullptr);
 
 .B SYS_WAITPID (23)
     Block until the given process has exited.
-        void zenith::waitpid(int pid);
+        void montauk::waitpid(int pid);
 
 .SH CONSOLE I/O
 .B SYS_PRINT (4)
     Write a null-terminated string to the terminal.
-        void zenith::print(const char* text);
+        void montauk::print(const char* text);
 
 .B SYS_PUTCHAR (5)
     Write a single character to the terminal.
-        void zenith::putchar(char c);
+        void montauk::putchar(char c);
 
 .SH FILE I/O
 .B SYS_OPEN (6)
     Open a file. Returns a handle or negative on error.
-        int zenith::open(const char* path);
+        int montauk::open(const char* path);
 
 .B SYS_READ (7)
     Read bytes from a file at a given offset.
-        int zenith::read(int h, uint8_t* buf, uint64_t off, uint64_t sz);
+        int montauk::read(int h, uint8_t* buf, uint64_t off, uint64_t sz);
 
 .B SYS_GETSIZE (8)
     Get the size of an open file in bytes.
-        uint64_t zenith::getsize(int handle);
+        uint64_t montauk::getsize(int handle);
 
 .B SYS_CLOSE (9)
     Close a file handle.
-        void zenith::close(int handle);
+        void montauk::close(int handle);
 
 .B SYS_READDIR (10)
     List directory entries (max 64 per call).
-        int zenith::readdir(const char* path, const char** names, int max);
+        int montauk::readdir(const char* path, const char** names, int max);
 
 .SH MEMORY
 .B SYS_ALLOC (11)
     Map zeroed pages into the process address space.
-        void* zenith::alloc(uint64_t size);
+        void* montauk::alloc(uint64_t size);
 
 .B SYS_FREE (12)
     Reserved (currently a no-op).
-        void zenith::free(void* ptr);
+        void montauk::free(void* ptr);
 
 .SH TIMEKEEPING
 .B SYS_GETTICKS (13)
     Get APIC timer ticks since boot.
-        uint64_t zenith::get_ticks();
+        uint64_t montauk::get_ticks();
 
 .B SYS_GETMILLISECONDS (14)
     Get milliseconds elapsed since boot.
-        uint64_t zenith::get_milliseconds();
+        uint64_t montauk::get_milliseconds();
 
 .B SYS_GETTIME (28)
     Get the current wall-clock date and time (UTC).
-    Fills a Zenith::DateTime struct with Year, Month, Day,
+    Fills a Montauk::DateTime struct with Year, Month, Day,
     Hour, Minute, and Second fields.
-        void zenith::gettime(Zenith::DateTime* out);
+        void montauk::gettime(Montauk::DateTime* out);
 
 .SH SYSTEM
 .B SYS_GETINFO (15)
     Get OS name, version, and configuration.
-        void zenith::get_info(Zenith::SysInfo* info);
+        void montauk::get_info(Montauk::SysInfo* info);
 
 .SH KEYBOARD
 .B SYS_ISKEYAVAILABLE (16)
     Check if a key event is pending (non-blocking).
-        bool zenith::is_key_available();
+        bool montauk::is_key_available();
 
 .B SYS_GETKEY (17)
     Get the next key event (press or release).
-        void zenith::getkey(Zenith::KeyEvent* out);
+        void montauk::getkey(Montauk::KeyEvent* out);
 
 .B SYS_GETCHAR (18)
     Block until a printable character is typed.
-        char zenith::getchar();
+        char montauk::getchar();
 
 .SH NETWORKING
 .B SYS_PING (19)
     Send an ICMP echo request and wait for reply.
-        int32_t zenith::ping(uint32_t ip, uint32_t timeoutMs);
+        int32_t montauk::ping(uint32_t ip, uint32_t timeoutMs);
 
 .B SYS_GETNETCFG (37)
     Get the current network configuration (IP, mask, gateway, MAC,
     DNS server).
-        void zenith::get_netcfg(Zenith::NetCfg* out);
+        void montauk::get_netcfg(Montauk::NetCfg* out);
 
 .B SYS_SETNETCFG (38)
     Set the network configuration (IP, mask, gateway, DNS server).
-        int zenith::set_netcfg(const Zenith::NetCfg* cfg);
+        int montauk::set_netcfg(const Montauk::NetCfg* cfg);
 
 .B SYS_RESOLVE (44)
     Resolve a hostname to an IPv4 address via DNS. Sends a UDP
@@ -135,106 +135,106 @@
     for a reply. Returns the IP in network byte order, or 0 on
     failure. IP address strings (e.g. "10.0.0.1") are detected
     and returned directly without a DNS query.
-        uint32_t zenith::resolve(const char* hostname);
+        uint32_t montauk::resolve(const char* hostname);
 
 .SH SOCKETS
 .B SYS_SOCKET (29)
     Create a socket. type=SOCK_TCP (1) or SOCK_UDP (2).
     Returns fd or -1.
-        int zenith::socket(int type);
+        int montauk::socket(int type);
 
 .B SYS_CONNECT (30)
     Connect a TCP socket to a remote host.
-        int zenith::connect(int fd, uint32_t ip, uint16_t port);
+        int montauk::connect(int fd, uint32_t ip, uint16_t port);
 
 .B SYS_BIND (31)
     Bind a socket to a local port for listening.
-        int zenith::bind(int fd, uint16_t port);
+        int montauk::bind(int fd, uint16_t port);
 
 .B SYS_LISTEN (32)
     Start listening for incoming TCP connections.
-        int zenith::listen(int fd);
+        int montauk::listen(int fd);
 
 .B SYS_ACCEPT (33)
     Accept an incoming connection on a listening socket.
     Returns a new socket fd for the client connection.
-        int zenith::accept(int fd);
+        int montauk::accept(int fd);
 
 .B SYS_SEND (34)
     Send data on a connected socket. Returns bytes sent.
-        int zenith::send(int fd, const void* data, uint32_t len);
+        int montauk::send(int fd, const void* data, uint32_t len);
 
 .B SYS_RECV (35)
     Receive data from a connected socket. Returns bytes
     received, 0 if no data available, or -1 on close/error.
-        int zenith::recv(int fd, void* buf, uint32_t maxLen);
+        int montauk::recv(int fd, void* buf, uint32_t maxLen);
 
 .B SYS_CLOSESOCK (36)
     Close a socket and release its resources.
-        int zenith::closesocket(int fd);
+        int montauk::closesocket(int fd);
 
 .B SYS_SENDTO (39)
     Send a UDP datagram to a specific destination.
-        int zenith::sendto(int fd, const void* data, uint32_t len,
+        int montauk::sendto(int fd, const void* data, uint32_t len,
                            uint32_t destIp, uint16_t destPort);
 
 .B SYS_RECVFROM (40)
     Receive a UDP datagram. Returns the source address.
-        int zenith::recvfrom(int fd, void* buf, uint32_t maxLen,
+        int montauk::recvfrom(int fd, void* buf, uint32_t maxLen,
                              uint32_t* srcIp, uint16_t* srcPort);
 
 .SH FILE WRITE
 .B SYS_FWRITE (41)
     Write bytes to a file at a given offset.
-        int zenith::fwrite(int handle, const uint8_t* buf,
+        int montauk::fwrite(int handle, const uint8_t* buf,
                            uint64_t offset, uint64_t size);
 
 .B SYS_FCREATE (42)
     Create a new file on the ramdisk. Returns a handle or negative
     on error.
-        int zenith::fcreate(const char* path);
+        int montauk::fcreate(const char* path);
 
 .SH FRAMEBUFFER
 .B SYS_FBINFO (21)
     Get framebuffer dimensions and format.
-        void zenith::fb_info(Zenith::FbInfo* info);
+        void montauk::fb_info(Montauk::FbInfo* info);
 
 .B SYS_FBMAP (22)
     Map the framebuffer into process memory at 0x50000000.
-        void* zenith::fb_map();
+        void* montauk::fb_map();
 
 .SH TERMINAL
 .B SYS_TERMSIZE (24)
     Get terminal dimensions (columns and rows).
-        void zenith::termsize(int* cols, int* rows);
+        void montauk::termsize(int* cols, int* rows);
 
 .B SYS_TERMSCALE (43)
     Get or set the terminal font scale factor. When scale_x is 0,
     returns the current scale as (scale_y << 32 | scale_x). When
     scale_x is non-zero, sets the font scale and returns the new
     terminal dimensions as (rows << 32 | cols).
-        void zenith::termscale(int scale_x, int scale_y);
-        void zenith::get_termscale(int* scale_x, int* scale_y);
+        void montauk::termscale(int scale_x, int scale_y);
+        void montauk::get_termscale(int* scale_x, int* scale_y);
 
 .SH ARGUMENTS
 .B SYS_GETARGS (25)
     Get the argument string passed to this process at spawn time.
-        int zenith::getargs(char* buf, uint64_t maxLen);
+        int montauk::getargs(char* buf, uint64_t maxLen);
 
 .SH RANDOM
 .B SYS_GETRANDOM (45)
     Fill a buffer with random bytes using RDTSC-seeded entropy.
     Returns the number of bytes written.
-        int64_t zenith::getrandom(void* buf, uint32_t len);
+        int64_t montauk::getrandom(void* buf, uint32_t len);
 
 .SH POWER MANAGEMENT
 .B SYS_RESET (26)
     Reboot the system.
-        [[noreturn]] void zenith::reset();
+        [[noreturn]] void montauk::reset();
 
 .B SYS_SHUTDOWN (27)
     Shut down the system (currently unimplemented).
-        [[noreturn]] void zenith::shutdown();
+        [[noreturn]] void montauk::shutdown();
 
 .SH SEE ALSO
     spawn(2), file(2), framebuffer(2), malloc(3)

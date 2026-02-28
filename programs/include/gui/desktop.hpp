@@ -1,6 +1,6 @@
 /*
     * desktop.hpp
-    * ZenithOS desktop state and compositor declarations
+    * MontaukOS desktop state and compositor declarations
     * Copyright (c) 2026 Daniel Hammer
 */
 
@@ -50,7 +50,7 @@ struct DesktopState {
     int window_count;
     int focused_window;
 
-    Zenith::MouseState mouse;
+    Montauk::MouseState mouse;
     uint8_t prev_buttons;
 
     bool app_menu_open;
@@ -92,7 +92,7 @@ struct DesktopState {
     int ctx_menu_x, ctx_menu_y;
 
     bool net_popup_open;
-    Zenith::NetCfg cached_net_cfg;
+    Montauk::NetCfg cached_net_cfg;
     uint64_t net_cfg_last_poll;
     Rect net_icon_rect;
 
@@ -111,6 +111,6 @@ void desktop_raise_window(DesktopState* ds, int idx);
 void desktop_draw_panel(DesktopState* ds);
 void desktop_draw_window(DesktopState* ds, int idx);
 void desktop_handle_mouse(DesktopState* ds);
-void desktop_handle_keyboard(DesktopState* ds, const Zenith::KeyEvent& key);
+void desktop_handle_keyboard(DesktopState* ds, const Montauk::KeyEvent& key);
 
 } // namespace gui

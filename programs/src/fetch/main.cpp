@@ -1,13 +1,13 @@
 /*
     * main.cpp
-    * HTTP/HTTPS client for ZenithOS (TLS 1.2 via BearSSL)
+    * HTTP/HTTPS client for MontaukOS (TLS 1.2 via BearSSL)
     * Usage: fetch [-v] <url>
     *        fetch [-v] <host> <port> [path]    (legacy mode, plain HTTP)
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
-#include <zenith/string.h>
+#include <montauk/syscall.h>
+#include <montauk/string.h>
 #include <tls/tls.hpp>
 
 extern "C" {
@@ -16,7 +16,7 @@ extern "C" {
 #include <stdio.h>
 }
 
-using zenith::skip_spaces;
+using montauk::skip_spaces;
 
 // ---- IP/port parsing ----
 
@@ -159,9 +159,9 @@ static void parse_status_text(const char* buf, int len, char* out, int outMax) {
 // ---- Keyboard abort check for TLS ----
 
 static bool check_keyboard_abort() {
-    if (zenith::is_key_available()) {
-        Zenith::KeyEvent ev;
-        zenith::getkey(&ev);
+    if (montauk::is_key_available()) {
+        Montauk::KeyEvent ev;
+        montauk::getkey(&ev);
         if (ev.pressed && ev.ctrl && ev.ascii == 'q') return true;
     }
     return false;
@@ -173,33 +173,33 @@ static int plain_http_exchange(int fd, const char* request, int reqLen,
                                char* respBuf, int respMax) {
     // Send request
     int sent = 0;
-    uint64_t deadline = zenith::get_milliseconds() + 15000;
+    uint64_t deadline = montauk::get_milliseconds() + 15000;
     while (sent < reqLen) {
-        int r = zenith::send(fd, request + sent, reqLen - sent);
-        if (r > 0) { sent += r; deadline = zenith::get_milliseconds() + 15000; }
+        int r = montauk::send(fd, request + sent, reqLen - sent);
+        if (r > 0) { sent += r; deadline = montauk::get_milliseconds() + 15000; }
         else if (r < 0) return -1;
         else {
-            if (zenith::get_milliseconds() >= deadline) return -1;
-            zenith::sleep_ms(1);
+            if (montauk::get_milliseconds() >= deadline) return -1;
+            montauk::sleep_ms(1);
         }
     }
 
     // Receive response
     int respLen = 0;
-    deadline = zenith::get_milliseconds() + 15000;
+    deadline = montauk::get_milliseconds() + 15000;
     while (respLen < respMax - 1) {
-        if (zenith::is_key_available()) {
-            Zenith::KeyEvent ev;
-            zenith::getkey(&ev);
+        if (montauk::is_key_available()) {
+            Montauk::KeyEvent ev;
+            montauk::getkey(&ev);
             if (ev.pressed && ev.ctrl && ev.ascii == 'q') return -2; // aborted
         }
 
-        int r = zenith::recv(fd, respBuf + respLen, respMax - 1 - respLen);
-        if (r > 0) { respLen += r; deadline = zenith::get_milliseconds() + 15000; }
+        int r = montauk::recv(fd, respBuf + respLen, respMax - 1 - respLen);
+        if (r > 0) { respLen += r; deadline = montauk::get_milliseconds() + 15000; }
         else if (r < 0) break;
         else {
-            if (zenith::get_milliseconds() >= deadline) break;
-            zenith::sleep_ms(1);
+            if (montauk::get_milliseconds() >= deadline) break;
+            montauk::sleep_ms(1);
         }
     }
     return respLen;
@@ -209,13 +209,13 @@ static int plain_http_exchange(int fd, const char* request, int reqLen,
 
 static void print_response(const char* respBuf, int respLen, bool verbose) {
     if (respLen <= 0) {
-        zenith::print("Error: empty response\n");
+        montauk::print("Error: empty response\n");
         return;
     }
 
     int headerEnd = find_header_end(respBuf, respLen);
     if (headerEnd < 0) {
-        zenith::print("Warning: malformed response (no header boundary)\n\n");
+        montauk::print("Warning: malformed response (no header boundary)\n\n");
         // Print raw
         char chunk[512];
         int printed = 0;
@@ -224,10 +224,10 @@ static void print_response(const char* respBuf, int respLen, bool verbose) {
             if (n > 511) n = 511;
             memcpy(chunk, respBuf + printed, n);
             chunk[n] = '\0';
-            zenith::print(chunk);
+            montauk::print(chunk);
             printed += n;
         }
-        zenith::putchar('\n');
+        montauk::putchar('\n');
         return;
     }
 
@@ -239,7 +239,7 @@ static void print_response(const char* respBuf, int respLen, bool verbose) {
     if (verbose) {
         char msg[256];
         snprintf(msg, sizeof(msg), "HTTP %d %s (%d bytes)\n\n", statusCode, statusText, bodyLen);
-        zenith::print(msg);
+        montauk::print(msg);
     }
 
     if (bodyLen > 0) {
@@ -251,10 +251,10 @@ static void print_response(const char* respBuf, int respLen, bool verbose) {
             if (n > 511) n = 511;
             memcpy(chunk, body + printed, n);
             chunk[n] = '\0';
-            zenith::print(chunk);
+            montauk::print(chunk);
             printed += n;
         }
-        zenith::putchar('\n');
+        montauk::putchar('\n');
     }
 }
 
@@ -262,21 +262,21 @@ static void print_response(const char* respBuf, int respLen, bool verbose) {
 
 extern "C" void _start() {
     char argbuf[1024];
-    zenith::getargs(argbuf, sizeof(argbuf));
+    montauk::getargs(argbuf, sizeof(argbuf));
     const char* arg = skip_spaces(argbuf);
 
     if (*arg == '\0') {
-        zenith::print("Usage: fetch [-v] <url>\n");
-        zenith::print("       fetch [-v] <host> <port> [path]\n");
-        zenith::print("\n");
-        zenith::print("  -v  Verbose output (show connection info and headers)\n");
-        zenith::print("\n");
-        zenith::print("Examples:\n");
-        zenith::print("  fetch https://icanhazip.com\n");
-        zenith::print("  fetch http://example.com/index.html\n");
-        zenith::print("  fetch -v https://example.com\n");
-        zenith::print("  fetch 10.0.68.1 80 /\n");
-        zenith::exit(0);
+        montauk::print("Usage: fetch [-v] <url>\n");
+        montauk::print("       fetch [-v] <host> <port> [path]\n");
+        montauk::print("\n");
+        montauk::print("  -v  Verbose output (show connection info and headers)\n");
+        montauk::print("\n");
+        montauk::print("Examples:\n");
+        montauk::print("  fetch https://icanhazip.com\n");
+        montauk::print("  fetch http://example.com/index.html\n");
+        montauk::print("  fetch -v https://example.com\n");
+        montauk::print("  fetch 10.0.68.1 80 /\n");
+        montauk::exit(0);
     }
 
     // Check for -v flag
@@ -297,8 +297,8 @@ extern "C" void _start() {
     if (urlMode) {
         ParsedUrl url = parse_url(arg);
         if (!url.valid) {
-            zenith::print("Error: invalid URL\n");
-            zenith::exit(1);
+            montauk::print("Error: invalid URL\n");
+            montauk::exit(1);
         }
         strcpy(hostStr, url.host);
         strcpy(path, url.path);
@@ -318,10 +318,10 @@ extern "C" void _start() {
         arg = skip_spaces(arg + i);
 
         if (!parse_uint16(portStr, &port)) {
-            zenith::print("Invalid port: ");
-            zenith::print(portStr);
-            zenith::putchar('\n');
-            zenith::exit(1);
+            montauk::print("Invalid port: ");
+            montauk::print(portStr);
+            montauk::putchar('\n');
+            montauk::exit(1);
         }
 
         if (*arg) {
@@ -336,12 +336,12 @@ extern "C" void _start() {
     // Resolve host to IP
     uint32_t serverIp;
     if (!parse_ip(hostStr, &serverIp)) {
-        serverIp = zenith::resolve(hostStr);
+        serverIp = montauk::resolve(hostStr);
         if (serverIp == 0) {
-            zenith::print("Error: could not resolve ");
-            zenith::print(hostStr);
-            zenith::putchar('\n');
-            zenith::exit(1);
+            montauk::print("Error: could not resolve ");
+            montauk::print(hostStr);
+            montauk::putchar('\n');
+            montauk::exit(1);
         }
     }
 
@@ -352,7 +352,7 @@ extern "C" void _start() {
         char msg[256];
         snprintf(msg, sizeof(msg), "Connecting to %s:%d (%s)...\n",
             hostStr, (int)port, useHttps ? "HTTPS" : "HTTP");
-        zenith::print(msg);
+        montauk::print(msg);
     }
 
     // Build HTTP request
@@ -360,7 +360,7 @@ extern "C" void _start() {
     int reqLen = snprintf(request, sizeof(request),
         "GET %s HTTP/1.0\r\n"
         "Host: %s\r\n"
-        "User-Agent: ZenithOS/1.0\r\n"
+        "User-Agent: MontaukOS/1.0\r\n"
         "Connection: close\r\n"
         "\r\n",
         path, hostStr);
@@ -368,15 +368,15 @@ extern "C" void _start() {
     if (verbose) {
         char msg[128];
         snprintf(msg, sizeof(msg), "GET %s\n", path);
-        zenith::print(msg);
+        montauk::print(msg);
     }
 
     // Allocate response buffer on heap (stack is only 16 KB)
     static constexpr int RESP_MAX = 65536;
     char* respBuf = (char*)malloc(RESP_MAX);
     if (!respBuf) {
-        zenith::print("Error: out of memory\n");
-        zenith::exit(1);
+        montauk::print("Error: out of memory\n");
+        montauk::exit(1);
     }
 
     int respLen;
@@ -387,26 +387,26 @@ extern "C" void _start() {
         if (verbose) {
             char msg[64];
             snprintf(msg, sizeof(msg), "Loaded %u trust anchors\n", (unsigned)tas.count);
-            zenith::print(msg);
+            montauk::print(msg);
         }
         if (tas.count == 0) {
-            zenith::print("Error: no trust anchors loaded\n");
+            montauk::print("Error: no trust anchors loaded\n");
             free(respBuf);
-            zenith::exit(1);
+            montauk::exit(1);
         }
 
         if (verbose) {
             uint32_t days, secs;
             tls::get_bearssl_time(&days, &secs);
-            Zenith::DateTime dt;
-            zenith::gettime(&dt);
+            Montauk::DateTime dt;
+            montauk::gettime(&dt);
             char tmsg[128];
             snprintf(tmsg, sizeof(tmsg), "System time: %u-%02u-%02u %02u:%02u:%02u (days=%u secs=%u)\n",
                 (unsigned)dt.Year, (unsigned)dt.Month, (unsigned)dt.Day,
                 (unsigned)dt.Hour, (unsigned)dt.Minute, (unsigned)dt.Second,
                 (unsigned)days, (unsigned)secs);
-            zenith::print(tmsg);
-            zenith::print("TLS handshake...\n");
+            montauk::print(tmsg);
+            montauk::print("TLS handshake...\n");
         }
 
         respLen = tls::https_fetch(hostStr, serverIp, port,
@@ -414,38 +414,38 @@ extern "C" void _start() {
                                    respBuf, RESP_MAX, check_keyboard_abort);
 
         if (verbose && respLen > 0) {
-            zenith::print("TLS connection established\n");
+            montauk::print("TLS connection established\n");
         }
     } else {
         // ---- Plain HTTP ----
-        int fd = zenith::socket(Zenith::SOCK_TCP);
+        int fd = montauk::socket(Montauk::SOCK_TCP);
         if (fd < 0) {
-            zenith::print("Error: failed to create socket\n");
-            zenith::exit(1);
+            montauk::print("Error: failed to create socket\n");
+            montauk::exit(1);
         }
 
-        if (zenith::connect(fd, serverIp, port) < 0) {
-            zenith::print("Error: connection failed\n");
-            zenith::closesocket(fd);
-            zenith::exit(1);
+        if (montauk::connect(fd, serverIp, port) < 0) {
+            montauk::print("Error: connection failed\n");
+            montauk::closesocket(fd);
+            montauk::exit(1);
         }
 
         respLen = plain_http_exchange(fd, request, reqLen, respBuf, RESP_MAX);
-        zenith::closesocket(fd);
+        montauk::closesocket(fd);
 
         if (respLen == -2) {
-            zenith::print("\nAborted.\n");
-            zenith::exit(0);
+            montauk::print("\nAborted.\n");
+            montauk::exit(0);
         }
     }
 
     if (respLen <= 0) {
-        zenith::print("Error: no response received\n");
-        zenith::exit(1);
+        montauk::print("Error: no response received\n");
+        montauk::exit(1);
     }
 
     respBuf[respLen] = '\0';
     print_response(respBuf, respLen, verbose);
 
-    zenith::exit(0);
+    montauk::exit(0);
 }

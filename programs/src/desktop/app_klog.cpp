@@ -1,6 +1,6 @@
 /*
     * app_klog.cpp
-    * ZenithOS Desktop - Kernel Log viewer (tails the kernel ring buffer)
+    * MontaukOS Desktop - Kernel Log viewer (tails the kernel ring buffer)
     * Copyright (c) 2026 Daniel Hammer
 */
 
@@ -64,7 +64,7 @@ static void klog_on_mouse(Window* win, MouseEvent& ev) {
     // Read-only viewer — no mouse interaction needed
 }
 
-static void klog_on_key(Window* win, const Zenith::KeyEvent& key) {
+static void klog_on_key(Window* win, const Montauk::KeyEvent& key) {
     // Read-only viewer — no keyboard input
 }
 
@@ -72,11 +72,11 @@ static void klog_on_poll(Window* win) {
     KlogState* klog = (KlogState*)win->app_data;
     if (!klog) return;
 
-    uint64_t now = zenith::get_milliseconds();
+    uint64_t now = montauk::get_milliseconds();
     if (now - klog->last_poll_ms < KLOG_POLL_MS) return;
     klog->last_poll_ms = now;
 
-    int n = (int)zenith::read_klog(klog->klog_buf, KLOG_READ_SIZE);
+    int n = (int)montauk::read_klog(klog->klog_buf, KLOG_READ_SIZE);
     if (n <= 0 && klog->last_len <= 0) return;
 
     if (n > klog->last_len) {
@@ -101,10 +101,10 @@ static void klog_on_poll(Window* win) {
 static void klog_on_close(Window* win) {
     KlogState* klog = (KlogState*)win->app_data;
     if (klog) {
-        if (klog->term.cells) zenith::mfree(klog->term.cells);
-        if (klog->term.alt_cells) zenith::mfree(klog->term.alt_cells);
-        if (klog->klog_buf) zenith::mfree(klog->klog_buf);
-        zenith::mfree(klog);
+        if (klog->term.cells) montauk::mfree(klog->term.cells);
+        if (klog->term.alt_cells) montauk::mfree(klog->term.alt_cells);
+        if (klog->klog_buf) montauk::mfree(klog->klog_buf);
+        montauk::mfree(klog);
         win->app_data = nullptr;
     }
 }
@@ -122,20 +122,20 @@ void open_klog(DesktopState* ds) {
     int cols = cr.w / mono_cell_width();
     int rows = cr.h / mono_cell_height();
 
-    KlogState* klog = (KlogState*)zenith::malloc(sizeof(KlogState));
-    zenith::memset(klog, 0, sizeof(KlogState));
+    KlogState* klog = (KlogState*)montauk::malloc(sizeof(KlogState));
+    montauk::memset(klog, 0, sizeof(KlogState));
 
     // Initialize the terminal cell grid (reuse terminal infrastructure)
     terminal_init_cells(&klog->term, cols, rows);
 
     // Allocate klog read buffer
-    klog->klog_buf = (char*)zenith::malloc(KLOG_READ_SIZE);
+    klog->klog_buf = (char*)montauk::malloc(KLOG_READ_SIZE);
     klog->last_len = 0;
     klog->last_tail_byte = 0;
     klog->last_poll_ms = 0;
 
     // Do an initial read to show existing log content
-    int n = (int)zenith::read_klog(klog->klog_buf, KLOG_READ_SIZE);
+    int n = (int)montauk::read_klog(klog->klog_buf, KLOG_READ_SIZE);
     if (n > 0) {
         klog_refeed(klog, n);
         klog->last_len = n;

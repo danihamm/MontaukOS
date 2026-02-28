@@ -12,7 +12,7 @@
 #include "Syscall.hpp"
 #include "WinServer.hpp"
 
-namespace Zenith {
+namespace Montauk {
 
     static int Sys_WinCreate(const char* title, int w, int h, WinCreateResult* result) {
         if (result == nullptr || title == nullptr) return -1;

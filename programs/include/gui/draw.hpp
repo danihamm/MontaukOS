@@ -1,6 +1,6 @@
 /*
     * draw.hpp
-    * ZenithOS drawing primitives (lines, circles, rounded rects, cursor)
+    * MontaukOS drawing primitives (lines, circles, rounded rects, cursor)
     * Copyright (c) 2025 Daniel Hammer
 */
 

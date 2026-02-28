@@ -9,7 +9,7 @@
 #include <Efi/UEFI.hpp>
 #include <Memory/Paging.hpp>
 
-namespace Zenith {
+namespace Montauk {
 
     static void Sys_Reset() {
         if (Efi::g_ResetSystem) {

@@ -19,7 +19,7 @@
 
 #include "Syscall.hpp"
 
-namespace Zenith {
+namespace Montauk {
 
     static uint16_t g_pingSeq = 0;
     static constexpr uint16_t PING_ID = 0x2E01; // "ZE"

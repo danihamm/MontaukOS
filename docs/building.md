@@ -1,4 +1,4 @@
-# Building ZenithOS
+# Building MontaukOS
 
 ## Build Dependencies
 
@@ -43,8 +43,8 @@ sudo apt install build-essential nasm git curl xorriso mtools gdisk qemu-system-
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/danihamm/ZenithOS.git
-   cd ZenithOS
+   git clone https://github.com/danihamm/MontaukOS.git
+   cd MontaukOS
    ```
 
 2. Build the ISO:

@@ -1,18 +1,18 @@
 /*
     * main.cpp
-    * HTTP/1.0 server for ZenithOS
+    * HTTP/1.0 server for MontaukOS
     * Usage: httpd [port]  (default: 80)
     * Serves a built-in index page and files from the VFS
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
-#include <zenith/string.h>
+#include <montauk/syscall.h>
+#include <montauk/string.h>
 
-using zenith::slen;
-using zenith::streq;
-using zenith::starts_with;
-using zenith::skip_spaces;
+using montauk::slen;
+using montauk::streq;
+using montauk::starts_with;
+using montauk::skip_spaces;
 
 // ---- Minimal snprintf (no libc available) ----
 
@@ -153,22 +153,22 @@ static void send_response(int clientFd, int statusCode, const char* statusText,
         "Content-Type: %s\r\n"
         "Content-Length: %d\r\n"
         "Connection: close\r\n"
-        "Server: ZenithOS/1.0\r\n"
+        "Server: MontaukOS/1.0\r\n"
         "\r\n",
         statusCode, statusText, contentType, bodyLen);
 
-    zenith::send(clientFd, header, hlen);
+    montauk::send(clientFd, header, hlen);
     if (bodyLen > 0) {
-        zenith::send(clientFd, body, bodyLen);
+        montauk::send(clientFd, body, bodyLen);
     }
 }
 
 // Send a file from the VFS
 static int send_file_response(int clientFd, const char* vfsPath, const char* urlPath) {
-    int handle = zenith::open(vfsPath);
+    int handle = montauk::open(vfsPath);
     if (handle < 0) return -1;
 
-    uint64_t size = zenith::getsize(handle);
+    uint64_t size = montauk::getsize(handle);
     const char* ctype = content_type_for(urlPath);
 
     // Send header
@@ -178,10 +178,10 @@ static int send_file_response(int clientFd, const char* vfsPath, const char* url
         "Content-Type: %s\r\n"
         "Content-Length: %u\r\n"
         "Connection: close\r\n"
-        "Server: ZenithOS/1.0\r\n"
+        "Server: MontaukOS/1.0\r\n"
         "\r\n",
         ctype, (unsigned)size);
-    zenith::send(clientFd, header, hlen);
+    montauk::send(clientFd, header, hlen);
 
     // Send file body in chunks
     uint8_t buf[512];
@@ -189,13 +189,13 @@ static int send_file_response(int clientFd, const char* vfsPath, const char* url
     while (offset < size) {
         uint64_t chunk = size - offset;
         if (chunk > sizeof(buf)) chunk = sizeof(buf);
-        int bytesRead = zenith::read(handle, buf, offset, chunk);
+        int bytesRead = montauk::read(handle, buf, offset, chunk);
         if (bytesRead <= 0) break;
-        zenith::send(clientFd, buf, bytesRead);
+        montauk::send(clientFd, buf, bytesRead);
         offset += bytesRead;
     }
 
-    zenith::close(handle);
+    montauk::close(handle);
     return (int)size;
 }
 
@@ -223,23 +223,23 @@ static int parse_request_path(const char* req, int reqLen, char* pathOut, int pa
 
 static void log_request(const char* method, const char* path, int status, int bodyLen) {
     // Get timestamp
-    Zenith::DateTime dt;
-    zenith::gettime(&dt);
+    Montauk::DateTime dt;
+    montauk::gettime(&dt);
 
     char msg[256];
     snprintf(msg, sizeof(msg), "[%02d:%02d:%02d] %s %s -> %d (%d bytes)\n",
         (int)dt.Hour, (int)dt.Minute, (int)dt.Second,
         method, path, status, bodyLen);
-    zenith::print(msg);
+    montauk::print(msg);
 }
 
 // ---- Page generators ----
 
 static int generate_index_page(char* buf, int bufSize) {
-    Zenith::SysInfo info;
-    zenith::get_info(&info);
+    Montauk::SysInfo info;
+    montauk::get_info(&info);
 
-    uint64_t ms = zenith::get_milliseconds();
+    uint64_t ms = montauk::get_milliseconds();
     uint64_t secs = ms / 1000;
     uint64_t mins = secs / 60;
     uint64_t hours = mins / 60;
@@ -249,10 +249,10 @@ static int generate_index_page(char* buf, int bufSize) {
     return snprintf(buf, bufSize,
         "<!DOCTYPE html>\n"
         "<html>\n"
-        "<head><title>ZenithOS Web Server</title></head>\n"
+        "<head><title>MontaukOS Web Server</title></head>\n"
         "<body>\n"
-        "<h1>ZenithOS Web Server</h1>\n"
-        "<p>Welcome! This page is being served by <b>httpd</b> running on ZenithOS.</p>\n"
+        "<h1>MontaukOS Web Server</h1>\n"
+        "<p>Welcome! This page is being served by <b>httpd</b> running on MontaukOS.</p>\n"
         "<h2>System Information</h2>\n"
         "<table>\n"
         "<tr><td><b>OS:</b></td><td>%s</td></tr>\n"
@@ -302,7 +302,7 @@ static int generate_dir_listing(char* buf, int bufSize, const char* urlPath, con
 
     // List directory entries
     const char* entries[64];
-    int count = zenith::readdir(vfsDir, entries, 64);
+    int count = montauk::readdir(vfsDir, entries, 64);
 
     // Find the prefix to strip from entry names
     // vfsDir is like "0:/" or "0:/subdir"
@@ -331,7 +331,7 @@ static int generate_dir_listing(char* buf, int bufSize, const char* urlPath, con
     pos += snprintf(buf + pos, bufSize - pos,
         "</ul>\n"
         "<hr>\n"
-        "<p><i>ZenithOS httpd</i></p>\n"
+        "<p><i>MontaukOS httpd</i></p>\n"
         "</body>\n"
         "</html>\n");
 
@@ -348,7 +348,7 @@ static void handle_client(int clientFd) {
 
     // Read until we get the full header (ends with \r\n\r\n)
     while (reqLen < (int)sizeof(reqBuf) - 1) {
-        int r = zenith::recv(clientFd, reqBuf + reqLen, sizeof(reqBuf) - 1 - reqLen);
+        int r = montauk::recv(clientFd, reqBuf + reqLen, sizeof(reqBuf) - 1 - reqLen);
         if (r > 0) {
             reqLen += r;
             idleCount = 0;
@@ -367,13 +367,13 @@ static void handle_client(int clientFd) {
         } else {
             idleCount++;
             if (idleCount > 500) break; // Timeout
-            zenith::yield();
+            montauk::yield();
         }
     }
     reqBuf[reqLen] = '\0';
 
     if (reqLen == 0) {
-        zenith::closesocket(clientFd);
+        montauk::closesocket(clientFd);
         return;
     }
 
@@ -384,7 +384,7 @@ static void handle_client(int clientFd) {
         static char body[] = "<!DOCTYPE html><html><body><h1>400 Bad Request</h1></body></html>";
         send_response(clientFd, 400, "Bad Request", "text/html", body, slen(body));
         log_request("???", "???", 400, slen(body));
-        zenith::closesocket(clientFd);
+        montauk::closesocket(clientFd);
         return;
     }
 
@@ -393,9 +393,9 @@ static void handle_client(int clientFd) {
 
     if (streq(path, "/")) {
         // Try to serve 0:/www/index.html from disk first
-        int handle = zenith::open("0:/www/index.html");
+        int handle = montauk::open("0:/www/index.html");
         if (handle >= 0) {
-            zenith::close(handle);
+            montauk::close(handle);
             int bodyLen = send_file_response(clientFd, "0:/www/index.html", "/index.html");
             log_request("GET", path, 200, bodyLen);
         } else {
@@ -428,10 +428,10 @@ static void handle_client(int clientFd) {
         vfsPath[pi] = '\0';
 
         // Try to open as file first
-        int handle = zenith::open(vfsPath);
+        int handle = montauk::open(vfsPath);
         if (handle >= 0) {
             // It's a file — serve it
-            zenith::close(handle);
+            montauk::close(handle);
             int bodyLen = send_file_response(clientFd, vfsPath, path);
             if (bodyLen >= 0) {
                 log_request("GET", path, 200, bodyLen);
@@ -443,7 +443,7 @@ static void handle_client(int clientFd) {
         } else {
             // Try as directory
             const char* entries[64];
-            int count = zenith::readdir(vfsPath, entries, 64);
+            int count = montauk::readdir(vfsPath, entries, 64);
             if (count >= 0) {
                 // Make sure urlPath ends with /
                 char urlPath[256];
@@ -471,7 +471,7 @@ static void handle_client(int clientFd) {
         log_request("GET", path, 404, bodyLen);
     }
 
-    zenith::closesocket(clientFd);
+    montauk::closesocket(clientFd);
 }
 
 // ---- Entry point ----
@@ -479,55 +479,55 @@ static void handle_client(int clientFd) {
 extern "C" void _start() {
     // Parse arguments: [port]
     char argbuf[64];
-    zenith::getargs(argbuf, sizeof(argbuf));
+    montauk::getargs(argbuf, sizeof(argbuf));
     const char* arg = skip_spaces(argbuf);
 
     uint16_t port = 80;
     if (*arg) {
         if (!parse_uint16(arg, &port)) {
-            zenith::print("Invalid port: ");
-            zenith::print(arg);
-            zenith::putchar('\n');
-            zenith::exit(1);
+            montauk::print("Invalid port: ");
+            montauk::print(arg);
+            montauk::putchar('\n');
+            montauk::exit(1);
         }
     }
 
     // Create server socket
-    int listenFd = zenith::socket(Zenith::SOCK_TCP);
+    int listenFd = montauk::socket(Montauk::SOCK_TCP);
     if (listenFd < 0) {
-        zenith::print("Error: failed to create socket\n");
-        zenith::exit(1);
+        montauk::print("Error: failed to create socket\n");
+        montauk::exit(1);
     }
 
     // Bind
-    if (zenith::bind(listenFd, port) < 0) {
-        zenith::print("Error: failed to bind to port ");
+    if (montauk::bind(listenFd, port) < 0) {
+        montauk::print("Error: failed to bind to port ");
         char tmp[8];
         snprintf(tmp, sizeof(tmp), "%d", (int)port);
-        zenith::print(tmp);
-        zenith::putchar('\n');
-        zenith::closesocket(listenFd);
-        zenith::exit(1);
+        montauk::print(tmp);
+        montauk::putchar('\n');
+        montauk::closesocket(listenFd);
+        montauk::exit(1);
     }
 
     // Listen
-    if (zenith::listen(listenFd) < 0) {
-        zenith::print("Error: failed to listen\n");
-        zenith::closesocket(listenFd);
-        zenith::exit(1);
+    if (montauk::listen(listenFd) < 0) {
+        montauk::print("Error: failed to listen\n");
+        montauk::closesocket(listenFd);
+        montauk::exit(1);
     }
 
     char msg[128];
-    snprintf(msg, sizeof(msg), "ZenithOS httpd listening on port %d\n", (int)port);
-    zenith::print(msg);
-    zenith::print("Press Ctrl+Q between requests to stop.\n\n");
+    snprintf(msg, sizeof(msg), "MontaukOS httpd listening on port %d\n", (int)port);
+    montauk::print(msg);
+    montauk::print("Press Ctrl+Q between requests to stop.\n\n");
 
     bool running = true;
     while (running) {
         // Check for Ctrl+Q before blocking on accept
-        while (zenith::is_key_available()) {
-            Zenith::KeyEvent ev;
-            zenith::getkey(&ev);
+        while (montauk::is_key_available()) {
+            Montauk::KeyEvent ev;
+            montauk::getkey(&ev);
             if (ev.pressed && ev.ctrl && ev.ascii == 'q') {
                 running = false;
                 break;
@@ -536,19 +536,19 @@ extern "C" void _start() {
         if (!running) break;
 
         // Accept next client (blocks until a connection arrives)
-        int clientFd = zenith::accept(listenFd);
+        int clientFd = montauk::accept(listenFd);
         if (clientFd < 0) {
-            zenith::print("Warning: accept failed\n");
-            zenith::yield();
+            montauk::print("Warning: accept failed\n");
+            montauk::yield();
             continue;
         }
 
         handle_client(clientFd);
 
         // After serving, check for Ctrl+Q
-        while (zenith::is_key_available()) {
-            Zenith::KeyEvent ev;
-            zenith::getkey(&ev);
+        while (montauk::is_key_available()) {
+            Montauk::KeyEvent ev;
+            montauk::getkey(&ev);
             if (ev.pressed && ev.ctrl && ev.ascii == 'q') {
                 running = false;
                 break;
@@ -556,7 +556,7 @@ extern "C" void _start() {
         }
     }
 
-    zenith::print("\nShutting down httpd...\n");
-    zenith::closesocket(listenFd);
-    zenith::exit(0);
+    montauk::print("\nShutting down httpd...\n");
+    montauk::closesocket(listenFd);
+    montauk::exit(0);
 }

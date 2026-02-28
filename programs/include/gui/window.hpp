@@ -1,6 +1,6 @@
 /*
     * window.hpp
-    * ZenithOS window management types
+    * MontaukOS window management types
     * Copyright (c) 2026 Daniel Hammer
 */
 
@@ -32,7 +32,7 @@ static constexpr int MIN_WINDOW_H = 80;
 struct Window;
 using WindowDrawCallback  = void (*)(Window* win, Framebuffer& fb);
 using WindowMouseCallback = void (*)(Window* win, MouseEvent& ev);
-using WindowKeyCallback   = void (*)(Window* win, const Zenith::KeyEvent& key);
+using WindowKeyCallback   = void (*)(Window* win, const Montauk::KeyEvent& key);
 using WindowCloseCallback = void (*)(Window* win);
 using WindowPollCallback  = void (*)(Window* win);
 

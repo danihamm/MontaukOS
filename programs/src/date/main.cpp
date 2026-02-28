@@ -4,11 +4,11 @@
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
+#include <montauk/syscall.h>
 
 static void print_int(uint64_t n) {
     if (n == 0) {
-        zenith::putchar('0');
+        montauk::putchar('0');
         return;
     }
     char buf[20];
@@ -18,12 +18,12 @@ static void print_int(uint64_t n) {
         n /= 10;
     }
     for (int j = i - 1; j >= 0; j--) {
-        zenith::putchar(buf[j]);
+        montauk::putchar(buf[j]);
     }
 }
 
 static void print_int_padded(uint64_t n) {
-    if (n < 10) zenith::putchar('0');
+    if (n < 10) montauk::putchar('0');
     print_int(n);
 }
 
@@ -37,20 +37,20 @@ static const char* month_name(int m) {
 }
 
 extern "C" void _start() {
-    Zenith::DateTime dt;
-    zenith::gettime(&dt);
+    Montauk::DateTime dt;
+    montauk::gettime(&dt);
 
     print_int(dt.Day);
-    zenith::putchar(' ');
-    zenith::print(month_name(dt.Month));
-    zenith::putchar(' ');
+    montauk::putchar(' ');
+    montauk::print(month_name(dt.Month));
+    montauk::putchar(' ');
     print_int(dt.Year);
-    zenith::print(", ");
+    montauk::print(", ");
     print_int(dt.Hour);
-    zenith::putchar(':');
+    montauk::putchar(':');
     print_int_padded(dt.Minute);
-    zenith::putchar(':');
+    montauk::putchar(':');
     print_int_padded(dt.Second);
-    zenith::print(" UTC\n");
-    zenith::exit(0);
+    montauk::print(" UTC\n");
+    montauk::exit(0);
 }

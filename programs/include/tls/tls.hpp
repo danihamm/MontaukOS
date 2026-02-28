@@ -1,6 +1,6 @@
 /*
  * tls.hpp
- * Shared TLS helper library for ZenithOS
+ * Shared TLS helper library for MontaukOS
  * Trust anchor loading, BearSSL time, TLS I/O, HTTPS fetch
  * Copyright (c) 2026 Daniel Hammer
  */

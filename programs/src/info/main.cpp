@@ -4,11 +4,11 @@
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
+#include <montauk/syscall.h>
 
 static void print_int(uint64_t n) {
     if (n == 0) {
-        zenith::putchar('0');
+        montauk::putchar('0');
         return;
     }
     char buf[20];
@@ -18,19 +18,19 @@ static void print_int(uint64_t n) {
         n /= 10;
     }
     for (int j = i - 1; j >= 0; j--) {
-        zenith::putchar(buf[j]);
+        montauk::putchar(buf[j]);
     }
 }
 
 extern "C" void _start() {
-    Zenith::SysInfo info;
-    zenith::get_info(&info);
-    zenith::print(info.osName);
-    zenith::print(" v");
-    zenith::print(info.osVersion);
-    zenith::putchar('\n');
-    zenith::print("Syscall API version: ");
+    Montauk::SysInfo info;
+    montauk::get_info(&info);
+    montauk::print(info.osName);
+    montauk::print(" v");
+    montauk::print(info.osVersion);
+    montauk::putchar('\n');
+    montauk::print("Syscall API version: ");
     print_int(info.apiVersion);
-    zenith::putchar('\n');
-    zenith::exit(0);
+    montauk::putchar('\n');
+    montauk::exit(0);
 }

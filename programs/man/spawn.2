@@ -3,9 +3,9 @@
     spawn, waitpid - create and wait for processes
 
 .SH SYNOPSIS
-.BI     int zenith::spawn(const char* path, const char* args = nullptr);
-.BI     void zenith::waitpid(int pid);
-.BI     int zenith::getargs(char* buf, uint64_t maxLen);
+.BI     int montauk::spawn(const char* path, const char* args = nullptr);
+.BI     void montauk::waitpid(int pid);
+.BI     int montauk::getargs(char* buf, uint64_t maxLen);
 
 .SH DESCRIPTION
 
@@ -13,11 +13,11 @@
     Loads the ELF64 binary at the given VFS path and creates a new
     process. The path must include the drive prefix, for example:
 
-        int pid = zenith::spawn("0:/os/hello.elf");
+        int pid = montauk::spawn("0:/os/hello.elf");
 
     An optional second argument passes a string to the child:
 
-        int pid = zenith::spawn("0:/os/man.elf", "intro");
+        int pid = montauk::spawn("0:/os/man.elf", "intro");
 
     The new process gets its own PML4 page table, a 16 KiB stack
     (at 0x7FFFFEF000-0x7FFFFFF000), and begins executing at the
@@ -31,7 +31,7 @@
     Blocks the calling process until the process with the given PID
     has exited. Internally, this yields the CPU in a loop:
 
-        zenith::waitpid(pid);
+        montauk::waitpid(pid);
 
     This is how the shell implements foreground process execution --
     it spawns a child and waits for it to complete before showing
@@ -40,12 +40,12 @@
 .SH EXAMPLES
     Spawn a program and wait for it:
 
-        int pid = zenith::spawn("0:/os/hello.elf");
+        int pid = montauk::spawn("0:/os/hello.elf");
         if (pid < 0) {
-            zenith::print("spawn failed\n");
+            montauk::print("spawn failed\n");
         } else {
-            zenith::waitpid(pid);
-            zenith::print("child exited\n");
+            montauk::waitpid(pid);
+            montauk::print("child exited\n");
         }
 
 .SS getargs
@@ -54,7 +54,7 @@
     -1 on error.
 
         char args[256];
-        zenith::getargs(args, sizeof(args));
+        montauk::getargs(args, sizeof(args));
 
     The argument string is set by the parent when calling spawn().
     If no arguments were provided, the buffer will be empty.

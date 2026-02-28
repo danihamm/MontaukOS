@@ -16,7 +16,7 @@
 
 #include "Syscall.hpp"
 
-namespace Zenith {
+namespace Montauk {
 
     static void dl_strcpy(char* dst, const char* src, int max) {
         int i = 0;

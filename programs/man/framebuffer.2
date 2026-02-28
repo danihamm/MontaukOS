@@ -3,8 +3,8 @@
     fb_info, fb_map - direct framebuffer access
 
 .SH SYNOPSIS
-.BI     void zenith::fb_info(Zenith::FbInfo* info);
-.BI     void* zenith::fb_map();
+.BI     void montauk::fb_info(Montauk::FbInfo* info);
+.BI     void* montauk::fb_map();
 
 .SH DESCRIPTION
     These syscalls allow userspace programs to access the linear
@@ -13,8 +13,8 @@
 .SS fb_info
     Fills in an FbInfo structure with the framebuffer geometry:
 
-        Zenith::FbInfo fb;
-        zenith::fb_info(&fb);
+        Montauk::FbInfo fb;
+        montauk::fb_info(&fb);
         // fb.width, fb.height, fb.pitch, fb.bpp
 
     The pitch is the number of bytes per scanline (may be larger
@@ -24,7 +24,7 @@
     Maps the physical framebuffer into the process address space at
     a fixed virtual address (0x50000000) and returns that address.
 
-        uint32_t* pixels = (uint32_t*)zenith::fb_map();
+        uint32_t* pixels = (uint32_t*)montauk::fb_map();
 
     Each pixel is a 32-bit value in 0xAARRGGBB format (blue in the
     low byte). Writing to this memory directly updates the screen.
@@ -40,9 +40,9 @@
 .SH EXAMPLE
     Fill the screen with blue:
 
-        Zenith::FbInfo fb;
-        zenith::fb_info(&fb);
-        uint32_t* pixels = (uint32_t*)zenith::fb_map();
+        Montauk::FbInfo fb;
+        montauk::fb_info(&fb);
+        uint32_t* pixels = (uint32_t*)montauk::fb_map();
 
         for (uint64_t y = 0; y < fb.height; y++) {
             uint32_t* row = (uint32_t*)((uint8_t*)pixels + y * fb.pitch);

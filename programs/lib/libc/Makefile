@@ -1,4 +1,4 @@
-# Makefile for shared libc static library on ZenithOS
+# Makefile for shared libc static library on MontaukOS
 # Copyright (c) 2025-2026 Daniel Hammer
 
 MAKEFLAGS += -rR

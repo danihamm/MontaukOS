@@ -1,18 +1,18 @@
 /*
     * main.cpp
-    * Hello world program for ZenithOS
+    * Hello world program for MontaukOS
     * Copyright (c) 2025 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
+#include <montauk/syscall.h>
 
 extern "C" void _start() {
 
 
-    zenith::print("Hello from userspace!\n");
+    montauk::print("Hello from userspace!\n");
 
     // while(true) {
-    //     zenith::print("ab");
+    //     montauk::print("ab");
     // }
 
 }

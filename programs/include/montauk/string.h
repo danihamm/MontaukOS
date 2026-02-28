@@ -1,13 +1,13 @@
 /*
     * string.h
-    * Common string and memory utility functions for ZenithOS programs
+    * Common string and memory utility functions for MontaukOS programs
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
 #pragma once
 #include <cstdint>
 
-namespace zenith {
+namespace montauk {
 
     inline int slen(const char* s) {
         int n = 0;

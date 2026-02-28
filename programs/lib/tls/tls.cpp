@@ -1,12 +1,12 @@
 /*
  * tls.cpp
- * Shared TLS helper library for ZenithOS
+ * Shared TLS helper library for MontaukOS
  * Extracted from fetch, wiki, wikipedia, and weather apps
  * Copyright (c) 2025-2026 Daniel Hammer
  */
 
 #include <tls/tls.hpp>
-#include <zenith/syscall.h>
+#include <montauk/syscall.h>
 
 extern "C" {
 #include <string.h>
@@ -109,15 +109,15 @@ namespace tls {
 
 TrustAnchors load_trust_anchors() {
     TrustAnchors tas = {nullptr, 0, 0};
-    int fh = zenith::open("0:/etc/ca-certificates.crt");
+    int fh = montauk::open("0:/etc/ca-certificates.crt");
     if (fh < 0) return tas;
-    uint64_t fsize = zenith::getsize(fh);
-    if (fsize == 0 || fsize > 512 * 1024) { zenith::close(fh); return tas; }
+    uint64_t fsize = montauk::getsize(fh);
+    if (fsize == 0 || fsize > 512 * 1024) { montauk::close(fh); return tas; }
 
     unsigned char* pem = (unsigned char*)malloc(fsize + 1);
-    if (!pem) { zenith::close(fh); return tas; }
-    zenith::read(fh, pem, 0, fsize);
-    zenith::close(fh);
+    if (!pem) { montauk::close(fh); return tas; }
+    montauk::read(fh, pem, 0, fsize);
+    montauk::close(fh);
     pem[fsize] = 0;
 
     static br_pem_decoder_context pc;  // keep off stack
@@ -147,8 +147,8 @@ TrustAnchors load_trust_anchors() {
 }
 
 void get_bearssl_time(uint32_t* days, uint32_t* seconds) {
-    Zenith::DateTime dt;
-    zenith::gettime(&dt);
+    Montauk::DateTime dt;
+    montauk::gettime(&dt);
     int y = dt.Year, m = dt.Month, d = dt.Day;
     uint32_t total = 365u * (uint32_t)y
         + (uint32_t)(y/4) - (uint32_t)(y/100) + (uint32_t)(y/400);
@@ -162,24 +162,24 @@ void get_bearssl_time(uint32_t* days, uint32_t* seconds) {
 
 int tls_send_all(int fd, const unsigned char* data, size_t len) {
     size_t sent = 0;
-    uint64_t deadline = zenith::get_milliseconds() + 15000;
+    uint64_t deadline = montauk::get_milliseconds() + 15000;
     while (sent < len) {
-        int r = zenith::send(fd, data + sent, (uint32_t)(len - sent));
-        if (r > 0) { sent += r; deadline = zenith::get_milliseconds() + 15000; }
+        int r = montauk::send(fd, data + sent, (uint32_t)(len - sent));
+        if (r > 0) { sent += r; deadline = montauk::get_milliseconds() + 15000; }
         else if (r < 0) return -1;
-        else { if (zenith::get_milliseconds() >= deadline) return -1; zenith::sleep_ms(1); }
+        else { if (montauk::get_milliseconds() >= deadline) return -1; montauk::sleep_ms(1); }
     }
     return (int)sent;
 }
 
 int tls_recv_some(int fd, unsigned char* buf, size_t maxlen) {
-    uint64_t deadline = zenith::get_milliseconds() + 15000;
+    uint64_t deadline = montauk::get_milliseconds() + 15000;
     while (true) {
-        int r = zenith::recv(fd, buf, (uint32_t)maxlen);
+        int r = montauk::recv(fd, buf, (uint32_t)maxlen);
         if (r > 0) return r;
         if (r < 0) return -1;
-        if (zenith::get_milliseconds() >= deadline) return -1;
-        zenith::sleep_ms(1);
+        if (montauk::get_milliseconds() >= deadline) return -1;
+        montauk::sleep_ms(1);
     }
 }
 
@@ -189,7 +189,7 @@ int tls_exchange(int fd, br_ssl_engine_context* eng,
                  AbortCheckFn abort_check) {
     bool requestSent = false;
     int respLen = 0;
-    uint64_t deadline = zenith::get_milliseconds() + 30000;
+    uint64_t deadline = montauk::get_milliseconds() + 30000;
 
     while (true) {
         unsigned state = br_ssl_engine_current_state(eng);
@@ -207,7 +207,7 @@ int tls_exchange(int fd, br_ssl_engine_context* eng,
             int sent = tls_send_all(fd, buf, len);
             if (sent < 0) { br_ssl_engine_close(eng); return respLen > 0 ? respLen : -1; }
             br_ssl_engine_sendrec_ack(eng, len);
-            deadline = zenith::get_milliseconds() + 30000; continue;
+            deadline = montauk::get_milliseconds() + 30000; continue;
         }
         if (state & BR_SSL_RECVAPP) {
             size_t len; unsigned char* buf = br_ssl_engine_recvapp_buf(eng, &len);
@@ -215,7 +215,7 @@ int tls_exchange(int fd, br_ssl_engine_context* eng,
             if (respLen + (int)toCopy > respMax - 1) toCopy = respMax - 1 - respLen;
             if (toCopy > 0) { memcpy(respBuf + respLen, buf, toCopy); respLen += toCopy; }
             br_ssl_engine_recvapp_ack(eng, len);
-            deadline = zenith::get_milliseconds() + 30000; continue;
+            deadline = montauk::get_milliseconds() + 30000; continue;
         }
         if ((state & BR_SSL_SENDAPP) && !requestSent) {
             size_t len; unsigned char* buf = br_ssl_engine_sendapp_buf(eng, &len);
@@ -225,17 +225,17 @@ int tls_exchange(int fd, br_ssl_engine_context* eng,
             br_ssl_engine_sendapp_ack(eng, toWrite);
             br_ssl_engine_flush(eng, 0);
             requestSent = true;
-            deadline = zenith::get_milliseconds() + 30000; continue;
+            deadline = montauk::get_milliseconds() + 30000; continue;
         }
         if (state & BR_SSL_RECVREC) {
             size_t len; unsigned char* buf = br_ssl_engine_recvrec_buf(eng, &len);
             int got = tls_recv_some(fd, buf, len);
             if (got < 0) { br_ssl_engine_close(eng); return respLen > 0 ? respLen : -1; }
             br_ssl_engine_recvrec_ack(eng, got);
-            deadline = zenith::get_milliseconds() + 30000; continue;
+            deadline = montauk::get_milliseconds() + 30000; continue;
         }
-        if (zenith::get_milliseconds() >= deadline) return respLen > 0 ? respLen : -1;
-        zenith::sleep_ms(1);
+        if (montauk::get_milliseconds() >= deadline) return respLen > 0 ? respLen : -1;
+        montauk::sleep_ms(1);
     }
 }
 
@@ -244,16 +244,16 @@ int https_fetch(const char* host, uint32_t ip, uint16_t port,
                 const TrustAnchors& tas,
                 char* respBuf, int respMax,
                 AbortCheckFn abort_check) {
-    int fd = zenith::socket(Zenith::SOCK_TCP);
+    int fd = montauk::socket(Montauk::SOCK_TCP);
     if (fd < 0) return -1;
-    if (zenith::connect(fd, ip, port) < 0) { zenith::closesocket(fd); return -1; }
+    if (montauk::connect(fd, ip, port) < 0) { montauk::closesocket(fd); return -1; }
 
     br_ssl_client_context* cc  = (br_ssl_client_context*)malloc(sizeof(*cc));
     br_x509_minimal_context* xc = (br_x509_minimal_context*)malloc(sizeof(*xc));
     void* iobuf = malloc(BR_SSL_BUFSIZE_BIDI);
     if (!cc || !xc || !iobuf) {
         free(cc); free(xc); free(iobuf);
-        zenith::closesocket(fd); return -1;
+        montauk::closesocket(fd); return -1;
     }
 
     br_ssl_client_init_full(cc, xc, tas.anchors, tas.count);
@@ -262,16 +262,16 @@ int https_fetch(const char* host, uint32_t ip, uint16_t port,
     br_x509_minimal_set_time(xc, days, secs);
 
     unsigned char seed[32];
-    zenith::getrandom(seed, sizeof(seed));
+    montauk::getrandom(seed, sizeof(seed));
     br_ssl_engine_set_buffer(&cc->eng, iobuf, BR_SSL_BUFSIZE_BIDI, 1);
     br_ssl_engine_inject_entropy(&cc->eng, seed, sizeof(seed));
 
     if (!br_ssl_client_reset(cc, host, 0)) {
-        zenith::closesocket(fd); free(cc); free(xc); free(iobuf); return -1;
+        montauk::closesocket(fd); free(cc); free(xc); free(iobuf); return -1;
     }
 
     int respLen = tls_exchange(fd, &cc->eng, request, reqLen, respBuf, respMax, abort_check);
-    zenith::closesocket(fd);
+    montauk::closesocket(fd);
     free(cc); free(xc); free(iobuf);
     return respLen;
 }

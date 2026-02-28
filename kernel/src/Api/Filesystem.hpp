@@ -13,7 +13,7 @@
 #include <Memory/Paging.hpp>
 #include <Libraries/Memory.hpp>
 
-namespace Zenith {
+namespace Montauk {
     static int Sys_Open(const char* path) {
         return Fs::Vfs::VfsOpen(path);
     }

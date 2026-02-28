@@ -1,13 +1,13 @@
 /*
     * syscall.h
-    * ZenithOS program-side syscall wrappers using SYSCALL instruction
+    * MontaukOS program-side syscall wrappers using SYSCALL instruction
     * Copyright (c) 2025 Daniel Hammer
 */
 
 #pragma once
 #include <Api/Syscall.hpp>
 
-namespace zenith {
+namespace montauk {
 
     // ---- Raw SYSCALL wrappers ----
 
@@ -110,224 +110,224 @@ namespace zenith {
 
     // Process
     [[noreturn]] inline void exit(int code = 0) {
-        syscall1(Zenith::SYS_EXIT, (uint64_t)code);
+        syscall1(Montauk::SYS_EXIT, (uint64_t)code);
         __builtin_unreachable();
     }
 
-    inline void yield() { syscall0(Zenith::SYS_YIELD); }
-    inline void sleep_ms(uint64_t ms) { syscall1(Zenith::SYS_SLEEP_MS, ms); }
-    inline int getpid() { return (int)syscall0(Zenith::SYS_GETPID); }
+    inline void yield() { syscall0(Montauk::SYS_YIELD); }
+    inline void sleep_ms(uint64_t ms) { syscall1(Montauk::SYS_SLEEP_MS, ms); }
+    inline int getpid() { return (int)syscall0(Montauk::SYS_GETPID); }
     inline int spawn(const char* path, const char* args = nullptr) {
-        return (int)syscall2(Zenith::SYS_SPAWN, (uint64_t)path, (uint64_t)args);
+        return (int)syscall2(Montauk::SYS_SPAWN, (uint64_t)path, (uint64_t)args);
     }
 
     // Console
-    inline void print(const char* text) { syscall1(Zenith::SYS_PRINT, (uint64_t)text); }
-    inline void putchar(char c) { syscall1(Zenith::SYS_PUTCHAR, (uint64_t)c); }
+    inline void print(const char* text) { syscall1(Montauk::SYS_PRINT, (uint64_t)text); }
+    inline void putchar(char c) { syscall1(Montauk::SYS_PUTCHAR, (uint64_t)c); }
 
     // File I/O
-    inline int open(const char* path) { return (int)syscall1(Zenith::SYS_OPEN, (uint64_t)path); }
+    inline int open(const char* path) { return (int)syscall1(Montauk::SYS_OPEN, (uint64_t)path); }
     inline int read(int handle, uint8_t* buf, uint64_t off, uint64_t size) {
-        return (int)syscall4(Zenith::SYS_READ, (uint64_t)handle, (uint64_t)buf, off, size);
+        return (int)syscall4(Montauk::SYS_READ, (uint64_t)handle, (uint64_t)buf, off, size);
     }
-    inline uint64_t getsize(int handle) { return (uint64_t)syscall1(Zenith::SYS_GETSIZE, (uint64_t)handle); }
-    inline void close(int handle) { syscall1(Zenith::SYS_CLOSE, (uint64_t)handle); }
+    inline uint64_t getsize(int handle) { return (uint64_t)syscall1(Montauk::SYS_GETSIZE, (uint64_t)handle); }
+    inline void close(int handle) { syscall1(Montauk::SYS_CLOSE, (uint64_t)handle); }
     inline int readdir(const char* path, const char** names, int max) {
-        return (int)syscall3(Zenith::SYS_READDIR, (uint64_t)path, (uint64_t)names, (uint64_t)max);
+        return (int)syscall3(Montauk::SYS_READDIR, (uint64_t)path, (uint64_t)names, (uint64_t)max);
     }
 
     // File write/create
     inline int fwrite(int handle, const uint8_t* buf, uint64_t off, uint64_t size) {
-        return (int)syscall4(Zenith::SYS_FWRITE, (uint64_t)handle, (uint64_t)buf, off, size);
+        return (int)syscall4(Montauk::SYS_FWRITE, (uint64_t)handle, (uint64_t)buf, off, size);
     }
     inline int fcreate(const char* path) {
-        return (int)syscall1(Zenith::SYS_FCREATE, (uint64_t)path);
+        return (int)syscall1(Montauk::SYS_FCREATE, (uint64_t)path);
     }
 
     // Memory
-    inline void* alloc(uint64_t size) { return (void*)syscall1(Zenith::SYS_ALLOC, size); }
-    inline void free(void* ptr) { syscall1(Zenith::SYS_FREE, (uint64_t)ptr); }
+    inline void* alloc(uint64_t size) { return (void*)syscall1(Montauk::SYS_ALLOC, size); }
+    inline void free(void* ptr) { syscall1(Montauk::SYS_FREE, (uint64_t)ptr); }
 
     // Timekeeping
-    inline uint64_t get_ticks() { return (uint64_t)syscall0(Zenith::SYS_GETTICKS); }
-    inline uint64_t get_milliseconds() { return (uint64_t)syscall0(Zenith::SYS_GETMILLISECONDS); }
+    inline uint64_t get_ticks() { return (uint64_t)syscall0(Montauk::SYS_GETTICKS); }
+    inline uint64_t get_milliseconds() { return (uint64_t)syscall0(Montauk::SYS_GETMILLISECONDS); }
 
     // System
-    inline void get_info(Zenith::SysInfo* info) { syscall1(Zenith::SYS_GETINFO, (uint64_t)info); }
+    inline void get_info(Montauk::SysInfo* info) { syscall1(Montauk::SYS_GETINFO, (uint64_t)info); }
 
     // Keyboard
-    inline bool is_key_available() { return (bool)syscall0(Zenith::SYS_ISKEYAVAILABLE); }
-    inline void getkey(Zenith::KeyEvent* out) { syscall1(Zenith::SYS_GETKEY, (uint64_t)out); }
-    inline char getchar() { return (char)syscall0(Zenith::SYS_GETCHAR); }
+    inline bool is_key_available() { return (bool)syscall0(Montauk::SYS_ISKEYAVAILABLE); }
+    inline void getkey(Montauk::KeyEvent* out) { syscall1(Montauk::SYS_GETKEY, (uint64_t)out); }
+    inline char getchar() { return (char)syscall0(Montauk::SYS_GETCHAR); }
 
     // Networking
     inline int32_t ping(uint32_t ip, uint32_t timeoutMs = 3000) {
-        return (int32_t)syscall2(Zenith::SYS_PING, (uint64_t)ip, (uint64_t)timeoutMs);
+        return (int32_t)syscall2(Montauk::SYS_PING, (uint64_t)ip, (uint64_t)timeoutMs);
     }
 
     // DNS resolve: returns IP in network byte order, or 0 on failure
     inline uint32_t resolve(const char* hostname) {
-        return (uint32_t)syscall1(Zenith::SYS_RESOLVE, (uint64_t)hostname);
+        return (uint32_t)syscall1(Montauk::SYS_RESOLVE, (uint64_t)hostname);
     }
 
     // Network configuration
-    inline void get_netcfg(Zenith::NetCfg* out) { syscall1(Zenith::SYS_GETNETCFG, (uint64_t)out); }
-    inline int set_netcfg(const Zenith::NetCfg* cfg) { return (int)syscall1(Zenith::SYS_SETNETCFG, (uint64_t)cfg); }
+    inline void get_netcfg(Montauk::NetCfg* out) { syscall1(Montauk::SYS_GETNETCFG, (uint64_t)out); }
+    inline int set_netcfg(const Montauk::NetCfg* cfg) { return (int)syscall1(Montauk::SYS_SETNETCFG, (uint64_t)cfg); }
 
     // Sockets
     inline int socket(int type) {
-        return (int)syscall1(Zenith::SYS_SOCKET, (uint64_t)type);
+        return (int)syscall1(Montauk::SYS_SOCKET, (uint64_t)type);
     }
     inline int connect(int fd, uint32_t ip, uint16_t port) {
-        return (int)syscall3(Zenith::SYS_CONNECT, (uint64_t)fd, (uint64_t)ip, (uint64_t)port);
+        return (int)syscall3(Montauk::SYS_CONNECT, (uint64_t)fd, (uint64_t)ip, (uint64_t)port);
     }
     inline int bind(int fd, uint16_t port) {
-        return (int)syscall2(Zenith::SYS_BIND, (uint64_t)fd, (uint64_t)port);
+        return (int)syscall2(Montauk::SYS_BIND, (uint64_t)fd, (uint64_t)port);
     }
     inline int listen(int fd) {
-        return (int)syscall1(Zenith::SYS_LISTEN, (uint64_t)fd);
+        return (int)syscall1(Montauk::SYS_LISTEN, (uint64_t)fd);
     }
     inline int accept(int fd) {
-        return (int)syscall1(Zenith::SYS_ACCEPT, (uint64_t)fd);
+        return (int)syscall1(Montauk::SYS_ACCEPT, (uint64_t)fd);
     }
     inline int send(int fd, const void* data, uint32_t len) {
-        return (int)syscall3(Zenith::SYS_SEND, (uint64_t)fd, (uint64_t)data, (uint64_t)len);
+        return (int)syscall3(Montauk::SYS_SEND, (uint64_t)fd, (uint64_t)data, (uint64_t)len);
     }
     inline int recv(int fd, void* buf, uint32_t maxLen) {
-        return (int)syscall3(Zenith::SYS_RECV, (uint64_t)fd, (uint64_t)buf, (uint64_t)maxLen);
+        return (int)syscall3(Montauk::SYS_RECV, (uint64_t)fd, (uint64_t)buf, (uint64_t)maxLen);
     }
     inline int closesocket(int fd) {
-        return (int)syscall1(Zenith::SYS_CLOSESOCK, (uint64_t)fd);
+        return (int)syscall1(Montauk::SYS_CLOSESOCK, (uint64_t)fd);
     }
     inline int sendto(int fd, const void* data, uint32_t len, uint32_t destIp, uint16_t destPort) {
-        return (int)syscall5(Zenith::SYS_SENDTO, (uint64_t)fd, (uint64_t)data,
+        return (int)syscall5(Montauk::SYS_SENDTO, (uint64_t)fd, (uint64_t)data,
                              (uint64_t)len, (uint64_t)destIp, (uint64_t)destPort);
     }
     inline int recvfrom(int fd, void* buf, uint32_t maxLen, uint32_t* srcIp, uint16_t* srcPort) {
-        return (int)syscall5(Zenith::SYS_RECVFROM, (uint64_t)fd, (uint64_t)buf,
+        return (int)syscall5(Montauk::SYS_RECVFROM, (uint64_t)fd, (uint64_t)buf,
                              (uint64_t)maxLen, (uint64_t)srcIp, (uint64_t)srcPort);
     }
 
     // Process management
-    inline void waitpid(int pid) { syscall1(Zenith::SYS_WAITPID, (uint64_t)pid); }
+    inline void waitpid(int pid) { syscall1(Montauk::SYS_WAITPID, (uint64_t)pid); }
 
     // Framebuffer
-    inline void fb_info(Zenith::FbInfo* info) { syscall1(Zenith::SYS_FBINFO, (uint64_t)info); }
-    inline void* fb_map() { return (void*)syscall0(Zenith::SYS_FBMAP); }
+    inline void fb_info(Montauk::FbInfo* info) { syscall1(Montauk::SYS_FBINFO, (uint64_t)info); }
+    inline void* fb_map() { return (void*)syscall0(Montauk::SYS_FBMAP); }
 
     // Arguments
     inline int getargs(char* buf, uint64_t maxLen) {
-        return (int)syscall2(Zenith::SYS_GETARGS, (uint64_t)buf, maxLen);
+        return (int)syscall2(Montauk::SYS_GETARGS, (uint64_t)buf, maxLen);
     }
 
     // Terminal
     inline void termsize(int* cols, int* rows) {
-        uint64_t r = (uint64_t)syscall0(Zenith::SYS_TERMSIZE);
+        uint64_t r = (uint64_t)syscall0(Montauk::SYS_TERMSIZE);
         if (cols) *cols = (int)(r & 0xFFFFFFFF);
         if (rows) *rows = (int)(r >> 32);
     }
 
     inline void termscale(int scale_x, int scale_y) {
-        syscall2(Zenith::SYS_TERMSCALE, (uint64_t)scale_x, (uint64_t)scale_y);
+        syscall2(Montauk::SYS_TERMSCALE, (uint64_t)scale_x, (uint64_t)scale_y);
     }
 
     inline void get_termscale(int* scale_x, int* scale_y) {
-        uint64_t r = (uint64_t)syscall2(Zenith::SYS_TERMSCALE, 0, 0);
+        uint64_t r = (uint64_t)syscall2(Montauk::SYS_TERMSCALE, 0, 0);
         if (scale_x) *scale_x = (int)(r & 0xFFFFFFFF);
         if (scale_y) *scale_y = (int)(r >> 32);
     }
 
     // Timekeeping (wall-clock)
-    inline void gettime(Zenith::DateTime* out) { syscall1(Zenith::SYS_GETTIME, (uint64_t)out); }
+    inline void gettime(Montauk::DateTime* out) { syscall1(Montauk::SYS_GETTIME, (uint64_t)out); }
 
     // Random number generation
     inline int64_t getrandom(void* buf, uint32_t len) {
-        return syscall2(Zenith::SYS_GETRANDOM, (uint64_t)buf, (uint64_t)len);
+        return syscall2(Montauk::SYS_GETRANDOM, (uint64_t)buf, (uint64_t)len);
     }
 
     // Power management
     [[noreturn]] inline void reset() {
-        syscall0(Zenith::SYS_RESET);
+        syscall0(Montauk::SYS_RESET);
         __builtin_unreachable();
     }
 
     [[noreturn]] inline void shutdown() {
-        syscall0(Zenith::SYS_SHUTDOWN);
+        syscall0(Montauk::SYS_SHUTDOWN);
         __builtin_unreachable();
     }
 
     // Mouse
-    inline void mouse_state(Zenith::MouseState* out) { syscall1(Zenith::SYS_MOUSESTATE, (uint64_t)out); }
+    inline void mouse_state(Montauk::MouseState* out) { syscall1(Montauk::SYS_MOUSESTATE, (uint64_t)out); }
     inline void set_mouse_bounds(int32_t maxX, int32_t maxY) {
-        syscall2(Zenith::SYS_SETMOUSEBOUNDS, (uint64_t)maxX, (uint64_t)maxY);
+        syscall2(Montauk::SYS_SETMOUSEBOUNDS, (uint64_t)maxX, (uint64_t)maxY);
     }
 
     // Kernel log
     inline int64_t read_klog(char* buf, uint64_t size) {
-        return syscall2(Zenith::SYS_KLOG, (uint64_t)buf, size);
+        return syscall2(Montauk::SYS_KLOG, (uint64_t)buf, size);
     }
 
     // I/O redirection
     inline int spawn_redir(const char* path, const char* args = nullptr) {
-        return (int)syscall2(Zenith::SYS_SPAWN_REDIR, (uint64_t)path, (uint64_t)args);
+        return (int)syscall2(Montauk::SYS_SPAWN_REDIR, (uint64_t)path, (uint64_t)args);
     }
     inline int childio_read(int childPid, char* buf, int maxLen) {
-        return (int)syscall3(Zenith::SYS_CHILDIO_READ, (uint64_t)childPid, (uint64_t)buf, (uint64_t)maxLen);
+        return (int)syscall3(Montauk::SYS_CHILDIO_READ, (uint64_t)childPid, (uint64_t)buf, (uint64_t)maxLen);
     }
     inline int childio_write(int childPid, const char* data, int len) {
-        return (int)syscall3(Zenith::SYS_CHILDIO_WRITE, (uint64_t)childPid, (uint64_t)data, (uint64_t)len);
+        return (int)syscall3(Montauk::SYS_CHILDIO_WRITE, (uint64_t)childPid, (uint64_t)data, (uint64_t)len);
     }
-    inline int childio_writekey(int childPid, const Zenith::KeyEvent* key) {
-        return (int)syscall2(Zenith::SYS_CHILDIO_WRITEKEY, (uint64_t)childPid, (uint64_t)key);
+    inline int childio_writekey(int childPid, const Montauk::KeyEvent* key) {
+        return (int)syscall2(Montauk::SYS_CHILDIO_WRITEKEY, (uint64_t)childPid, (uint64_t)key);
     }
     inline int childio_settermsz(int childPid, int cols, int rows) {
-        return (int)syscall3(Zenith::SYS_CHILDIO_SETTERMSZ, (uint64_t)childPid, (uint64_t)cols, (uint64_t)rows);
+        return (int)syscall3(Montauk::SYS_CHILDIO_SETTERMSZ, (uint64_t)childPid, (uint64_t)cols, (uint64_t)rows);
     }
 
     // Process listing / kill
-    inline int proclist(Zenith::ProcInfo* buf, int max) {
-        return (int)syscall2(Zenith::SYS_PROCLIST, (uint64_t)buf, (uint64_t)max);
+    inline int proclist(Montauk::ProcInfo* buf, int max) {
+        return (int)syscall2(Montauk::SYS_PROCLIST, (uint64_t)buf, (uint64_t)max);
     }
     inline int kill(int pid) {
-        return (int)syscall1(Zenith::SYS_KILL, (uint64_t)pid);
+        return (int)syscall1(Montauk::SYS_KILL, (uint64_t)pid);
     }
-    inline int devlist(Zenith::DevInfo* buf, int max) {
-        return (int)syscall2(Zenith::SYS_DEVLIST, (uint64_t)buf, (uint64_t)max);
+    inline int devlist(Montauk::DevInfo* buf, int max) {
+        return (int)syscall2(Montauk::SYS_DEVLIST, (uint64_t)buf, (uint64_t)max);
     }
 
     // Kernel introspection
-    inline void memstats(Zenith::MemStats* out) { syscall1(Zenith::SYS_MEMSTATS, (uint64_t)out); }
+    inline void memstats(Montauk::MemStats* out) { syscall1(Montauk::SYS_MEMSTATS, (uint64_t)out); }
 
     // Window server
-    inline int win_create(const char* title, int w, int h, Zenith::WinCreateResult* result) {
-        return (int)syscall4(Zenith::SYS_WINCREATE, (uint64_t)title, (uint64_t)w, (uint64_t)h, (uint64_t)result);
+    inline int win_create(const char* title, int w, int h, Montauk::WinCreateResult* result) {
+        return (int)syscall4(Montauk::SYS_WINCREATE, (uint64_t)title, (uint64_t)w, (uint64_t)h, (uint64_t)result);
     }
     inline int win_destroy(int id) {
-        return (int)syscall1(Zenith::SYS_WINDESTROY, (uint64_t)id);
+        return (int)syscall1(Montauk::SYS_WINDESTROY, (uint64_t)id);
     }
     inline uint64_t win_present(int id) {
-        return (uint64_t)syscall1(Zenith::SYS_WINPRESENT, (uint64_t)id);
+        return (uint64_t)syscall1(Montauk::SYS_WINPRESENT, (uint64_t)id);
     }
-    inline int win_poll(int id, Zenith::WinEvent* event) {
-        return (int)syscall2(Zenith::SYS_WINPOLL, (uint64_t)id, (uint64_t)event);
+    inline int win_poll(int id, Montauk::WinEvent* event) {
+        return (int)syscall2(Montauk::SYS_WINPOLL, (uint64_t)id, (uint64_t)event);
     }
-    inline int win_enumerate(Zenith::WinInfo* info, int max) {
-        return (int)syscall2(Zenith::SYS_WINENUM, (uint64_t)info, (uint64_t)max);
+    inline int win_enumerate(Montauk::WinInfo* info, int max) {
+        return (int)syscall2(Montauk::SYS_WINENUM, (uint64_t)info, (uint64_t)max);
     }
     inline uint64_t win_map(int id) {
-        return (uint64_t)syscall1(Zenith::SYS_WINMAP, (uint64_t)id);
+        return (uint64_t)syscall1(Montauk::SYS_WINMAP, (uint64_t)id);
     }
-    inline int win_sendevent(int id, const Zenith::WinEvent* event) {
-        return (int)syscall2(Zenith::SYS_WINSENDEVENT, (uint64_t)id, (uint64_t)event);
+    inline int win_sendevent(int id, const Montauk::WinEvent* event) {
+        return (int)syscall2(Montauk::SYS_WINSENDEVENT, (uint64_t)id, (uint64_t)event);
     }
     inline uint64_t win_resize(int id, int w, int h) {
-        return (uint64_t)syscall3(Zenith::SYS_WINRESIZE, (uint64_t)id, (uint64_t)w, (uint64_t)h);
+        return (uint64_t)syscall3(Montauk::SYS_WINRESIZE, (uint64_t)id, (uint64_t)w, (uint64_t)h);
     }
     inline int win_setscale(int scale) {
-        return (int)syscall1(Zenith::SYS_WINSETSCALE, (uint64_t)scale);
+        return (int)syscall1(Montauk::SYS_WINSETSCALE, (uint64_t)scale);
     }
     inline int win_getscale() {
-        return (int)syscall0(Zenith::SYS_WINGETSCALE);
+        return (int)syscall0(Montauk::SYS_WINGETSCALE);
     }
 
 }

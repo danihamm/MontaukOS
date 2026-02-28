@@ -98,7 +98,7 @@ namespace WinServer {
         return 0;
     }
 
-    int Poll(int windowId, int callerPid, Zenith::WinEvent* outEvent) {
+    int Poll(int windowId, int callerPid, Montauk::WinEvent* outEvent) {
         if (windowId < 0 || windowId >= MaxWindows) return -1;
         WindowSlot& slot = g_slots[windowId];
         if (!slot.used || slot.ownerPid != callerPid) return -1;
@@ -110,11 +110,11 @@ namespace WinServer {
         return 1;
     }
 
-    int Enumerate(Zenith::WinInfo* outArray, int maxCount) {
+    int Enumerate(Montauk::WinInfo* outArray, int maxCount) {
         int count = 0;
         for (int i = 0; i < MaxWindows && count < maxCount; i++) {
             if (!g_slots[i].used) continue;
-            Zenith::WinInfo& info = outArray[count];
+            Montauk::WinInfo& info = outArray[count];
             info.id = i;
             info.ownerPid = g_slots[i].ownerPid;
             for (int j = 0; j < 64; j++) info.title[j] = g_slots[i].title[j];
@@ -151,7 +151,7 @@ namespace WinServer {
         return userVa;
     }
 
-    int SendEvent(int windowId, const Zenith::WinEvent* event) {
+    int SendEvent(int windowId, const Montauk::WinEvent* event) {
         if (windowId < 0 || windowId >= MaxWindows) return -1;
         WindowSlot& slot = g_slots[windowId];
         if (!slot.used) return -1;
@@ -209,7 +209,7 @@ namespace WinServer {
         g_uiScale = scale;
 
         // Broadcast scale event to all active windows
-        Zenith::WinEvent ev;
+        Montauk::WinEvent ev;
         memset(&ev, 0, sizeof(ev));
         ev.type = 4;
         ev.scale.scale = scale;

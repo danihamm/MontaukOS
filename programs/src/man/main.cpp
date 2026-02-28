@@ -1,21 +1,21 @@
 /*
     * main.cpp
-    * Manual page viewer for ZenithOS
+    * Manual page viewer for MontaukOS
     * Fullscreen pager with ANSI formatting and keyboard navigation
     * Copyright (c) 2025 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
-#include <zenith/heap.h>
-#include <zenith/string.h>
+#include <montauk/syscall.h>
+#include <montauk/heap.h>
+#include <montauk/string.h>
 
-using zenith::slen;
-using zenith::starts_with;
-using zenith::skip_spaces;
+using montauk::slen;
+using montauk::starts_with;
+using montauk::skip_spaces;
 
 static void print_int(uint64_t n) {
     if (n == 0) {
-        zenith::putchar('0');
+        montauk::putchar('0');
         return;
     }
     char buf[20];
@@ -25,7 +25,7 @@ static void print_int(uint64_t n) {
         n /= 10;
     }
     for (int j = i - 1; j >= 0; j--) {
-        zenith::putchar(buf[j]);
+        montauk::putchar(buf[j]);
     }
 }
 
@@ -50,7 +50,7 @@ static void cursor_to(int row, int col) {
     p += int_to_buf(seq + p, col);
     seq[p++] = 'H';
     seq[p] = '\0';
-    zenith::print(seq);
+    montauk::print(seq);
 }
 
 struct ManLine {
@@ -68,7 +68,7 @@ static void man_render(ManLine* lines, int totalLines, int scroll, int rows, int
 
     for (int r = 0; r < contentRows; r++) {
         cursor_to(r + 1, 1);
-        zenith::print("\033[2K");
+        montauk::print("\033[2K");
 
         int idx = scroll + r;
         if (idx < 0 || idx >= totalLines) continue;
@@ -77,11 +77,11 @@ static void man_render(ManLine* lines, int totalLines, int scroll, int rows, int
         if (ln.isTH) continue;
 
         if (ln.isSH || ln.isSS || ln.isBold) {
-            zenith::print("\033[1m");
+            montauk::print("\033[1m");
         }
 
         if (ln.isSS) {
-            zenith::print("   ");
+            montauk::print("   ");
         }
 
         int maxW = cols;
@@ -89,31 +89,31 @@ static void man_render(ManLine* lines, int totalLines, int scroll, int rows, int
         int printLen = ln.len;
         if (printLen > maxW) printLen = maxW;
         for (int c = 0; c < printLen; c++) {
-            zenith::putchar(ln.text[c]);
+            montauk::putchar(ln.text[c]);
         }
 
         if (ln.isSH || ln.isSS || ln.isBold) {
-            zenith::print("\033[0m");
+            montauk::print("\033[0m");
         }
     }
 
     // Status bar
     cursor_to(rows, 1);
-    zenith::print("\033[7m");
-    zenith::print(" Manual page ");
-    zenith::print(name);
-    zenith::putchar('(');
+    montauk::print("\033[7m");
+    montauk::print(" Manual page ");
+    montauk::print(name);
+    montauk::putchar('(');
     print_int((uint64_t)section);
-    zenith::putchar(')');
-    zenith::print(" line ");
+    montauk::putchar(')');
+    montauk::print(" line ");
     print_int((uint64_t)(scroll + 1));
-    zenith::putchar('/');
+    montauk::putchar('/');
     print_int((uint64_t)totalLines);
 
     int padCount = cols - 30 - slen(name);
-    for (int i = 0; i < padCount; i++) zenith::putchar(' ');
+    for (int i = 0; i < padCount; i++) montauk::putchar(' ');
 
-    zenith::print("\033[0m");
+    montauk::print("\033[0m");
 }
 
 // ---- Main ----
@@ -121,13 +121,13 @@ static void man_render(ManLine* lines, int totalLines, int scroll, int rows, int
 extern "C" void _start() {
     // Get arguments passed by the shell (e.g. "intro" or "2 syscalls")
     char argbuf[256];
-    zenith::getargs(argbuf, sizeof(argbuf));
+    montauk::getargs(argbuf, sizeof(argbuf));
 
     const char* arg = skip_spaces(argbuf);
     if (*arg == '\0') {
-        zenith::print("Usage: man <topic>\n");
-        zenith::print("       man <section> <topic>\n");
-        zenith::print("Try: man intro\n");
+        montauk::print("Usage: man <topic>\n");
+        montauk::print("       man <section> <topic>\n");
+        montauk::print("Try: man intro\n");
         return;
     }
 
@@ -155,7 +155,7 @@ extern "C" void _start() {
         path[p++] = '0' + section;
         path[p] = '\0';
 
-        handle = zenith::open(path);
+        handle = montauk::open(path);
         if (handle >= 0) foundSection = section;
     } else {
         for (int s = 1; s <= 9; s++) {
@@ -168,7 +168,7 @@ extern "C" void _start() {
             path[p++] = '0' + s;
             path[p] = '\0';
 
-            handle = zenith::open(path);
+            handle = montauk::open(path);
             if (handle >= 0) {
                 foundSection = s;
                 break;
@@ -177,24 +177,24 @@ extern "C" void _start() {
     }
 
     if (handle < 0) {
-        zenith::print("No manual entry for ");
-        zenith::print(topic);
-        zenith::putchar('\n');
+        montauk::print("No manual entry for ");
+        montauk::print(topic);
+        montauk::putchar('\n');
         return;
     }
 
     // Load entire file into heap
-    uint64_t fileSize = zenith::getsize(handle);
+    uint64_t fileSize = montauk::getsize(handle);
     if (fileSize == 0) {
-        zenith::close(handle);
-        zenith::print("Empty manual page.\n");
+        montauk::close(handle);
+        montauk::print("Empty manual page.\n");
         return;
     }
 
-    char* fileData = (char*)zenith::malloc(fileSize + 1);
+    char* fileData = (char*)montauk::malloc(fileSize + 1);
     if (fileData == nullptr) {
-        zenith::close(handle);
-        zenith::print("Out of memory.\n");
+        montauk::close(handle);
+        montauk::print("Out of memory.\n");
         return;
     }
 
@@ -202,18 +202,18 @@ extern "C" void _start() {
     while (offset < fileSize) {
         uint64_t chunk = fileSize - offset;
         if (chunk > 4096) chunk = 4096;
-        int bytesRead = zenith::read(handle, (uint8_t*)fileData + offset, offset, chunk);
+        int bytesRead = montauk::read(handle, (uint8_t*)fileData + offset, offset, chunk);
         if (bytesRead <= 0) break;
         offset += bytesRead;
     }
     fileData[offset] = '\0';
-    zenith::close(handle);
+    montauk::close(handle);
 
     // Parse into lines
-    ManLine* lines = (ManLine*)zenith::malloc(MAN_MAX_LINES * sizeof(ManLine));
+    ManLine* lines = (ManLine*)montauk::malloc(MAN_MAX_LINES * sizeof(ManLine));
     if (lines == nullptr) {
-        zenith::mfree(fileData);
-        zenith::print("Out of memory.\n");
+        montauk::mfree(fileData);
+        montauk::print("Out of memory.\n");
         return;
     }
 
@@ -260,19 +260,19 @@ extern "C" void _start() {
     }
 
     if (totalLines == 0) {
-        zenith::mfree(lines);
-        zenith::mfree(fileData);
-        zenith::print("Empty manual page.\n");
+        montauk::mfree(lines);
+        montauk::mfree(fileData);
+        montauk::print("Empty manual page.\n");
         return;
     }
 
     // Get terminal dimensions
     int cols = 80, rows = 25;
-    zenith::termsize(&cols, &rows);
+    montauk::termsize(&cols, &rows);
 
     // Enter alternate screen, hide cursor
-    zenith::print("\033[?1049h");
-    zenith::print("\033[?25l");
+    montauk::print("\033[?1049h");
+    montauk::print("\033[?25l");
 
     int scroll = 0;
     int maxScroll = totalLines - (rows - 1);
@@ -283,12 +283,12 @@ extern "C" void _start() {
     // Event loop — yield while waiting for key input
     bool running = true;
     while (running) {
-        while (!zenith::is_key_available()) {
-            zenith::yield();
+        while (!montauk::is_key_available()) {
+            montauk::yield();
         }
 
-        Zenith::KeyEvent ev;
-        zenith::getkey(&ev);
+        Montauk::KeyEvent ev;
+        montauk::getkey(&ev);
         if (!ev.pressed) continue;
 
         int contentRows = rows - 1;
@@ -350,9 +350,9 @@ extern "C" void _start() {
     }
 
     // Restore screen
-    zenith::print("\033[?25h");
-    zenith::print("\033[?1049l");
+    montauk::print("\033[?25h");
+    montauk::print("\033[?1049l");
 
-    zenith::mfree(lines);
-    zenith::mfree(fileData);
+    montauk::mfree(lines);
+    montauk::mfree(fileData);
 }

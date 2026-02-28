@@ -1,6 +1,6 @@
 /*
     * Syscall.hpp
-    * ZenithOS syscall definitions for userspace programs
+    * MontaukOS syscall definitions for userspace programs
     * Copyright (c) 2025 Daniel Hammer
 */
 
@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <cstddef>
 
-namespace Zenith {
+namespace Montauk {
 
     // Syscall numbers
     static constexpr uint64_t SYS_EXIT            = 0;

@@ -1,6 +1,6 @@
 /*
     * app_terminal.cpp
-    * ZenithOS Desktop - Terminal application
+    * MontaukOS Desktop - Terminal application
     * Copyright (c) 2026 Daniel Hammer
 */
 
@@ -30,7 +30,7 @@ static void terminal_on_mouse(Window* win, MouseEvent& ev) {
     // Terminal doesn't need mouse handling for now
 }
 
-static void terminal_on_key(Window* win, const Zenith::KeyEvent& key) {
+static void terminal_on_key(Window* win, const Montauk::KeyEvent& key) {
     TerminalState* ts = (TerminalState*)win->app_data;
     if (!ts) return;
     terminal_handle_key(ts, key);
@@ -39,8 +39,8 @@ static void terminal_on_key(Window* win, const Zenith::KeyEvent& key) {
 static void terminal_on_close(Window* win) {
     TerminalState* ts = (TerminalState*)win->app_data;
     if (ts) {
-        if (ts->cells) zenith::mfree(ts->cells);
-        zenith::mfree(ts);
+        if (ts->cells) montauk::mfree(ts->cells);
+        montauk::mfree(ts);
         win->app_data = nullptr;
     }
 }
@@ -63,8 +63,8 @@ void open_terminal(DesktopState* ds) {
     int cols = cr.w / mono_cell_width();
     int rows = cr.h / mono_cell_height();
 
-    TerminalState* ts = (TerminalState*)zenith::malloc(sizeof(TerminalState));
-    zenith::memset(ts, 0, sizeof(TerminalState));
+    TerminalState* ts = (TerminalState*)montauk::malloc(sizeof(TerminalState));
+    montauk::memset(ts, 0, sizeof(TerminalState));
     terminal_init(ts, cols, rows);
 
     win->app_data = ts;

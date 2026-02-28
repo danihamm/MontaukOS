@@ -1,6 +1,6 @@
 /*
     * app_wiki.cpp
-    * ZenithOS Desktop - Wikipedia launcher
+    * MontaukOS Desktop - Wikipedia launcher
     * Spawns wikipedia.elf as a standalone Window Server process
     * Copyright (c) 2026 Daniel Hammer
 */
@@ -9,5 +9,5 @@
 
 void open_wiki(DesktopState* ds) {
     (void)ds;
-    zenith::spawn("0:/os/wikipedia.elf");
+    montauk::spawn("0:/os/wikipedia.elf");
 }

@@ -3,14 +3,14 @@
     open, read, getsize, close, readdir - file I/O system calls
 
 .SH SYNOPSIS
-.BI     int zenith::open(const char* path);
-.BI     int zenith::read(int handle, uint8_t* buf, uint64_t offset, uint64_t size);
-.BI     uint64_t zenith::getsize(int handle);
-.BI     void zenith::close(int handle);
-.BI     int zenith::readdir(const char* path, const char** names, int max);
+.BI     int montauk::open(const char* path);
+.BI     int montauk::read(int handle, uint8_t* buf, uint64_t offset, uint64_t size);
+.BI     uint64_t montauk::getsize(int handle);
+.BI     void montauk::close(int handle);
+.BI     int montauk::readdir(const char* path, const char** names, int max);
 
 .SH DESCRIPTION
-    ZenithOS provides a simple read-only Virtual File System (VFS)
+    MontaukOS provides a simple read-only Virtual File System (VFS)
     backed by the boot ramdisk. Files are accessed via paths in the
     format "<drive>:/<path>", where drive 0 is the ramdisk.
 
@@ -18,7 +18,7 @@
     Opens a file and returns a non-negative handle on success, or a
     negative value on error (file not found, no free handles).
 
-        int h = zenith::open("0:/os/hello.elf");
+        int h = montauk::open("0:/os/hello.elf");
 
 .SS read
     Reads up to 'size' bytes starting at 'offset' into 'buf'.
@@ -27,17 +27,17 @@
     every call.
 
         uint8_t buf[512];
-        int n = zenith::read(h, buf, 0, 512);
+        int n = montauk::read(h, buf, 0, 512);
 
 .SS getsize
     Returns the total size in bytes of the file.
 
-        uint64_t sz = zenith::getsize(h);
+        uint64_t sz = montauk::getsize(h);
 
 .SS close
     Closes the file handle and frees kernel resources.
 
-        zenith::close(h);
+        montauk::close(h);
 
 .SS readdir
     Lists entries in a directory. Up to 'max' entry names (max 64)
@@ -46,32 +46,32 @@
     entries are returned with a trailing slash.
 
         const char* entries[64];
-        int count = zenith::readdir("0:/", entries, 64);
+        int count = montauk::readdir("0:/", entries, 64);
         // entries: "os/", "games/", "man/", "www/", "home/"
 
 .SH READING PATTERN
     The standard pattern for reading a file:
 
-        int h = zenith::open("0:/man/intro.1");
-        uint64_t size = zenith::getsize(h);
+        int h = montauk::open("0:/man/intro.1");
+        uint64_t size = montauk::getsize(h);
         uint8_t buf[512];
         uint64_t off = 0;
         while (off < size) {
             uint64_t chunk = size - off;
             if (chunk > 511) chunk = 511;
-            int n = zenith::read(h, buf, off, chunk);
+            int n = montauk::read(h, buf, off, chunk);
             if (n <= 0) break;
             buf[n] = '\0';
-            zenith::print((const char*)buf);
+            montauk::print((const char*)buf);
             off += n;
         }
-        zenith::close(h);
+        montauk::close(h);
 
 .SH WRITING FILES
     Files can be created and written on the ramdisk:
 
-.BI     int zenith::fcreate(const char* path);
-.BI     int zenith::fwrite(int handle, const uint8_t* buf, uint64_t offset, uint64_t size);
+.BI     int montauk::fcreate(const char* path);
+.BI     int montauk::fwrite(int handle, const uint8_t* buf, uint64_t offset, uint64_t size);
 
     fcreate creates a new file and returns a handle. fwrite writes
     bytes at the given offset. Changes persist only until reboot --

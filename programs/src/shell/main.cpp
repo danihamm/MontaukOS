@@ -1,16 +1,16 @@
 /*
     * main.cpp
-    * Interactive shell for ZenithOS
+    * Interactive shell for MontaukOS
     * Copyright (c) 2025 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
-#include <zenith/string.h>
+#include <montauk/syscall.h>
+#include <montauk/string.h>
 
-using zenith::slen;
-using zenith::streq;
-using zenith::starts_with;
-using zenith::skip_spaces;
+using montauk::slen;
+using montauk::streq;
+using montauk::starts_with;
+using montauk::skip_spaces;
 
 static void scopy(char* dst, const char* src, int maxLen) {
     int i = 0;
@@ -72,18 +72,18 @@ static const char* history_get(int idx) {
 // ---- Prompt ----
 
 static void prompt() {
-    zenith::print("0:/");
-    if (cwd[0]) zenith::print(cwd);
-    zenith::print("> ");
+    montauk::print("0:/");
+    if (cwd[0]) montauk::print(cwd);
+    montauk::print("> ");
 }
 
 // ---- Erase current input line on screen ----
 
 static void erase_input(int len) {
     // Move cursor to start of input and overwrite with spaces
-    for (int i = 0; i < len; i++) zenith::putchar('\b');
-    for (int i = 0; i < len; i++) zenith::putchar(' ');
-    for (int i = 0; i < len; i++) zenith::putchar('\b');
+    for (int i = 0; i < len; i++) montauk::putchar('\b');
+    for (int i = 0; i < len; i++) montauk::putchar(' ');
+    for (int i = 0; i < len; i++) montauk::putchar('\b');
 }
 
 // ---- Replace visible line with new content ----
@@ -95,7 +95,7 @@ static void replace_line(char* line, int* pos, const char* newContent) {
     if (newLen > 255) newLen = 255;
     for (int i = 0; i < newLen; i++) {
         line[i] = newContent[i];
-        zenith::putchar(newContent[i]);
+        montauk::putchar(newContent[i]);
     }
     line[newLen] = '\0';
     *pos = newLen;
@@ -104,38 +104,38 @@ static void replace_line(char* line, int* pos, const char* newContent) {
 // ---- Builtin: help ----
 
 static void cmd_help() {
-    zenith::print("Shell builtins:\n");
-    zenith::print("  help          Show this help message\n");
-    zenith::print("  ls [dir]      List files in directory\n");
-    zenith::print("  cd [dir]      Change working directory\n");
-    zenith::print("  exit          Exit the shell\n");
-    zenith::print("\n");
-    zenith::print("System commands:\n");
-    zenith::print("  man <topic>   View manual pages\n");
-    zenith::print("  cat <file>    Display file contents\n");
-    zenith::print("  edit [file]   Text editor\n");
-    zenith::print("  info          Show system information\n");
-    zenith::print("  date          Show current date and time\n");
-    zenith::print("  uptime        Show uptime\n");
-    zenith::print("  clear         Clear the screen\n");
-    zenith::print("  fontscale [n] Set terminal font scale (1-8)\n");
-    zenith::print("  reset         Reboot the system\n");
-    zenith::print("  shutdown      Shut down the system\n");
-    zenith::print("\n");
-    zenith::print("Network commands:\n");
-    zenith::print("  ping <ip>     Send ICMP echo requests\n");
-    zenith::print("  nslookup      DNS lookup\n");
-    zenith::print("  ifconfig      Show/set network configuration\n");
-    zenith::print("  tcpconnect    Connect to a TCP server\n");
-    zenith::print("  irc           IRC client\n");
-    zenith::print("  dhcp          DHCP client\n");
-    zenith::print("  fetch <url>   HTTP client\n");
-    zenith::print("  httpd         HTTP server\n");
-    zenith::print("\n");
-    zenith::print("Games:\n");
-    zenith::print("  doom          DOOM\n");
-    zenith::print("\n");
-    zenith::print("Any .elf on the ramdisk is executable.\n");
+    montauk::print("Shell builtins:\n");
+    montauk::print("  help          Show this help message\n");
+    montauk::print("  ls [dir]      List files in directory\n");
+    montauk::print("  cd [dir]      Change working directory\n");
+    montauk::print("  exit          Exit the shell\n");
+    montauk::print("\n");
+    montauk::print("System commands:\n");
+    montauk::print("  man <topic>   View manual pages\n");
+    montauk::print("  cat <file>    Display file contents\n");
+    montauk::print("  edit [file]   Text editor\n");
+    montauk::print("  info          Show system information\n");
+    montauk::print("  date          Show current date and time\n");
+    montauk::print("  uptime        Show uptime\n");
+    montauk::print("  clear         Clear the screen\n");
+    montauk::print("  fontscale [n] Set terminal font scale (1-8)\n");
+    montauk::print("  reset         Reboot the system\n");
+    montauk::print("  shutdown      Shut down the system\n");
+    montauk::print("\n");
+    montauk::print("Network commands:\n");
+    montauk::print("  ping <ip>     Send ICMP echo requests\n");
+    montauk::print("  nslookup      DNS lookup\n");
+    montauk::print("  ifconfig      Show/set network configuration\n");
+    montauk::print("  tcpconnect    Connect to a TCP server\n");
+    montauk::print("  irc           IRC client\n");
+    montauk::print("  dhcp          DHCP client\n");
+    montauk::print("  fetch <url>   HTTP client\n");
+    montauk::print("  httpd         HTTP server\n");
+    montauk::print("\n");
+    montauk::print("Games:\n");
+    montauk::print("  doom          DOOM\n");
+    montauk::print("\n");
+    montauk::print("Any .elf on the ramdisk is executable.\n");
 }
 
 // Check if a string already has a VFS drive prefix (e.g. "0:/")
@@ -175,9 +175,9 @@ static void cmd_ls(const char* arg) {
     build_dir_path(dir, path, sizeof(path));
 
     const char* entries[64];
-    int count = zenith::readdir(path, entries, 64);
+    int count = montauk::readdir(path, entries, 64);
     if (count <= 0) {
-        zenith::print("(empty)\n");
+        montauk::print("(empty)\n");
         return;
     }
 
@@ -186,13 +186,13 @@ static void cmd_ls(const char* arg) {
     if (dir[0]) prefixLen = slen(dir) + 1;
 
     for (int i = 0; i < count; i++) {
-        zenith::print("  ");
+        montauk::print("  ");
         if (prefixLen > 0 && starts_with(entries[i], dir)) {
-            zenith::print(entries[i] + prefixLen);
+            montauk::print(entries[i] + prefixLen);
         } else {
-            zenith::print(entries[i]);
+            montauk::print(entries[i]);
         }
-        zenith::putchar('\n');
+        montauk::putchar('\n');
     }
 }
 
@@ -237,10 +237,10 @@ static void cmd_cd(const char* arg) {
         char path[128];
         build_dir_path(arg, path, sizeof(path));
         const char* entries[1];
-        if (zenith::readdir(path, entries, 1) < 0) {
-            zenith::print("cd: no such directory: ");
-            zenith::print(arg);
-            zenith::putchar('\n');
+        if (montauk::readdir(path, entries, 1) < 0) {
+            montauk::print("cd: no such directory: ");
+            montauk::print(arg);
+            montauk::putchar('\n');
             return;
         }
         scopy(cwd, arg, sizeof(cwd));
@@ -254,10 +254,10 @@ static void cmd_cd(const char* arg) {
         char path[128];
         build_dir_path(rel, path, sizeof(path));
         const char* entries[1];
-        if (zenith::readdir(path, entries, 1) < 0) {
-            zenith::print("cd: no such directory: ");
-            zenith::print(arg);
-            zenith::putchar('\n');
+        if (montauk::readdir(path, entries, 1) < 0) {
+            montauk::print("cd: no such directory: ");
+            montauk::print(arg);
+            montauk::putchar('\n');
             return;
         }
         scopy(cwd, rel, sizeof(cwd));
@@ -278,11 +278,11 @@ static void cmd_cd(const char* arg) {
     char path[128];
     build_dir_path(target, path, sizeof(path));
     const char* entries[1];
-    int count = zenith::readdir(path, entries, 1);
+    int count = montauk::readdir(path, entries, 1);
     if (count < 0) {
-        zenith::print("cd: no such directory: ");
-        zenith::print(arg);
-        zenith::putchar('\n');
+        montauk::print("cd: no such directory: ");
+        montauk::print(arg);
+        montauk::putchar('\n');
         return;
     }
 
@@ -295,17 +295,17 @@ static void cmd_cd(const char* arg) {
 static void cmd_man(const char* arg) {
     arg = skip_spaces(arg);
     if (*arg == '\0') {
-        zenith::print("Usage: man <topic>\n");
-        zenith::print("       man <section> <topic>\n");
-        zenith::print("Try: man intro\n");
+        montauk::print("Usage: man <topic>\n");
+        montauk::print("       man <section> <topic>\n");
+        montauk::print("Try: man intro\n");
         return;
     }
 
-    int pid = zenith::spawn("0:/os/man.elf", arg);
+    int pid = montauk::spawn("0:/os/man.elf", arg);
     if (pid < 0) {
-        zenith::print("Error: failed to start man viewer\n");
+        montauk::print("Error: failed to start man viewer\n");
     } else {
-        zenith::waitpid(pid);
+        montauk::waitpid(pid);
     }
 }
 
@@ -314,13 +314,13 @@ static void cmd_man(const char* arg) {
 // Try to spawn an ELF at the given path. Returns true on success.
 static bool try_exec(const char* path, const char* args) {
     // Check if the file exists before asking the kernel to load it
-    int h = zenith::open(path);
+    int h = montauk::open(path);
     if (h < 0) return false;
-    zenith::close(h);
+    montauk::close(h);
 
-    int pid = zenith::spawn(path, args);
+    int pid = montauk::spawn(path, args);
     if (pid < 0) return false;
-    zenith::waitpid(pid);
+    montauk::waitpid(pid);
     return true;
 }
 
@@ -362,9 +362,9 @@ static void resolve_args(const char* args, char* out, int outMax) {
             // Only use the resolved path if the file actually exists;
             // otherwise pass the argument through unchanged (it may be
             // a hostname, IP address, URL, or other non-path argument).
-            int h = zenith::open(candidate);
+            int h = montauk::open(candidate);
             if (h >= 0) {
-                zenith::close(h);
+                montauk::close(h);
                 for (int k = 0; k < r && o < outMax - 1; k++) out[o++] = candidate[k];
             } else {
                 for (int k = 0; k < tokLen && o < outMax - 1; k++) out[o++] = tokStart[k];
@@ -415,8 +415,8 @@ static void exec_external(const char* cmd, const char* args) {
     if (try_exec(path, finalArgs)) return;
 
     // Not found
-    zenith::print(cmd);
-    zenith::print(": command not found\n");
+    montauk::print(cmd);
+    montauk::print(": command not found\n");
 }
 
 // ---- Command dispatch ----
@@ -450,8 +450,8 @@ static void process_command(const char* line) {
     } else if (streq(cmd, "man")) {
         cmd_man(args ? args : "");
     } else if (streq(cmd, "exit")) {
-        zenith::print("Goodbye.\n");
-        zenith::exit(0);
+        montauk::print("Goodbye.\n");
+        montauk::exit(0);
     } else {
         // External command -- pass full argument string
         exec_external(cmd, args);
@@ -468,13 +468,13 @@ static constexpr uint8_t SC_RIGHT = 0x4D;
 // ---- Entry point ----
 
 extern "C" void _start() {
-    zenith::print("\n");
-    zenith::print("  ZenithOS\n");
-    zenith::print("  Copyright (c) 2025-2026 Daniel Hammer\n");
-    zenith::print("\n");
+    montauk::print("\n");
+    montauk::print("  MontaukOS\n");
+    montauk::print("  Copyright (c) 2025-2026 Daniel Hammer\n");
+    montauk::print("\n");
 
-    zenith::print("  Type 'help' for available commands.\n");
-    zenith::print("\n");
+    montauk::print("  Type 'help' for available commands.\n");
+    montauk::print("\n");
 
     char line[256];
     int pos = 0;
@@ -483,13 +483,13 @@ extern "C" void _start() {
     prompt();
 
     while (true) {
-        if (!zenith::is_key_available()) {
-            zenith::yield();
+        if (!montauk::is_key_available()) {
+            montauk::yield();
             continue;
         }
 
-        Zenith::KeyEvent ev;
-        zenith::getkey(&ev);
+        Montauk::KeyEvent ev;
+        montauk::getkey(&ev);
 
         if (!ev.pressed) continue;
 
@@ -524,7 +524,7 @@ extern "C" void _start() {
         }
 
         if (ev.ascii == '\n') {
-            zenith::putchar('\n');
+            montauk::putchar('\n');
             line[pos] = '\0';
             history_add(line);
             process_command(line);
@@ -534,13 +534,13 @@ extern "C" void _start() {
         } else if (ev.ascii == '\b') {
             if (pos > 0) {
                 pos--;
-                zenith::putchar('\b');
-                zenith::putchar(' ');
-                zenith::putchar('\b');
+                montauk::putchar('\b');
+                montauk::putchar(' ');
+                montauk::putchar('\b');
             }
         } else if (ev.ascii >= ' ' && pos < 255) {
             line[pos++] = ev.ascii;
-            zenith::putchar(ev.ascii);
+            montauk::putchar(ev.ascii);
         }
     }
 }

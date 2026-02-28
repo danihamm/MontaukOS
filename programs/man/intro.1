@@ -1,9 +1,9 @@
 .TH INTRO 1
 .SH NAME
-    intro - introduction to ZenithOS userspace
+    intro - introduction to MontaukOS userspace
 
 .SH DESCRIPTION
-    ZenithOS is a hobbyist 64-bit operating system written in C++20.
+    MontaukOS is a hobbyist 64-bit operating system written in C++20.
     Userspace programs run in Ring 3, are loaded as static ELF64
     binaries, and communicate with the kernel through the x86-64
     SYSCALL/SYSRET mechanism.
@@ -11,7 +11,7 @@
     Programs are compiled with a freestanding cross-compiler and
     linked at virtual address 0x400000. There is no standard C
     library for C++ programs -- all system interaction goes through
-    the zenith:: syscall wrappers.
+    the montauk:: syscall wrappers.
 
 .SH GETTING STARTED
     To write a new program, create a directory under programs/src/
@@ -19,8 +19,8 @@
 
         extern "C" void _start() { ... }
 
-    There is no argc/argv. Use zenith::getargs() to retrieve any
-    arguments passed by the parent process. Include <zenith/syscall.h>
+    There is no argc/argv. Use montauk::getargs() to retrieve any
+    arguments passed by the parent process. Include <montauk/syscall.h>
     for the full typed syscall API.
 
     Build with:
@@ -41,7 +41,7 @@
 
 .SH SHELL
     The interactive shell is the primary way to interact with
-    ZenithOS. Commands are resolved by searching the PATH
+    MontaukOS. Commands are resolved by searching the PATH
     directories (0:/os/, 0:/games/) for matching .elf binaries.
     Type 'help' at the shell prompt for a list of commands.
     Use 'man shell' for detailed shell documentation.

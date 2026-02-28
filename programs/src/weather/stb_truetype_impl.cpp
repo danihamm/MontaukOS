@@ -1,13 +1,13 @@
 /*
  * stb_truetype_impl.cpp
- * Single compilation unit for stb_truetype in ZenithOS freestanding environment
+ * Single compilation unit for stb_truetype in MontaukOS freestanding environment
  * Copyright (c) 2026 Daniel Hammer
  */
 
 #include <cstdint>
 #include <cstddef>
-#include <zenith/heap.h>
-#include <zenith/string.h>
+#include <montauk/heap.h>
+#include <montauk/string.h>
 #include <gui/stb_math.h>
 
 // Override all stb_truetype dependencies before including the implementation
@@ -21,13 +21,13 @@
 #define STBTT_acos(x)     stb_acos(x)
 #define STBTT_fabs(x)     stb_fabs(x)
 
-#define STBTT_malloc(x,u)  ((void)(u), zenith::malloc(x))
-#define STBTT_free(x,u)    ((void)(u), zenith::mfree(x))
+#define STBTT_malloc(x,u)  ((void)(u), montauk::malloc(x))
+#define STBTT_free(x,u)    ((void)(u), montauk::mfree(x))
 
-#define STBTT_memcpy(d,s,n) zenith::memcpy(d,s,n)
-#define STBTT_memset(d,v,n) zenith::memset(d,v,n)
+#define STBTT_memcpy(d,s,n) montauk::memcpy(d,s,n)
+#define STBTT_memset(d,v,n) montauk::memset(d,v,n)
 
-#define STBTT_strlen(x)    zenith::slen(x)
+#define STBTT_strlen(x)    montauk::slen(x)
 
 #define STBTT_assert(x)    ((void)(x))
 

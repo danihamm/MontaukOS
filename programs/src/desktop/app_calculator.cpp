@@ -1,6 +1,6 @@
 /*
     * app_calculator.cpp
-    * ZenithOS Desktop - Calculator application
+    * MontaukOS Desktop - Calculator application
     * Integer-only 4-function calculator (values scaled by 100 for 2 decimal places)
     * Copyright (c) 2026 Daniel Hammer
 */
@@ -61,7 +61,7 @@ static void calc_format_display(CalcState* cs) {
 
         // Trim trailing zeros after decimal point (unless user is entering decimals)
         if (!cs->has_decimal) {
-            int len = zenith::slen(cs->display_str);
+            int len = montauk::slen(cs->display_str);
             while (len > 1 && cs->display_str[len - 1] == '0') {
                 cs->display_str[--len] = '\0';
             }
@@ -237,7 +237,7 @@ static void calculator_on_draw(Window* win, Framebuffer& fb) {
         text_w = fonts::system_font->measure_text(cs->display_str, fonts::LARGE_SIZE);
         large_h = fonts::system_font->get_line_height(fonts::LARGE_SIZE);
     } else {
-        int text_len = zenith::slen(cs->display_str);
+        int text_len = montauk::slen(cs->display_str);
         text_w = text_len * FONT_WIDTH * 2;
         large_h = FONT_HEIGHT * 2;
     }
@@ -342,7 +342,7 @@ static void calculator_on_mouse(Window* win, MouseEvent& ev) {
 // Keyboard handling
 // ============================================================================
 
-static void calculator_on_key(Window* win, const Zenith::KeyEvent& key) {
+static void calculator_on_key(Window* win, const Montauk::KeyEvent& key) {
     CalcState* cs = (CalcState*)win->app_data;
     if (!cs || !key.pressed) return;
 
@@ -369,7 +369,7 @@ static void calculator_on_key(Window* win, const Zenith::KeyEvent& key) {
 
 static void calculator_on_close(Window* win) {
     if (win->app_data) {
-        zenith::mfree(win->app_data);
+        montauk::mfree(win->app_data);
         win->app_data = nullptr;
     }
 }
@@ -386,8 +386,8 @@ void open_calculator(DesktopState* ds) {
     if (idx < 0) return;
 
     Window* win = &ds->windows[idx];
-    CalcState* cs = (CalcState*)zenith::malloc(sizeof(CalcState));
-    zenith::memset(cs, 0, sizeof(CalcState));
+    CalcState* cs = (CalcState*)montauk::malloc(sizeof(CalcState));
+    montauk::memset(cs, 0, sizeof(CalcState));
     cs->display_val = 0;
     cs->accumulator = 0;
     cs->pending_op = 0;

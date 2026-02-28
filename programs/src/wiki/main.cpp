@@ -1,6 +1,6 @@
 /*
     * main.cpp
-    * Wikipedia client for ZenithOS (TLS 1.2 via BearSSL)
+    * Wikipedia client for MontaukOS (TLS 1.2 via BearSSL)
     * Interactive fullscreen pager with colored output
     * Usage: wiki <title>          Show article summary
     *        wiki -f <title>       Show full article
@@ -8,8 +8,8 @@
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
-#include <zenith/string.h>
+#include <montauk/syscall.h>
+#include <montauk/string.h>
 #include <tls/tls.hpp>
 
 extern "C" {
@@ -18,7 +18,7 @@ extern "C" {
 #include <stdio.h>
 }
 
-using zenith::skip_spaces;
+using montauk::skip_spaces;
 
 static constexpr int RESP_MAX = 131072;  // 128 KB
 static const char WIKI_HOST[] = "en.wikipedia.org";
@@ -49,7 +49,7 @@ static int g_sbPos = 0;
 static void sb_reset() { g_sbPos = 0; }
 static void sb_putc(char c) { if (g_sbPos < SB_SIZE - 1) g_sb[g_sbPos++] = c; }
 static void sb_puts(const char* s) { while (*s && g_sbPos < SB_SIZE - 1) g_sb[g_sbPos++] = *s++; }
-static void sb_flush() { g_sb[g_sbPos] = '\0'; zenith::print(g_sb); }
+static void sb_flush() { g_sb[g_sbPos] = '\0'; montauk::print(g_sb); }
 
 static int int_to_buf(char* buf, int n) {
     if (n <= 0) { buf[0] = '0'; return 1; }
@@ -72,9 +72,9 @@ static void sb_cursor_to(int row, int col) {
 // ---- Keyboard abort check for TLS ----
 
 static bool check_keyboard_abort() {
-    if (zenith::is_key_available()) {
-        Zenith::KeyEvent ev;
-        zenith::getkey(&ev);
+    if (montauk::is_key_available()) {
+        Montauk::KeyEvent ev;
+        montauk::getkey(&ev);
         if (ev.pressed && ev.ctrl && ev.ascii == 'q') return true;
     }
     return false;
@@ -87,7 +87,7 @@ static int wiki_fetch(const char* path, char* respBuf, int respMax) {
     int reqLen = snprintf(request, sizeof(request),
         "GET %s HTTP/1.0\r\n"
         "Host: %s\r\n"
-        "User-Agent: ZenithOS/1.0 wiki\r\n"
+        "User-Agent: MontaukOS/1.0 wiki\r\n"
         "Accept: application/json\r\n"
         "Connection: close\r\n"
         "\r\n",
@@ -451,11 +451,11 @@ static void render_pager(WikiLine* lines, int totalLines, int scroll,
 static void run_pager(WikiLine* lines, int totalLines, const char* title,
                       const char* modeLabel, bool useAltScreen) {
     int cols = 80, rows = 25;
-    zenith::termsize(&cols, &rows);
+    montauk::termsize(&cols, &rows);
 
     if (useAltScreen) {
-        zenith::print("\033[?1049h");
-        zenith::print("\033[?25l");
+        montauk::print("\033[?1049h");
+        montauk::print("\033[?25l");
     }
 
     int scroll = 0;
@@ -466,10 +466,10 @@ static void run_pager(WikiLine* lines, int totalLines, const char* title,
 
     bool running = true;
     while (running) {
-        while (!zenith::is_key_available()) zenith::yield();
+        while (!montauk::is_key_available()) montauk::yield();
 
-        Zenith::KeyEvent ev;
-        zenith::getkey(&ev);
+        Montauk::KeyEvent ev;
+        montauk::getkey(&ev);
         if (!ev.pressed) continue;
 
         int contentRows = rows - 1;
@@ -503,8 +503,8 @@ static void run_pager(WikiLine* lines, int totalLines, const char* title,
     }
 
     if (useAltScreen) {
-        zenith::print("\033[?25h");
-        zenith::print("\033[?1049l");
+        montauk::print("\033[?25h");
+        montauk::print("\033[?1049l");
     }
 }
 
@@ -629,10 +629,10 @@ static int run_search(char titles[][256], int count, const char* query,
     render_search(titles, count, query, rows, cols);
 
     while (true) {
-        while (!zenith::is_key_available()) zenith::yield();
+        while (!montauk::is_key_available()) montauk::yield();
 
-        Zenith::KeyEvent ev;
-        zenith::getkey(&ev);
+        Montauk::KeyEvent ev;
+        montauk::getkey(&ev);
         if (!ev.pressed) continue;
 
         if (ev.ascii == 'q' || (ev.ctrl && ev.ascii == 'q'))
@@ -650,19 +650,19 @@ static int run_search(char titles[][256], int count, const char* query,
 
 extern "C" void _start() {
     static char argbuf[1024];  // keep off stack (16KB limit)
-    zenith::getargs(argbuf, sizeof(argbuf));
+    montauk::getargs(argbuf, sizeof(argbuf));
     const char* arg = skip_spaces(argbuf);
 
     if (*arg == '\0') {
-        zenith::print("\033[1;36mwiki\033[0m - Wikipedia article viewer\n\n");
-        zenith::print("Usage: wiki <title>          Show article summary\n");
-        zenith::print("       wiki -f <title>       Show full article\n");
-        zenith::print("       wiki -s <query>       Search for articles\n");
-        zenith::print("\nExamples:\n");
-        zenith::print("  wiki Linux\n");
-        zenith::print("  wiki -f C programming language\n");
-        zenith::print("  wiki -s operating system\n");
-        zenith::exit(0);
+        montauk::print("\033[1;36mwiki\033[0m - Wikipedia article viewer\n\n");
+        montauk::print("Usage: wiki <title>          Show article summary\n");
+        montauk::print("       wiki -f <title>       Show full article\n");
+        montauk::print("       wiki -s <query>       Search for articles\n");
+        montauk::print("\nExamples:\n");
+        montauk::print("  wiki Linux\n");
+        montauk::print("  wiki -f C programming language\n");
+        montauk::print("  wiki -s operating system\n");
+        montauk::exit(0);
     }
 
     // Parse mode flag
@@ -679,8 +679,8 @@ extern "C" void _start() {
     }
 
     if (*arg == '\0') {
-        zenith::print("\033[1;31mError:\033[0m no article title or search query\n");
-        zenith::exit(1);
+        montauk::print("\033[1;31mError:\033[0m no article title or search query\n");
+        montauk::exit(1);
     }
 
     // Trim trailing spaces from query
@@ -692,20 +692,20 @@ extern "C" void _start() {
 
     // Initialize: resolve DNS and load certs
     if (mode != MODE_DUMP)
-        zenith::print("\033[1;33mConnecting to Wikipedia...\033[0m\n");
+        montauk::print("\033[1;33mConnecting to Wikipedia...\033[0m\n");
 
-    g_serverIp = zenith::resolve(WIKI_HOST);
+    g_serverIp = montauk::resolve(WIKI_HOST);
     if (g_serverIp == 0) {
-        if (mode == MODE_DUMP) { zenith::print("\x01"); zenith::sleep_ms(100); zenith::exit(1); }
-        zenith::print("\033[1;31mError:\033[0m could not resolve en.wikipedia.org\n");
-        zenith::exit(1);
+        if (mode == MODE_DUMP) { montauk::print("\x01"); montauk::sleep_ms(100); montauk::exit(1); }
+        montauk::print("\033[1;31mError:\033[0m could not resolve en.wikipedia.org\n");
+        montauk::exit(1);
     }
 
     g_tas = tls::load_trust_anchors();
     if (g_tas.count == 0) {
-        if (mode == MODE_DUMP) { zenith::print("\x01"); zenith::sleep_ms(100); zenith::exit(1); }
-        zenith::print("\033[1;31mError:\033[0m no CA certificates loaded\n");
-        zenith::exit(1);
+        if (mode == MODE_DUMP) { montauk::print("\x01"); montauk::sleep_ms(100); montauk::exit(1); }
+        montauk::print("\033[1;31mError:\033[0m no CA certificates loaded\n");
+        montauk::exit(1);
     }
 
     // Allocate shared buffers
@@ -713,8 +713,8 @@ extern "C" void _start() {
     WikiLine* lines = (WikiLine*)malloc(MAX_LINES * sizeof(WikiLine));
     char* extractBuf = (char*)malloc(RESP_MAX);
     if (!respBuf || !lines || !extractBuf) {
-        zenith::print("\033[1;31mError:\033[0m out of memory\n");
-        zenith::exit(1);
+        montauk::print("\033[1;31mError:\033[0m out of memory\n");
+        montauk::exit(1);
     }
 
     if (mode == MODE_DUMP) {
@@ -727,24 +727,24 @@ extern "C" void _start() {
 
         int respLen = wiki_fetch(path, respBuf, RESP_MAX);
         if (respLen <= 0) {
-            zenith::print("\x01");  // error sentinel
-            zenith::sleep_ms(100);
-            zenith::exit(1);
+            montauk::print("\x01");  // error sentinel
+            montauk::sleep_ms(100);
+            montauk::exit(1);
         }
         respBuf[respLen] = '\0';
 
         int headerEnd = find_header_end(respBuf, respLen);
         if (headerEnd < 0) {
-            zenith::print("\x01");
-            zenith::sleep_ms(100);
-            zenith::exit(1);
+            montauk::print("\x01");
+            montauk::sleep_ms(100);
+            montauk::exit(1);
         }
 
         int statusCode = parse_status_code(respBuf, headerEnd);
         if (statusCode == 404) {
-            zenith::print("\x01");
-            zenith::sleep_ms(100);
-            zenith::exit(1);
+            montauk::print("\x01");
+            montauk::sleep_ms(100);
+            montauk::exit(1);
         }
 
         // Output raw JSON body in chunks to avoid overflowing
@@ -758,14 +758,14 @@ extern "C" void _start() {
             if (n > 2048) n = 2048;
             for (int ci = 0; ci < n; ci++) chunk[ci] = body[sent + ci];
             chunk[n] = '\0';
-            zenith::print(chunk);
+            montauk::print(chunk);
             sent += n;
-            if (sent < bodyLen) zenith::sleep_ms(20);
+            if (sent < bodyLen) montauk::sleep_ms(20);
         }
-        zenith::putchar('\x04');  // EOT sentinel
+        montauk::putchar('\x04');  // EOT sentinel
         // Brief delay so parent can drain the ring buffer before we exit
-        zenith::sleep_ms(100);
-        zenith::exit(0);
+        montauk::sleep_ms(100);
+        montauk::exit(0);
     } else if (mode == MODE_SEARCH) {
         // ---- Search mode ----
         static char path[2048], encoded[1024];
@@ -776,15 +776,15 @@ extern "C" void _start() {
 
         int respLen = wiki_fetch(path, respBuf, RESP_MAX);
         if (respLen <= 0) {
-            zenith::print("\033[1;31mError:\033[0m no response from Wikipedia\n");
-            zenith::exit(1);
+            montauk::print("\033[1;31mError:\033[0m no response from Wikipedia\n");
+            montauk::exit(1);
         }
         respBuf[respLen] = '\0';
 
         int headerEnd = find_header_end(respBuf, respLen);
         if (headerEnd < 0) {
-            zenith::print("\033[1;31mError:\033[0m malformed response\n");
-            zenith::exit(1);
+            montauk::print("\033[1;31mError:\033[0m malformed response\n");
+            montauk::exit(1);
         }
 
         const char* body = respBuf + headerEnd;
@@ -794,18 +794,18 @@ extern "C" void _start() {
         int titleCount = parse_search_titles(body, bodyLen, titles, MAX_SEARCH_RESULTS);
 
         if (titleCount == 0) {
-            zenith::print("\033[33mNo results found for \"");
-            zenith::print(query);
-            zenith::print("\"\033[0m\n");
-            zenith::exit(0);
+            montauk::print("\033[33mNo results found for \"");
+            montauk::print(query);
+            montauk::print("\"\033[0m\n");
+            montauk::exit(0);
         }
 
         int cols = 80, rows = 25;
-        zenith::termsize(&cols, &rows);
+        montauk::termsize(&cols, &rows);
 
         // Enter alternate screen for interactive search
-        zenith::print("\033[?1049h");
-        zenith::print("\033[?25l");
+        montauk::print("\033[?1049h");
+        montauk::print("\033[?25l");
 
         bool searchRunning = true;
         while (searchRunning) {
@@ -837,8 +837,8 @@ extern "C" void _start() {
                 sb_cursor_to(infoRow, 3);
                 sb_puts("\033[2K\033[1;31mFetch failed. Press any key.\033[0m");
                 sb_flush();
-                while (!zenith::is_key_available()) zenith::yield();
-                Zenith::KeyEvent ev; zenith::getkey(&ev);
+                while (!montauk::is_key_available()) montauk::yield();
+                Montauk::KeyEvent ev; montauk::getkey(&ev);
                 continue;
             }
             respBuf[respLen] = '\0';
@@ -855,8 +855,8 @@ extern "C" void _start() {
                 sb_cursor_to(infoRow, 3);
                 sb_puts("\033[2K\033[1;31mArticle not found. Press any key.\033[0m");
                 sb_flush();
-                while (!zenith::is_key_available()) zenith::yield();
-                Zenith::KeyEvent ev; zenith::getkey(&ev);
+                while (!montauk::is_key_available()) montauk::yield();
+                Montauk::KeyEvent ev; montauk::getkey(&ev);
                 continue;
             }
 
@@ -876,8 +876,8 @@ extern "C" void _start() {
         }
 
         // Exit alternate screen
-        zenith::print("\033[?25h");
-        zenith::print("\033[?1049l");
+        montauk::print("\033[?25h");
+        montauk::print("\033[?1049l");
 
     } else {
         // ---- Summary or Full Article mode ----
@@ -895,15 +895,15 @@ extern "C" void _start() {
 
         int respLen = wiki_fetch(path, respBuf, RESP_MAX);
         if (respLen <= 0) {
-            zenith::print("\033[1;31mError:\033[0m no response from Wikipedia\n");
-            zenith::exit(1);
+            montauk::print("\033[1;31mError:\033[0m no response from Wikipedia\n");
+            montauk::exit(1);
         }
         respBuf[respLen] = '\0';
 
         int headerEnd = find_header_end(respBuf, respLen);
         if (headerEnd < 0) {
-            zenith::print("\033[1;31mError:\033[0m malformed response\n");
-            zenith::exit(1);
+            montauk::print("\033[1;31mError:\033[0m malformed response\n");
+            montauk::exit(1);
         }
 
         int statusCode = parse_status_code(respBuf, headerEnd);
@@ -911,10 +911,10 @@ extern "C" void _start() {
         int bodyLen = respLen - headerEnd;
 
         if (statusCode == 404) {
-            zenith::print("\033[1;31mArticle not found:\033[0m ");
-            zenith::print(query);
-            zenith::putchar('\n');
-            zenith::exit(1);
+            montauk::print("\033[1;31mArticle not found:\033[0m ");
+            montauk::print(query);
+            montauk::putchar('\n');
+            montauk::exit(1);
         }
 
         static char title[512], description[512];
@@ -928,14 +928,14 @@ extern "C" void _start() {
                                               extractBuf, RESP_MAX - 1);
 
         if (extractLen == 0) {
-            zenith::print("\033[1;31mArticle not found:\033[0m ");
-            zenith::print(query);
-            zenith::putchar('\n');
-            zenith::exit(1);
+            montauk::print("\033[1;31mArticle not found:\033[0m ");
+            montauk::print(query);
+            montauk::putchar('\n');
+            montauk::exit(1);
         }
 
         int cols = 80;
-        zenith::termsize(&cols, nullptr);
+        montauk::termsize(&cols, nullptr);
 
         int totalLines = build_lines(lines, MAX_LINES,
             title, description, extractBuf, extractLen,
@@ -945,5 +945,5 @@ extern "C" void _start() {
         run_pager(lines, totalLines, title, modeLabel, true);
     }
 
-    zenith::exit(0);
+    montauk::exit(0);
 }

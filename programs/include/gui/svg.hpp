@@ -1,6 +1,6 @@
 /*
     * svg.hpp
-    * ZenithOS SVG icon parser and scanline rasterizer
+    * MontaukOS SVG icon parser and scanline rasterizer
     * Handles the Flat-Remix symbolic icon subset (path, circle, rect)
     * All math uses 16.16 fixed-point -- NO floating point.
     * Copyright (c) 2025 Daniel Hammer
@@ -8,7 +8,7 @@
 
 #pragma once
 #include "gui/gui.hpp"
-#include <zenith/syscall.h>
+#include <montauk/syscall.h>
 
 namespace gui {
 
@@ -321,7 +321,7 @@ struct SvgEdgeList {
     int capacity;
 
     void init(int cap) {
-        edges = (SvgEdge*)zenith::alloc(cap * sizeof(SvgEdge));
+        edges = (SvgEdge*)montauk::alloc(cap * sizeof(SvgEdge));
         count = 0;
         capacity = cap;
     }
@@ -800,7 +800,7 @@ inline void svg_rasterize(const SvgEdgeList& el, uint32_t* pixels, int w, int h,
     // Temporary array for x-intersections on each scanline
     // Allocate enough for all edges (each edge can intersect at most once per scanline)
     int maxIsect = el.count + 16;
-    fixed_t* isect = (fixed_t*)zenith::alloc(maxIsect * sizeof(fixed_t));
+    fixed_t* isect = (fixed_t*)montauk::alloc(maxIsect * sizeof(fixed_t));
 
     for (int y = 0; y < h; ++y) {
         // Scanline center in fixed-point
@@ -858,7 +858,7 @@ inline void svg_rasterize(const SvgEdgeList& el, uint32_t* pixels, int w, int h,
         }
     }
 
-    zenith::free(isect);
+    montauk::free(isect);
 }
 
 // ---------------------------------------------------------------------------
@@ -1018,7 +1018,7 @@ inline void svg_rasterize_blend(const SvgEdgeList& el, uint32_t* pixels, int w, 
     if (el.count == 0) return;
 
     int maxIsect = el.count + 16;
-    fixed_t* isect = (fixed_t*)zenith::alloc(maxIsect * sizeof(fixed_t));
+    fixed_t* isect = (fixed_t*)montauk::alloc(maxIsect * sizeof(fixed_t));
 
     uint32_t fr = (fill >> 16) & 0xFF;
     uint32_t fg = (fill >> 8) & 0xFF;
@@ -1081,7 +1081,7 @@ inline void svg_rasterize_blend(const SvgEdgeList& el, uint32_t* pixels, int w, 
         }
     }
 
-    zenith::free(isect);
+    montauk::free(isect);
 }
 
 // ---------------------------------------------------------------------------
@@ -1091,7 +1091,7 @@ inline SvgIcon svg_render(const char* svg_data, int svg_len, int target_w, int t
     SvgIcon icon;
     icon.width = target_w;
     icon.height = target_h;
-    icon.pixels = (uint32_t*)zenith::alloc(target_w * target_h * sizeof(uint32_t));
+    icon.pixels = (uint32_t*)montauk::alloc(target_w * target_h * sizeof(uint32_t));
     // Clear to transparent
     svg_memset(icon.pixels, 0, target_w * target_h * sizeof(uint32_t));
 
@@ -1359,7 +1359,7 @@ inline SvgIcon svg_render(const char* svg_data, int svg_len, int target_w, int t
         ++p;
     }
 
-    zenith::free(el.edges);
+    montauk::free(el.edges);
     return icon;
 }
 
@@ -1367,20 +1367,20 @@ inline SvgIcon svg_render(const char* svg_data, int svg_len, int target_w, int t
 // Load SVG from VFS and render
 // ---------------------------------------------------------------------------
 inline SvgIcon svg_load(const char* vfs_path, int target_w, int target_h, Color fill_color) {
-    int fd = zenith::open(vfs_path);
+    int fd = montauk::open(vfs_path);
     if (fd < 0) {
         return {nullptr, 0, 0};
     }
 
-    uint64_t size = zenith::getsize(fd);
+    uint64_t size = montauk::getsize(fd);
     if (size == 0 || size > SVG_MAX_FILE_SIZE) {
-        zenith::close(fd);
+        montauk::close(fd);
         return {nullptr, 0, 0};
     }
 
-    char* buf = (char*)zenith::alloc(size + 1);
-    zenith::read(fd, (uint8_t*)buf, 0, size);
-    zenith::close(fd);
+    char* buf = (char*)montauk::alloc(size + 1);
+    montauk::read(fd, (uint8_t*)buf, 0, size);
+    montauk::close(fd);
     buf[size] = '\0';
 
     // 4x supersampling: render at 4x resolution, then downsample with box filter
@@ -1389,12 +1389,12 @@ inline SvgIcon svg_load(const char* vfs_path, int target_w, int target_h, Color 
     int hi_h = target_h * SS;
 
     SvgIcon hi = svg_render(buf, (int)size, hi_w, hi_h, fill_color);
-    zenith::free(buf);
+    montauk::free(buf);
 
     if (!hi.pixels) return {nullptr, 0, 0};
 
     // Allocate final icon at target resolution
-    uint32_t* out = (uint32_t*)zenith::alloc(target_w * target_h * 4);
+    uint32_t* out = (uint32_t*)montauk::alloc(target_w * target_h * 4);
     for (int i = 0; i < target_w * target_h; i++) out[i] = 0;
 
     // Downsample: average each SSxSS block using premultiplied alpha
@@ -1432,7 +1432,7 @@ inline SvgIcon svg_load(const char* vfs_path, int target_w, int target_h, Color 
         }
     }
 
-    zenith::free(hi.pixels);
+    montauk::free(hi.pixels);
     return {out, target_w, target_h};
 }
 
@@ -1440,7 +1440,7 @@ inline SvgIcon svg_load(const char* vfs_path, int target_w, int target_h, Color 
 // Free icon pixel data
 // ---------------------------------------------------------------------------
 inline void svg_free(SvgIcon& icon) {
-    if (icon.pixels) zenith::free(icon.pixels);
+    if (icon.pixels) montauk::free(icon.pixels);
     icon.pixels = nullptr;
     icon.width = 0;
     icon.height = 0;

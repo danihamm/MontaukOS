@@ -4,10 +4,10 @@
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
+#include <montauk/syscall.h>
 
 extern "C" void _start() {
-    zenith::print("\033[2J");   // Clear entire screen
-    zenith::print("\033[H");    // Move cursor to top-left
-    zenith::exit(0);
+    montauk::print("\033[2J");   // Clear entire screen
+    montauk::print("\033[H");    // Move cursor to top-left
+    montauk::exit(0);
 }

@@ -1,6 +1,6 @@
 /*
     * font.hpp
-    * ZenithOS text rendering — TrueType with bitmap fallback
+    * MontaukOS text rendering — TrueType with bitmap fallback
     * Copyright (c) 2025 Daniel Hammer
 */
 

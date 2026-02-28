@@ -1,4 +1,4 @@
-# Makefile for imageviewer (standalone JPEG viewer) on ZenithOS
+# Makefile for imageviewer (standalone JPEG viewer) on MontaukOS
 # Copyright (c) 2026 Daniel Hammer
 
 MAKEFLAGS += -rR

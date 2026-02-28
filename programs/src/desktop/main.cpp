@@ -1,6 +1,6 @@
 /*
     * main.cpp
-    * ZenithOS Desktop Environment - window manager, compositor, and run loop
+    * MontaukOS Desktop Environment - window manager, compositor, and run loop
     * Copyright (c) 2026 Daniel Hammer
 */
 
@@ -32,8 +32,8 @@ void gui::desktop_init(DesktopState* ds) {
     ds->prev_buttons = 0;
     ds->app_menu_open = false;
 
-    zenith::memset(&ds->mouse, 0, sizeof(Zenith::MouseState));
-    zenith::set_mouse_bounds(ds->screen_w - 1, ds->screen_h - 1);
+    montauk::memset(&ds->mouse, 0, sizeof(Montauk::MouseState));
+    montauk::set_mouse_bounds(ds->screen_w - 1, ds->screen_h - 1);
 
     // Load SVG icons — scalable (colorful) for app menu, symbolic for toolbar/panel
     Color defColor = colors::ICON_COLOR;
@@ -87,17 +87,17 @@ void gui::desktop_init(DesktopState* ds) {
     ds->settings.ui_scale = 1;
 
     // Try to load default wallpaper
-    wallpaper_load(&ds->settings, "0:/home/troy-olson-MhYIwOiyZpM-unsplash.jpg",
+    wallpaper_load(&ds->settings, "0:/home/gustav-gullstrand-d6kSvT2xZQo-unsplash.jpg",
                    ds->screen_w, ds->screen_h);
-    zenith::win_setscale(1);
+    montauk::win_setscale(1);
 
     ds->ctx_menu_open = false;
     ds->ctx_menu_x = 0;
     ds->ctx_menu_y = 0;
 
     ds->net_popup_open = false;
-    zenith::get_netcfg(&ds->cached_net_cfg);
-    ds->net_cfg_last_poll = zenith::get_milliseconds();
+    montauk::get_netcfg(&ds->cached_net_cfg);
+    ds->net_cfg_last_poll = montauk::get_milliseconds();
     ds->net_icon_rect = {0, 0, 0, 0};
 
 }
@@ -107,9 +107,9 @@ int gui::desktop_create_window(DesktopState* ds, const char* title, int x, int y
 
     int idx = ds->window_count;
     Window* win = &ds->windows[idx];
-    zenith::memset(win, 0, sizeof(Window));
+    montauk::memset(win, 0, sizeof(Window));
 
-    zenith::strncpy(win->title, title, MAX_TITLE_LEN);
+    montauk::strncpy(win->title, title, MAX_TITLE_LEN);
     win->frame = {x, y, w, h};
     win->state = WIN_NORMAL;
     win->z_order = idx;
@@ -124,8 +124,8 @@ int gui::desktop_create_window(DesktopState* ds, const char* title, int x, int y
     win->content_w = cr.w;
     win->content_h = cr.h;
     int buf_size = cr.w * cr.h * 4;
-    win->content = (uint32_t*)zenith::alloc(buf_size);
-    zenith::memset(win->content, 0xFF, buf_size);
+    win->content = (uint32_t*)montauk::alloc(buf_size);
+    montauk::memset(win->content, 0xFF, buf_size);
 
     win->on_draw = nullptr;
     win->on_mouse = nullptr;
@@ -153,17 +153,17 @@ void gui::desktop_close_window(DesktopState* ds, int idx) {
 
     // For external windows, send a close event instead of freeing the buffer
     if (win->external) {
-        Zenith::WinEvent ev;
-        zenith::memset(&ev, 0, sizeof(ev));
+        Montauk::WinEvent ev;
+        montauk::memset(&ev, 0, sizeof(ev));
         ev.type = 3; // close
-        zenith::win_sendevent(win->ext_win_id, &ev);
+        montauk::win_sendevent(win->ext_win_id, &ev);
     }
 
     if (win->on_close) win->on_close(win);
 
     // Free content buffer (skip for external windows — shared memory)
     if (win->content && !win->external) {
-        zenith::free(win->content);
+        montauk::free(win->content);
         win->content = nullptr;
     }
 
@@ -359,7 +359,7 @@ void gui::desktop_draw_panel(DesktopState* ds) {
 
         // Truncate title if too long
         char short_title[20];
-        zenith::strncpy(short_title, win->title, 18);
+        montauk::strncpy(short_title, win->title, 18);
 
         int tx = indicator_x + pad;
         int ty = 4 + (24 - system_font_height()) / 2;
@@ -369,8 +369,8 @@ void gui::desktop_draw_panel(DesktopState* ds) {
     }
 
     // Date + Clock (right side)
-    Zenith::DateTime dt;
-    zenith::gettime(&dt);
+    Montauk::DateTime dt;
+    montauk::gettime(&dt);
 
     char clock_str[12];
     if (ds->settings.clock_24h) {
@@ -395,9 +395,9 @@ void gui::desktop_draw_panel(DesktopState* ds) {
     draw_text(fb, date_x, clock_y, date_str, colors::PANEL_TEXT);
 
     // Network icon (to the left of the date)
-    uint64_t now = zenith::get_milliseconds();
+    uint64_t now = montauk::get_milliseconds();
     if (now - ds->net_cfg_last_poll > 5000) {
-        zenith::get_netcfg(&ds->cached_net_cfg);
+        montauk::get_netcfg(&ds->cached_net_cfg);
         ds->net_cfg_last_poll = now;
     }
 
@@ -574,7 +574,7 @@ static void desktop_draw_net_popup(DesktopState* ds) {
     int line_h = system_font_height() + 6;
     char line[64];
 
-    Zenith::NetCfg& nc = ds->cached_net_cfg;
+    Montauk::NetCfg& nc = ds->cached_net_cfg;
 
     if (nc.ipAddress != 0) {
         char ipbuf[20];
@@ -670,7 +670,7 @@ static void reboot_dialog_on_mouse(Window* win, MouseEvent& ev) {
     rs->hover_cancel = cb.contains(lx, ly);
 
     if (ev.left_pressed()) {
-        if (rs->hover_reboot) zenith::reset();
+        if (rs->hover_reboot) montauk::reset();
         if (rs->hover_cancel) {
             for (int i = 0; i < rs->ds->window_count; i++) {
                 if (rs->ds->windows[i].app_data == rs) {
@@ -682,12 +682,12 @@ static void reboot_dialog_on_mouse(Window* win, MouseEvent& ev) {
     }
 }
 
-static void reboot_dialog_on_key(Window* win, const Zenith::KeyEvent& key) {
+static void reboot_dialog_on_key(Window* win, const Montauk::KeyEvent& key) {
     RebootDialogState* rs = (RebootDialogState*)win->app_data;
     if (!rs || !key.pressed) return;
 
     if (key.ascii == '\n' || key.ascii == '\r') {
-        zenith::reset();
+        montauk::reset();
     }
     if (key.scancode == 0x01) { // Escape
         for (int i = 0; i < rs->ds->window_count; i++) {
@@ -701,7 +701,7 @@ static void reboot_dialog_on_key(Window* win, const Zenith::KeyEvent& key) {
 
 static void reboot_dialog_on_close(Window* win) {
     if (win->app_data) {
-        zenith::mfree(win->app_data);
+        montauk::mfree(win->app_data);
         win->app_data = nullptr;
     }
 }
@@ -713,8 +713,8 @@ void open_reboot_dialog(DesktopState* ds) {
     if (idx < 0) return;
 
     Window* win = &ds->windows[idx];
-    RebootDialogState* rs = (RebootDialogState*)zenith::malloc(sizeof(RebootDialogState));
-    zenith::memset(rs, 0, sizeof(RebootDialogState));
+    RebootDialogState* rs = (RebootDialogState*)montauk::malloc(sizeof(RebootDialogState));
+    montauk::memset(rs, 0, sizeof(RebootDialogState));
     rs->ds = ds;
 
     win->app_data = rs;
@@ -782,7 +782,7 @@ static void shutdown_dialog_on_mouse(Window* win, MouseEvent& ev) {
     ss->hover_cancel = cb.contains(lx, ly);
 
     if (ev.left_pressed()) {
-        if (ss->hover_shutdown) zenith::shutdown();
+        if (ss->hover_shutdown) montauk::shutdown();
         if (ss->hover_cancel) {
             for (int i = 0; i < ss->ds->window_count; i++) {
                 if (ss->ds->windows[i].app_data == ss) {
@@ -794,12 +794,12 @@ static void shutdown_dialog_on_mouse(Window* win, MouseEvent& ev) {
     }
 }
 
-static void shutdown_dialog_on_key(Window* win, const Zenith::KeyEvent& key) {
+static void shutdown_dialog_on_key(Window* win, const Montauk::KeyEvent& key) {
     ShutdownDialogState* ss = (ShutdownDialogState*)win->app_data;
     if (!ss || !key.pressed) return;
 
     if (key.ascii == '\n' || key.ascii == '\r') {
-        zenith::shutdown();
+        montauk::shutdown();
     }
     if (key.scancode == 0x01) { // Escape
         for (int i = 0; i < ss->ds->window_count; i++) {
@@ -813,7 +813,7 @@ static void shutdown_dialog_on_key(Window* win, const Zenith::KeyEvent& key) {
 
 static void shutdown_dialog_on_close(Window* win) {
     if (win->app_data) {
-        zenith::mfree(win->app_data);
+        montauk::mfree(win->app_data);
         win->app_data = nullptr;
     }
 }
@@ -825,8 +825,8 @@ void open_shutdown_dialog(DesktopState* ds) {
     if (idx < 0) return;
 
     Window* win = &ds->windows[idx];
-    ShutdownDialogState* ss = (ShutdownDialogState*)zenith::malloc(sizeof(ShutdownDialogState));
-    zenith::memset(ss, 0, sizeof(ShutdownDialogState));
+    ShutdownDialogState* ss = (ShutdownDialogState*)montauk::malloc(sizeof(ShutdownDialogState));
+    montauk::memset(ss, 0, sizeof(ShutdownDialogState));
     ss->ds = ds;
 
     win->app_data = ss;
@@ -1100,20 +1100,20 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
                     if (!win->external) {
                         Rect cr = win->content_rect();
                         if (cr.w != win->content_w || cr.h != win->content_h) {
-                            if (win->content) zenith::free(win->content);
+                            if (win->content) montauk::free(win->content);
                             win->content_w = cr.w;
                             win->content_h = cr.h;
-                            win->content = (uint32_t*)zenith::alloc(cr.w * cr.h * 4);
-                            zenith::memset(win->content, 0xFF, cr.w * cr.h * 4);
+                            win->content = (uint32_t*)montauk::alloc(cr.w * cr.h * 4);
+                            montauk::memset(win->content, 0xFF, cr.w * cr.h * 4);
                         }
                     } else {
                         Rect cr = win->content_rect();
-                        Zenith::WinEvent rev;
-                        zenith::memset(&rev, 0, sizeof(rev));
+                        Montauk::WinEvent rev;
+                        montauk::memset(&rev, 0, sizeof(rev));
                         rev.type = 2;
                         rev.resize.w = cr.w;
                         rev.resize.h = cr.h;
-                        zenith::win_sendevent(win->ext_win_id, &rev);
+                        montauk::win_sendevent(win->ext_win_id, &rev);
                     }
                 } else if (mx >= ds->screen_w - 1) {
                     win->saved_frame = win->frame;
@@ -1122,20 +1122,20 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
                     if (!win->external) {
                         Rect cr = win->content_rect();
                         if (cr.w != win->content_w || cr.h != win->content_h) {
-                            if (win->content) zenith::free(win->content);
+                            if (win->content) montauk::free(win->content);
                             win->content_w = cr.w;
                             win->content_h = cr.h;
-                            win->content = (uint32_t*)zenith::alloc(cr.w * cr.h * 4);
-                            zenith::memset(win->content, 0xFF, cr.w * cr.h * 4);
+                            win->content = (uint32_t*)montauk::alloc(cr.w * cr.h * 4);
+                            montauk::memset(win->content, 0xFF, cr.w * cr.h * 4);
                         }
                     } else {
                         Rect cr = win->content_rect();
-                        Zenith::WinEvent rev;
-                        zenith::memset(&rev, 0, sizeof(rev));
+                        Montauk::WinEvent rev;
+                        montauk::memset(&rev, 0, sizeof(rev));
                         rev.type = 2;
                         rev.resize.w = cr.w;
                         rev.resize.h = cr.h;
-                        zenith::win_sendevent(win->ext_win_id, &rev);
+                        montauk::win_sendevent(win->ext_win_id, &rev);
                     }
                 }
             }
@@ -1188,21 +1188,21 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
                 if (!win->external) {
                     Rect cr = win->content_rect();
                     if (cr.w != win->content_w || cr.h != win->content_h) {
-                        if (win->content) zenith::free(win->content);
+                        if (win->content) montauk::free(win->content);
                         win->content_w = cr.w;
                         win->content_h = cr.h;
-                        win->content = (uint32_t*)zenith::alloc(cr.w * cr.h * 4);
-                        zenith::memset(win->content, 0xFF, cr.w * cr.h * 4);
+                        win->content = (uint32_t*)montauk::alloc(cr.w * cr.h * 4);
+                        montauk::memset(win->content, 0xFF, cr.w * cr.h * 4);
                     }
                     win->dirty = true;
                 } else {
                     Rect cr = win->content_rect();
-                    Zenith::WinEvent rev;
-                    zenith::memset(&rev, 0, sizeof(rev));
+                    Montauk::WinEvent rev;
+                    montauk::memset(&rev, 0, sizeof(rev));
                     rev.type = 2;
                     rev.resize.w = cr.w;
                     rev.resize.h = cr.h;
-                    zenith::win_sendevent(win->ext_win_id, &rev);
+                    montauk::win_sendevent(win->ext_win_id, &rev);
                 }
             }
             return;
@@ -1355,20 +1355,20 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
                 if (!win->external) {
                     Rect cr = win->content_rect();
                     if (cr.w != win->content_w || cr.h != win->content_h) {
-                        if (win->content) zenith::free(win->content);
+                        if (win->content) montauk::free(win->content);
                         win->content_w = cr.w;
                         win->content_h = cr.h;
-                        win->content = (uint32_t*)zenith::alloc(cr.w * cr.h * 4);
-                        zenith::memset(win->content, 0xFF, cr.w * cr.h * 4);
+                        win->content = (uint32_t*)montauk::alloc(cr.w * cr.h * 4);
+                        montauk::memset(win->content, 0xFF, cr.w * cr.h * 4);
                     }
                 } else {
                     Rect cr = win->content_rect();
-                    Zenith::WinEvent rev;
-                    zenith::memset(&rev, 0, sizeof(rev));
+                    Montauk::WinEvent rev;
+                    montauk::memset(&rev, 0, sizeof(rev));
                     rev.type = 2;
                     rev.resize.w = cr.w;
                     rev.resize.h = cr.h;
-                    zenith::win_sendevent(win->ext_win_id, &rev);
+                    montauk::win_sendevent(win->ext_win_id, &rev);
                 }
                 desktop_raise_window(ds, i);
                 return;
@@ -1416,15 +1416,15 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
                 Window* raised = &ds->windows[new_idx];
                 if (raised->external) {
                     // Forward mouse event to external window
-                    Zenith::WinEvent wev;
-                    zenith::memset(&wev, 0, sizeof(wev));
+                    Montauk::WinEvent wev;
+                    montauk::memset(&wev, 0, sizeof(wev));
                     wev.type = 1; // mouse
                     wev.mouse.x = mx - cr.x;
                     wev.mouse.y = my - cr.y;
                     wev.mouse.scroll = ev.scroll;
                     wev.mouse.buttons = buttons;
                     wev.mouse.prev_buttons = prev;
-                    zenith::win_sendevent(raised->ext_win_id, &wev);
+                    montauk::win_sendevent(raised->ext_win_id, &wev);
                 } else if (raised->on_mouse) {
                     ev.x = mx;
                     ev.y = my;
@@ -1450,15 +1450,15 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
         Rect cr = win->content_rect();
         if (cr.contains(mx, my)) {
             if (win->external) {
-                Zenith::WinEvent wev;
-                zenith::memset(&wev, 0, sizeof(wev));
+                Montauk::WinEvent wev;
+                montauk::memset(&wev, 0, sizeof(wev));
                 wev.type = 1; // mouse
                 wev.mouse.x = mx - cr.x;
                 wev.mouse.y = my - cr.y;
                 wev.mouse.scroll = ev.scroll;
                 wev.mouse.buttons = buttons;
                 wev.mouse.prev_buttons = prev;
-                zenith::win_sendevent(win->ext_win_id, &wev);
+                montauk::win_sendevent(win->ext_win_id, &wev);
             } else if (win->on_mouse) {
                 win->on_mouse(win, ev);
             }
@@ -1486,7 +1486,7 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
     }
 }
 
-void gui::desktop_handle_keyboard(DesktopState* ds, const Zenith::KeyEvent& key) {
+void gui::desktop_handle_keyboard(DesktopState* ds, const Montauk::KeyEvent& key) {
     // Global shortcuts (only on key press)
     if (key.pressed && key.ctrl && key.alt) {
         if (key.ascii == 't' || key.ascii == 'T') {
@@ -1524,11 +1524,11 @@ void gui::desktop_handle_keyboard(DesktopState* ds, const Zenith::KeyEvent& key)
         Window* win = &ds->windows[ds->focused_window];
         if (win->external) {
             // Forward key event to external window via syscall
-            Zenith::WinEvent ev;
-            zenith::memset(&ev, 0, sizeof(ev));
+            Montauk::WinEvent ev;
+            montauk::memset(&ev, 0, sizeof(ev));
             ev.type = 0; // key
             ev.key = key;
-            zenith::win_sendevent(win->ext_win_id, &ev);
+            montauk::win_sendevent(win->ext_win_id, &ev);
         } else if (win->on_key) {
             win->on_key(win, key);
         }
@@ -1540,8 +1540,8 @@ void gui::desktop_handle_keyboard(DesktopState* ds, const Zenith::KeyEvent& key)
 // ============================================================================
 
 void desktop_poll_external_windows(DesktopState* ds) {
-    Zenith::WinInfo extWins[8];
-    int extCount = zenith::win_enumerate(extWins, 8);
+    Montauk::WinInfo extWins[8];
+    int extCount = montauk::win_enumerate(extWins, 8);
 
     // Check for new external windows and map them
     for (int e = 0; e < extCount; e++) {
@@ -1559,7 +1559,7 @@ void desktop_poll_external_windows(DesktopState* ds) {
                 // Re-map if external app resized its buffer
                 if (extWins[e].width != ds->windows[i].content_w ||
                     extWins[e].height != ds->windows[i].content_h) {
-                    uint64_t va = zenith::win_map(extId);
+                    uint64_t va = montauk::win_map(extId);
                     if (va != 0) {
                         ds->windows[i].content = (uint32_t*)va;
                         ds->windows[i].content_w = extWins[e].width;
@@ -1573,14 +1573,14 @@ void desktop_poll_external_windows(DesktopState* ds) {
 
         if (!found && ds->window_count < MAX_WINDOWS) {
             // Map the pixel buffer into our address space
-            uint64_t va = zenith::win_map(extId);
+            uint64_t va = montauk::win_map(extId);
             if (va == 0) continue;
 
             int idx = ds->window_count;
             Window* win = &ds->windows[idx];
-            zenith::memset(win, 0, sizeof(Window));
+            montauk::memset(win, 0, sizeof(Window));
 
-            zenith::strncpy(win->title, extWins[e].title, MAX_TITLE_LEN);
+            montauk::strncpy(win->title, extWins[e].title, MAX_TITLE_LEN);
             int w = extWins[e].width;
             int h = extWins[e].height;
             // Position the window centered-ish
@@ -1643,12 +1643,12 @@ void gui::desktop_run(DesktopState* ds) {
     for (;;) {
         // Poll mouse state
         ds->prev_buttons = ds->mouse.buttons;
-        zenith::mouse_state(&ds->mouse);
+        montauk::mouse_state(&ds->mouse);
 
         // Poll keyboard events
-        while (zenith::is_key_available()) {
-            Zenith::KeyEvent key;
-            zenith::getkey(&key);
+        while (montauk::is_key_available()) {
+            Montauk::KeyEvent key;
+            montauk::getkey(&key);
             desktop_handle_keyboard(ds, key);
         }
 
@@ -1672,7 +1672,7 @@ void gui::desktop_run(DesktopState* ds) {
         ds->fb.flip();
 
         // Target ~60fps
-        zenith::sleep_ms(16);
+        montauk::sleep_ms(16);
     }
 }
 
@@ -1683,8 +1683,8 @@ void gui::desktop_run(DesktopState* ds) {
 static DesktopState* g_desktop;
 
 extern "C" void _start() {
-    DesktopState* ds = (DesktopState*)zenith::malloc(sizeof(DesktopState));
-    zenith::memset(ds, 0, sizeof(DesktopState));
+    DesktopState* ds = (DesktopState*)montauk::malloc(sizeof(DesktopState));
+    montauk::memset(ds, 0, sizeof(DesktopState));
 
     // Placement-new the Framebuffer since it has a constructor
     new (&ds->fb) Framebuffer();
@@ -1694,5 +1694,5 @@ extern "C" void _start() {
     desktop_init(ds);
     desktop_run(ds);
 
-    zenith::exit(0);
+    montauk::exit(0);
 }

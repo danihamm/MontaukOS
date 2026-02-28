@@ -15,7 +15,7 @@
 #include "Syscall.hpp"
 #include "WinServer.hpp"
 
-namespace Zenith {
+namespace Montauk {
     static void Sys_Exit(int exitCode) {
         (void)exitCode;
         Sched::ExitProcess();

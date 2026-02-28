@@ -4,11 +4,11 @@
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
+#include <montauk/syscall.h>
 
 static void print_int(uint64_t n) {
     if (n == 0) {
-        zenith::putchar('0');
+        montauk::putchar('0');
         return;
     }
     char buf[20];
@@ -18,23 +18,23 @@ static void print_int(uint64_t n) {
         n /= 10;
     }
     for (int j = i - 1; j >= 0; j--) {
-        zenith::putchar(buf[j]);
+        montauk::putchar(buf[j]);
     }
 }
 
 extern "C" void _start() {
-    uint64_t ms = zenith::get_milliseconds();
+    uint64_t ms = montauk::get_milliseconds();
     uint64_t secs = ms / 1000;
     uint64_t mins = secs / 60;
     secs %= 60;
     ms %= 1000;
 
-    zenith::print("Uptime: ");
+    montauk::print("Uptime: ");
     print_int(mins);
-    zenith::print("m ");
+    montauk::print("m ");
     print_int(secs);
-    zenith::print("s ");
+    montauk::print("s ");
     print_int(ms);
-    zenith::print("ms\n");
-    zenith::exit(0);
+    montauk::print("ms\n");
+    montauk::exit(0);
 }

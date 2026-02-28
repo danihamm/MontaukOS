@@ -1,6 +1,6 @@
 /*
     * app_sysinfo.cpp
-    * ZenithOS Desktop - System Info application
+    * MontaukOS Desktop - System Info application
     * Copyright (c) 2026 Daniel Hammer
 */
 
@@ -11,8 +11,8 @@
 // ============================================================================
 
 struct SysInfoState {
-    Zenith::SysInfo sys_info;
-    Zenith::NetCfg net_cfg;
+    Montauk::SysInfo sys_info;
+    Montauk::NetCfg net_cfg;
     uint64_t uptime_ms;
 };
 
@@ -20,7 +20,7 @@ static void sysinfo_on_draw(Window* win, Framebuffer& fb) {
     SysInfoState* si = (SysInfoState*)win->app_data;
     if (!si) return;
 
-    si->uptime_ms = zenith::get_milliseconds();
+    si->uptime_ms = montauk::get_milliseconds();
 
     Canvas c(win);
     c.fill(colors::WINDOW_BG);
@@ -107,7 +107,7 @@ static void sysinfo_on_draw(Window* win, Framebuffer& fb) {
 
 static void sysinfo_on_close(Window* win) {
     if (win->app_data) {
-        zenith::mfree(win->app_data);
+        montauk::mfree(win->app_data);
         win->app_data = nullptr;
     }
 }
@@ -121,11 +121,11 @@ void open_sysinfo(DesktopState* ds) {
     if (idx < 0) return;
 
     Window* win = &ds->windows[idx];
-    SysInfoState* si = (SysInfoState*)zenith::malloc(sizeof(SysInfoState));
-    zenith::memset(si, 0, sizeof(SysInfoState));
-    zenith::get_info(&si->sys_info);
-    zenith::get_netcfg(&si->net_cfg);
-    si->uptime_ms = zenith::get_milliseconds();
+    SysInfoState* si = (SysInfoState*)montauk::malloc(sizeof(SysInfoState));
+    montauk::memset(si, 0, sizeof(SysInfoState));
+    montauk::get_info(&si->sys_info);
+    montauk::get_netcfg(&si->net_cfg);
+    si->uptime_ms = montauk::get_milliseconds();
 
     win->app_data = si;
     win->on_draw = sysinfo_on_draw;

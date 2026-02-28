@@ -24,7 +24,7 @@ namespace WinServer {
         uint64_t ownerVa;      // VA in owner's address space
         uint64_t desktopVa;    // VA in desktop's address space (0 = not yet mapped)
         int desktopPid;        // PID of the process that mapped it
-        Zenith::WinEvent events[MaxEvents];
+        Montauk::WinEvent events[MaxEvents];
         int eventHead, eventTail;
         bool dirty;
     };
@@ -33,10 +33,10 @@ namespace WinServer {
                uint64_t& heapNext, uint64_t& outVa);
     int Destroy(int windowId, int callerPid);
     int Present(int windowId, int callerPid);
-    int Poll(int windowId, int callerPid, Zenith::WinEvent* outEvent);
-    int Enumerate(Zenith::WinInfo* outArray, int maxCount);
+    int Poll(int windowId, int callerPid, Montauk::WinEvent* outEvent);
+    int Enumerate(Montauk::WinInfo* outArray, int maxCount);
     uint64_t Map(int windowId, int callerPid, uint64_t callerPml4, uint64_t& heapNext);
-    int SendEvent(int windowId, const Zenith::WinEvent* event);
+    int SendEvent(int windowId, const Montauk::WinEvent* event);
     int Resize(int windowId, int callerPid, uint64_t ownerPml4, int newW, int newH,
                uint64_t& heapNext, uint64_t& outVa);
     void CleanupProcess(int pid);

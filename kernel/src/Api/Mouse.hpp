@@ -9,7 +9,7 @@
 
 #include "Syscall.hpp"
 
-namespace Zenith {
+namespace Montauk {
 
     static void Sys_MouseState(MouseState* out) {
         if (out == nullptr) return;

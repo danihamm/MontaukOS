@@ -9,16 +9,16 @@
 
 #include "Syscall.hpp"
 
-namespace Zenith {
+namespace Montauk {
 
     static void Sys_GetInfo(SysInfo* outInfo) {
         if (outInfo == nullptr) return;
 
         // Copy strings into fixed-size arrays (user-accessible)
-        const char* name = "ZenithOS";
+        const char* name = "MontaukOS";
         const char* ver = "0.1.0";
         for (int i = 0; name[i]; i++) outInfo->osName[i] = name[i];
-        outInfo->osName[8] = '\0';
+        outInfo->osName[9] = '\0';
         for (int i = 0; ver[i]; i++) outInfo->osVersion[i] = ver[i];
         outInfo->osVersion[5] = '\0';
 

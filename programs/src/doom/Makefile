@@ -1,4 +1,4 @@
-# Makefile for DOOM (doomgeneric) on ZenithOS
+# Makefile for DOOM (doomgeneric) on MontaukOS
 # Copyright (c) 2025 Daniel Hammer
 
 MAKEFLAGS += -rR
@@ -153,7 +153,7 @@ DOOM_SRCS := \
     z_zone.c
 
 # Local source files
-LOCAL_SRCS := doomgeneric_zenith.c libc.c
+LOCAL_SRCS := doomgeneric_montauk.c libc.c
 
 # ---- Object files ----
 

@@ -1,14 +1,14 @@
 /*
     * terminal.hpp
-    * ZenithOS terminal emulator with ANSI escape sequence support
+    * MontaukOS terminal emulator with ANSI escape sequence support
     * Copyright (c) 2026 Daniel Hammer
 */
 
 #pragma once
 #include "gui/gui.hpp"
 #include "gui/font.hpp"
-#include <zenith/syscall.h>
-#include <zenith/string.h>
+#include <montauk/syscall.h>
+#include <montauk/string.h>
 #include <Api/Syscall.hpp>
 
 namespace gui {
@@ -102,8 +102,8 @@ static inline void terminal_init_cells(TerminalState* t, int cols, int rows) {
     t->child_pid = 0;
 
     int total_cells = cols * rows;
-    t->cells = (TermCell*)zenith::alloc(total_cells * sizeof(TermCell));
-    t->alt_cells = (TermCell*)zenith::alloc(total_cells * sizeof(TermCell));
+    t->cells = (TermCell*)montauk::alloc(total_cells * sizeof(TermCell));
+    t->alt_cells = (TermCell*)montauk::alloc(total_cells * sizeof(TermCell));
     for (int i = 0; i < total_cells; i++) {
         t->cells[i] = {' ', colors::TERM_FG, colors::TERM_BG};
         t->alt_cells[i] = {' ', colors::TERM_FG, colors::TERM_BG};
@@ -114,8 +114,8 @@ static inline void terminal_init(TerminalState* t, int cols, int rows) {
     terminal_init_cells(t, cols, rows);
     t->cursor_visible = true;
 
-    t->child_pid = zenith::spawn_redir("0:/os/shell.elf");
-    zenith::childio_settermsz(t->child_pid, cols, rows);
+    t->child_pid = montauk::spawn_redir("0:/os/shell.elf");
+    montauk::childio_settermsz(t->child_pid, cols, rows);
 }
 
 static inline void terminal_put_char(TerminalState* t, char ch) {
@@ -537,8 +537,8 @@ static inline void terminal_resize(TerminalState* t, int new_cols, int new_rows)
     if (new_cols < 1 || new_rows < 1) return;
 
     int new_total = new_cols * new_rows;
-    TermCell* new_cells = (TermCell*)zenith::alloc(new_total * sizeof(TermCell));
-    TermCell* new_alt = (TermCell*)zenith::alloc(new_total * sizeof(TermCell));
+    TermCell* new_cells = (TermCell*)montauk::alloc(new_total * sizeof(TermCell));
+    TermCell* new_alt = (TermCell*)montauk::alloc(new_total * sizeof(TermCell));
 
     // Clear new buffers
     for (int i = 0; i < new_total; i++) {
@@ -562,8 +562,8 @@ static inline void terminal_resize(TerminalState* t, int new_cols, int new_rows)
         }
     }
 
-    if (t->cells) zenith::mfree(t->cells);
-    if (t->alt_cells) zenith::mfree(t->alt_cells);
+    if (t->cells) montauk::mfree(t->cells);
+    if (t->alt_cells) montauk::mfree(t->alt_cells);
 
     t->cells = new_cells;
     t->alt_cells = new_alt;
@@ -580,20 +580,20 @@ static inline void terminal_resize(TerminalState* t, int new_cols, int new_rows)
 
     // Notify child process of new terminal size
     if (t->child_pid > 0) {
-        zenith::childio_settermsz(t->child_pid, new_cols, new_rows);
+        montauk::childio_settermsz(t->child_pid, new_cols, new_rows);
     }
 }
 
-static inline void terminal_handle_key(TerminalState* t, const Zenith::KeyEvent& key) {
+static inline void terminal_handle_key(TerminalState* t, const Montauk::KeyEvent& key) {
     if (t->child_pid > 0) {
-        zenith::childio_writekey(t->child_pid, &key);
+        montauk::childio_writekey(t->child_pid, &key);
     }
 }
 
 static inline void terminal_poll(TerminalState* t) {
     if (t->child_pid <= 0) return;
     char buf[512];
-    int n = zenith::childio_read(t->child_pid, buf, sizeof(buf));
+    int n = montauk::childio_read(t->child_pid, buf, sizeof(buf));
     if (n > 0) {
         terminal_feed(t, buf, n);
     }

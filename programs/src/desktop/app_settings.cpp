@@ -1,6 +1,6 @@
 /*
     * app_settings.cpp
-    * ZenithOS Desktop - Settings application
+    * MontaukOS Desktop - Settings application
     * Copyright (c) 2026 Daniel Hammer
 */
 
@@ -14,7 +14,7 @@
 struct SettingsState {
     DesktopState* desktop;
     int active_tab;        // 0=Appearance, 1=Display, 2=About
-    Zenith::SysInfo sys_info;
+    Montauk::SysInfo sys_info;
     uint64_t uptime_ms;
     WallpaperFileList wp_files;
     bool wp_scanned;
@@ -180,11 +180,11 @@ static void settings_draw_appearance(Canvas& c, SettingsState* st) {
             for (int i = 0; i < st->wp_files.count && i < 8; i++) {
                 // Build full path for comparison
                 char fullpath[256];
-                zenith::strcpy(fullpath, "0:/home/");
+                montauk::strcpy(fullpath, "0:/home/");
                 str_append(fullpath, st->wp_files.names[i], 256);
 
                 bool selected = s.bg_image &&
-                    zenith::streq(s.bg_image_path, fullpath);
+                    montauk::streq(s.bg_image_path, fullpath);
 
                 if (selected) {
                     c.fill_rounded_rect(x, y, c.w - 2 * x, WP_ITEM_H, 3, accent);
@@ -192,15 +192,15 @@ static void settings_draw_appearance(Canvas& c, SettingsState* st) {
 
                 // Truncate long filenames
                 char label[40];
-                int nlen = zenith::slen(st->wp_files.names[i]);
+                int nlen = montauk::slen(st->wp_files.names[i]);
                 if (nlen > 35) {
-                    zenith::strncpy(label, st->wp_files.names[i], 32);
+                    montauk::strncpy(label, st->wp_files.names[i], 32);
                     label[32] = '.';
                     label[33] = '.';
                     label[34] = '.';
                     label[35] = '\0';
                 } else {
-                    zenith::strncpy(label, st->wp_files.names[i], 39);
+                    montauk::strncpy(label, st->wp_files.names[i], 39);
                 }
 
                 Color tc = selected ? colors::WHITE : colors::TEXT_COLOR;
@@ -292,7 +292,7 @@ static void settings_draw_display(Canvas& c, SettingsState* st) {
 }
 
 static void settings_draw_about(Canvas& c, SettingsState* st) {
-    st->uptime_ms = zenith::get_milliseconds();
+    st->uptime_ms = montauk::get_milliseconds();
 
     Color dim = Color::from_rgb(0x88, 0x88, 0x88);
     int x = 16;
@@ -463,7 +463,7 @@ static void settings_on_mouse(Window* win, MouseEvent& ev) {
                     mx >= x && mx < win->content_w - x) {
                     // Build full path and load wallpaper
                     char fullpath[256];
-                    zenith::strcpy(fullpath, "0:/home/");
+                    montauk::strcpy(fullpath, "0:/home/");
                     str_append(fullpath, st->wp_files.names[i], 256);
                     wallpaper_load(&s, fullpath,
                                    st->desktop->screen_w, st->desktop->screen_h);
@@ -552,21 +552,21 @@ static void settings_on_mouse(Window* win, MouseEvent& ev) {
         if (mx >= bx && mx < bx + sbw && cy >= y && cy < y + btn_h) {
             s.ui_scale = 0;
             apply_ui_scale(0);
-            zenith::win_setscale(0);
+            montauk::win_setscale(0);
             return;
         }
         // Default
         if (mx >= bx + sbw + 8 && mx < bx + sbw * 2 + 8 && cy >= y && cy < y + btn_h) {
             s.ui_scale = 1;
             apply_ui_scale(1);
-            zenith::win_setscale(1);
+            montauk::win_setscale(1);
             return;
         }
         // Large
         if (mx >= bx + (sbw + 8) * 2 && mx < bx + sbw * 3 + 16 && cy >= y && cy < y + btn_h) {
             s.ui_scale = 2;
             apply_ui_scale(2);
-            zenith::win_setscale(2);
+            montauk::win_setscale(2);
             return;
         }
     }
@@ -578,7 +578,7 @@ static void settings_on_mouse(Window* win, MouseEvent& ev) {
 
 static void settings_on_close(Window* win) {
     if (win->app_data) {
-        zenith::mfree(win->app_data);
+        montauk::mfree(win->app_data);
         win->app_data = nullptr;
     }
 }
@@ -592,12 +592,12 @@ void open_settings(DesktopState* ds) {
     if (idx < 0) return;
 
     Window* win = &ds->windows[idx];
-    SettingsState* st = (SettingsState*)zenith::malloc(sizeof(SettingsState));
-    zenith::memset(st, 0, sizeof(SettingsState));
+    SettingsState* st = (SettingsState*)montauk::malloc(sizeof(SettingsState));
+    montauk::memset(st, 0, sizeof(SettingsState));
     st->desktop = ds;
     st->active_tab = 0;
-    zenith::get_info(&st->sys_info);
-    st->uptime_ms = zenith::get_milliseconds();
+    montauk::get_info(&st->sys_info);
+    st->uptime_ms = montauk::get_milliseconds();
     st->wp_scanned = false;
     st->wp_files.count = 0;
 

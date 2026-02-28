@@ -1,4 +1,4 @@
-# Makefile for fontpreview (standalone TTF font previewer) on ZenithOS
+# Makefile for fontpreview (standalone TTF font previewer) on MontaukOS
 # Copyright (c) 2026 Daniel Hammer
 
 MAKEFLAGS += -rR

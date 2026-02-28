@@ -1,6 +1,6 @@
 /*
     * gui.hpp
-    * ZenithOS core GUI types and utilities
+    * MontaukOS core GUI types and utilities
     * Copyright (c) 2025 Daniel Hammer
 */
 

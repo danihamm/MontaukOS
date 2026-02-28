@@ -1,4 +1,4 @@
-# Makefile for desktop (GUI desktop environment) on ZenithOS
+# Makefile for desktop (GUI desktop environment) on MontaukOS
 # Copyright (c) 2025 Daniel Hammer
 
 MAKEFLAGS += -rR

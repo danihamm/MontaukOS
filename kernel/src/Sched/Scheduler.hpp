@@ -50,7 +50,7 @@ namespace Sched {
         uint8_t* inBuf = nullptr;    // 4KB ring: parent writes, child reads (getchar)
         uint32_t inHead = 0;
         uint32_t inTail = 0;
-        Zenith::KeyEvent keyBuf[64]; // parent injects, child reads (getkey/iskeyavailable)
+        Montauk::KeyEvent keyBuf[64]; // parent injects, child reads (getkey/iskeyavailable)
         uint32_t keyHead = 0;
         uint32_t keyTail = 0;
         static constexpr uint32_t IoBufSize = 4096;

@@ -1,13 +1,13 @@
 /*
  * main.cpp
- * ZenithOS Image Viewer - standalone Window Server process
+ * MontaukOS Image Viewer - standalone Window Server process
  * Displays JPEG images with pan via mouse drag, scroll wheel, and arrow keys
  * Copyright (c) 2026 Daniel Hammer
  */
 
-#include <zenith/syscall.h>
-#include <zenith/string.h>
-#include <zenith/heap.h>
+#include <montauk/syscall.h>
+#include <montauk/string.h>
+#include <montauk/heap.h>
 #include <gui/gui.hpp>
 #include <gui/truetype.hpp>
 
@@ -107,7 +107,7 @@ static void int_to_str(char* buf, int val) {
 }
 
 static void str_append(char* dst, const char* src, int maxlen) {
-    int len = zenith::slen(dst);
+    int len = montauk::slen(dst);
     int i = 0;
     while (src[i] && len + i < maxlen - 1) {
         dst[len + i] = src[i];
@@ -121,41 +121,41 @@ static void str_append(char* dst, const char* src, int maxlen) {
 // ============================================================================
 
 static bool load_image(const char* path) {
-    int fd = zenith::open(path);
+    int fd = montauk::open(path);
     if (fd < 0) {
-        zenith::strcpy(g_status, "Error: could not open file");
+        montauk::strcpy(g_status, "Error: could not open file");
         return false;
     }
 
-    uint64_t size = zenith::getsize(fd);
+    uint64_t size = montauk::getsize(fd);
     if (size == 0 || size > 16 * 1024 * 1024) {
-        zenith::close(fd);
-        zenith::strcpy(g_status, "Error: file too large or empty");
+        montauk::close(fd);
+        montauk::strcpy(g_status, "Error: file too large or empty");
         return false;
     }
 
-    uint8_t* filedata = (uint8_t*)zenith::malloc(size);
+    uint8_t* filedata = (uint8_t*)montauk::malloc(size);
     if (!filedata) {
-        zenith::close(fd);
-        zenith::strcpy(g_status, "Error: out of memory");
+        montauk::close(fd);
+        montauk::strcpy(g_status, "Error: out of memory");
         return false;
     }
 
-    int bytes_read = zenith::read(fd, filedata, 0, size);
-    zenith::close(fd);
+    int bytes_read = montauk::read(fd, filedata, 0, size);
+    montauk::close(fd);
 
     if (bytes_read <= 0) {
-        zenith::mfree(filedata);
-        zenith::strcpy(g_status, "Error: could not read file");
+        montauk::mfree(filedata);
+        montauk::strcpy(g_status, "Error: could not read file");
         return false;
     }
 
     int w, h, channels;
     unsigned char* rgb = stbi_load_from_memory(filedata, bytes_read, &w, &h, &channels, 3);
-    zenith::mfree(filedata);
+    montauk::mfree(filedata);
 
     if (!rgb) {
-        zenith::strcpy(g_status, "Error: ");
+        montauk::strcpy(g_status, "Error: ");
         const char* reason = stbi_failure_reason();
         if (reason) str_append(g_status, reason, 256);
         else str_append(g_status, "unknown decode error", 256);
@@ -163,10 +163,10 @@ static bool load_image(const char* path) {
     }
 
     // Convert RGB to ARGB
-    g_image = (uint32_t*)zenith::malloc((uint64_t)w * h * 4);
+    g_image = (uint32_t*)montauk::malloc((uint64_t)w * h * 4);
     if (!g_image) {
         stbi_image_free(rgb);
-        zenith::strcpy(g_status, "Error: out of memory for image");
+        montauk::strcpy(g_status, "Error: out of memory for image");
         return false;
     }
 
@@ -184,9 +184,9 @@ static bool load_image(const char* path) {
 
     // Build status string: "filename.jpg  (1920 x 1080)"
     const char* name = basename(path);
-    zenith::strncpy(g_filename, name, 127);
+    montauk::strncpy(g_filename, name, 127);
 
-    zenith::strcpy(g_status, g_filename);
+    montauk::strcpy(g_status, g_filename);
     str_append(g_status, "  (", 256);
     char num[16];
     int_to_str(num, w);
@@ -272,17 +272,17 @@ static void render(uint32_t* pixels) {
 extern "C" void _start() {
     // Get file path from arguments
     char filepath[512] = {};
-    int arglen = zenith::getargs(filepath, sizeof(filepath));
+    int arglen = montauk::getargs(filepath, sizeof(filepath));
     if (arglen <= 0) {
-        zenith::strcpy(filepath, "");
+        montauk::strcpy(filepath, "");
     }
 
     // Load font
     auto load_font = [](const char* path) -> TrueTypeFont* {
-        TrueTypeFont* f = (TrueTypeFont*)zenith::malloc(sizeof(TrueTypeFont));
+        TrueTypeFont* f = (TrueTypeFont*)montauk::malloc(sizeof(TrueTypeFont));
         if (!f) return nullptr;
-        zenith::memset(f, 0, sizeof(TrueTypeFont));
-        if (!f->init(path)) { zenith::mfree(f); return nullptr; }
+        montauk::memset(f, 0, sizeof(TrueTypeFont));
+        if (!f->init(path)) { montauk::mfree(f); return nullptr; }
         return f;
     };
     g_font = load_font("0:/fonts/Roboto-Medium.ttf");
@@ -291,13 +291,13 @@ extern "C" void _start() {
     char title[64] = "Image Viewer";
     if (filepath[0]) {
         const char* name = basename(filepath);
-        if (name[0]) zenith::strncpy(title, name, 63);
+        if (name[0]) montauk::strncpy(title, name, 63);
     }
 
     // Create window
-    Zenith::WinCreateResult wres;
-    if (zenith::win_create(title, INIT_W, INIT_H, &wres) < 0 || wres.id < 0)
-        zenith::exit(1);
+    Montauk::WinCreateResult wres;
+    if (montauk::win_create(title, INIT_W, INIT_H, &wres) < 0 || wres.id < 0)
+        montauk::exit(1);
 
     int       win_id = wres.id;
     uint32_t* pixels = (uint32_t*)(uintptr_t)wres.pixelVa;
@@ -306,7 +306,7 @@ extern "C" void _start() {
     if (filepath[0]) {
         g_load_ok = load_image(filepath);
     } else {
-        zenith::strcpy(g_status, "No file specified");
+        montauk::strcpy(g_status, "No file specified");
         g_load_ok = false;
     }
 
@@ -315,17 +315,17 @@ extern "C" void _start() {
 
     // Initial render
     render(pixels);
-    zenith::win_present(win_id);
+    montauk::win_present(win_id);
 
     // Event loop
     while (true) {
-        Zenith::WinEvent ev;
-        int r = zenith::win_poll(win_id, &ev);
+        Montauk::WinEvent ev;
+        int r = montauk::win_poll(win_id, &ev);
 
         if (r < 0) break;
 
         if (r == 0) {
-            zenith::sleep_ms(16);
+            montauk::sleep_ms(16);
             continue;
         }
 
@@ -336,10 +336,10 @@ extern "C" void _start() {
         if (ev.type == 2) {
             g_win_w = ev.resize.w;
             g_win_h = ev.resize.h;
-            pixels = (uint32_t*)(uintptr_t)zenith::win_resize(win_id, g_win_w, g_win_h);
+            pixels = (uint32_t*)(uintptr_t)montauk::win_resize(win_id, g_win_w, g_win_h);
             if (g_load_ok) clamp_pan();
             render(pixels);
-            zenith::win_present(win_id);
+            montauk::win_present(win_id);
             continue;
         }
 
@@ -364,7 +364,7 @@ extern "C" void _start() {
             if (redraw && g_load_ok) {
                 clamp_pan();
                 render(pixels);
-                zenith::win_present(win_id);
+                montauk::win_present(win_id);
             }
             continue;
         }
@@ -405,14 +405,14 @@ extern "C" void _start() {
             if (redraw && g_load_ok) {
                 clamp_pan();
                 render(pixels);
-                zenith::win_present(win_id);
+                montauk::win_present(win_id);
             }
             continue;
         }
     }
 
     // Cleanup
-    if (g_image) zenith::mfree(g_image);
-    zenith::win_destroy(win_id);
-    zenith::exit(0);
+    if (g_image) montauk::mfree(g_image);
+    montauk::win_destroy(win_id);
+    montauk::exit(0);
 }

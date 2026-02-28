@@ -124,7 +124,7 @@ namespace Memory {
         }
     }
 
-    void PageFrameAllocator::GetStats(Zenith::MemStats* out) {
+    void PageFrameAllocator::GetStats(Montauk::MemStats* out) {
         if (!out) return;
         Lock.Acquire();
         uint64_t freeBytes = 0;

@@ -1,6 +1,6 @@
 /*
     * Syscall.hpp
-    * ZenithOS syscall definitions -- shared between kernel and programs
+    * MontaukOS syscall definitions -- shared between kernel and programs
     * Copyright (c) 2025 Daniel Hammer
 */
 
@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <cstddef>
 
-namespace Zenith {
+namespace Montauk {
 
     // Syscall numbers
     

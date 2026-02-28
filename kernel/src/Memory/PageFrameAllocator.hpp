@@ -29,7 +29,7 @@ public:
         void Free(void* ptr);
         void Free(void* ptr, int n);
 
-        void GetStats(Zenith::MemStats* out);
+        void GetStats(Montauk::MemStats* out);
     };
 
     extern PageFrameAllocator* g_pfa;

@@ -10,7 +10,7 @@
 
 #include "Common.hpp"
 
-namespace Zenith {
+namespace Montauk {
     static bool Sys_IsKeyAvailable() {
         auto* proc = Sched::GetCurrentProcessPtr();
         if (proc && proc->redirected) {

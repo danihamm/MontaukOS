@@ -4,9 +4,9 @@
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
+#include <montauk/syscall.h>
 
 extern "C" void _start() {
-    zenith::print("Shutting down...\n");
-    zenith::shutdown();
+    montauk::print("Shutting down...\n");
+    montauk::shutdown();
 }

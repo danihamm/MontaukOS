@@ -1,14 +1,14 @@
 /*
  * main.cpp
- * ZenithOS Weather app - standalone Window Server process
+ * MontaukOS Weather app - standalone Window Server process
  * Fetches current weather from wttr.in via HTTPS (BearSSL)
  * Displays temperature, description, feels like, and location
  * Copyright (c) 2026 Daniel Hammer
  */
 
-#include <zenith/syscall.h>
-#include <zenith/string.h>
-#include <zenith/heap.h>
+#include <montauk/syscall.h>
+#include <montauk/string.h>
+#include <montauk/heap.h>
 #include <gui/gui.hpp>
 #include <gui/svg.hpp>
 #include <gui/truetype.hpp>
@@ -316,7 +316,7 @@ static void apply_scale(int scale) {
 static void do_fetch() {
     // Lazy init: resolve DNS and load CA certificates once
     if (!g_tls_ready) {
-        g_server_ip = zenith::resolve(WTTR_HOST);
+        g_server_ip = montauk::resolve(WTTR_HOST);
         if (g_server_ip == 0) {
             snprintf(g_status, sizeof(g_status),
                      "Error: could not resolve %s", WTTR_HOST);
@@ -334,7 +334,7 @@ static void do_fetch() {
     int reqLen = snprintf(request, sizeof(request),
         "GET /?format=j1 HTTP/1.0\r\n"
         "Host: %s\r\n"
-        "User-Agent: ZenithOS/1.0 weather\r\n"
+        "User-Agent: MontaukOS/1.0 weather\r\n"
         "Accept: application/json\r\n"
         "Connection: close\r\n"
         "\r\n",
@@ -498,26 +498,26 @@ static void render(uint32_t* pixels) {
 extern "C" void _start() {
     // Allocate response buffer from heap
     g_resp_buf = (char*)malloc(RESP_MAX + 1);
-    if (!g_resp_buf) zenith::exit(1);
+    if (!g_resp_buf) montauk::exit(1);
 
     // Load fonts
     auto load_font = [](const char* path) -> TrueTypeFont* {
-        TrueTypeFont* f = (TrueTypeFont*)zenith::malloc(sizeof(TrueTypeFont));
+        TrueTypeFont* f = (TrueTypeFont*)montauk::malloc(sizeof(TrueTypeFont));
         if (!f) return nullptr;
-        zenith::memset(f, 0, sizeof(TrueTypeFont));
-        if (!f->init(path)) { zenith::mfree(f); return nullptr; }
+        montauk::memset(f, 0, sizeof(TrueTypeFont));
+        if (!f->init(path)) { montauk::mfree(f); return nullptr; }
         return f;
     };
     g_font      = load_font("0:/fonts/Roboto-Medium.ttf");
     g_font_bold = load_font("0:/fonts/Roboto-Bold.ttf");
-    if (!g_font) zenith::exit(1);
+    if (!g_font) montauk::exit(1);
 
-    apply_scale(zenith::win_getscale());
+    apply_scale(montauk::win_getscale());
 
     // Create window
-    Zenith::WinCreateResult wres;
-    if (zenith::win_create("Weather", INIT_W, INIT_H, &wres) < 0 || wres.id < 0)
-        zenith::exit(1);
+    Montauk::WinCreateResult wres;
+    if (montauk::win_create("Weather", INIT_W, INIT_H, &wres) < 0 || wres.id < 0)
+        montauk::exit(1);
 
     int       win_id = wres.id;
     uint32_t* pixels = (uint32_t*)(uintptr_t)wres.pixelVa;
@@ -525,20 +525,20 @@ extern "C" void _start() {
     // Initial fetch on startup
     g_phase = AppPhase::LOADING;
     render(pixels);
-    zenith::win_present(win_id);
+    montauk::win_present(win_id);
     do_fetch();
 
     // Event loop
     while (true) {
-        Zenith::WinEvent ev;
-        int r = zenith::win_poll(win_id, &ev);
+        Montauk::WinEvent ev;
+        int r = montauk::win_poll(win_id, &ev);
 
         if (r < 0) break;
 
         if (r == 0) {
-            zenith::sleep_ms(16);
+            montauk::sleep_ms(16);
             render(pixels);
-            zenith::win_present(win_id);
+            montauk::win_present(win_id);
             continue;
         }
 
@@ -559,17 +559,17 @@ extern "C" void _start() {
                     my >= btn_y && my < btn_y + BTN_H) {
                     g_phase = AppPhase::LOADING;
                     render(pixels);
-                    zenith::win_present(win_id);
+                    montauk::win_present(win_id);
                     do_fetch();
                 }
             }
         }
 
         render(pixels);
-        zenith::win_present(win_id);
+        montauk::win_present(win_id);
     }
 
     if (g_icon.pixels) svg_free(g_icon);
-    zenith::win_destroy(win_id);
-    zenith::exit(0);
+    montauk::win_destroy(win_id);
+    montauk::exit(0);
 }

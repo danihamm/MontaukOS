@@ -10,7 +10,7 @@
 
 #include "Syscall.hpp"
 
-namespace Zenith {
+namespace Montauk {
     static uint64_t Sys_GetTicks() {
         return Timekeeping::GetTicks();
     }

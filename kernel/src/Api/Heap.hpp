@@ -10,7 +10,7 @@
 #include <Memory/HHDM.hpp>
 #include <Memory/PageFrameAllocator.hpp>
 
-namespace Zenith {
+namespace Montauk {
 
     // Per-process heap allocation tracking (separate from Process struct to avoid bloating it)
     struct HeapAlloc {

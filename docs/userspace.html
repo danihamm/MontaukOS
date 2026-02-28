@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ZenithOS &mdash; Userspace Application Development</title>
+<title>MontaukOS &mdash; Userspace Application Development</title>
 <style>
   :root {
     --bg: #ffffff;
@@ -218,7 +218,7 @@
 <!--  SIDEBAR                                                          -->
 <!-- ================================================================= -->
 <nav class="sidebar">
-  <h2>ZenithOS Docs</h2>
+  <h2>MontaukOS Docs</h2>
   <ul>
     <li><a href="#overview">Overview</a></li>
     <li><a href="#getting-started">Getting Started</a>
@@ -272,7 +272,7 @@
 <!-- ------ Overview ------ -->
 <h1 id="overview">Userspace Developer's Handbook</h1>
 <p>
-  ZenithOS is a hobbyist 64-bit operating system written in C++20.
+  MontaukOS is a hobbyist 64-bit operating system written in C++20.
   Userspace programs run in Ring&nbsp;3, are loaded as static ELF64
   binaries, and communicate with the kernel through the x86-64
   <code>SYSCALL</code>/<code>SYSRET</code> mechanism.
@@ -294,7 +294,7 @@
 &#x251C;&#x2500;&#x2500; include/
 &#x2502;   &#x251C;&#x2500;&#x2500; Api/
 &#x2502;   &#x2502;   &#x2514;&#x2500;&#x2500; Syscall.hpp      # Syscall numbers &amp; data structures
-&#x2502;   &#x251C;&#x2500;&#x2500; zenith/
+&#x2502;   &#x251C;&#x2500;&#x2500; montauk/
 &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; syscall.h        # Inline asm wrappers &amp; typed API
 &#x2502;   &#x2502;   &#x2514;&#x2500;&#x2500; heap.h           # Userspace heap allocator (malloc/mfree/realloc)
 &#x2502;   &#x2514;&#x2500;&#x2500; libc/                # Minimal C standard library headers
@@ -311,7 +311,7 @@
 &#x2502;   &#x2502;   &#x2514;&#x2500;&#x2500; main.cpp         # Manual page viewer
 &#x2502;   &#x2514;&#x2500;&#x2500; doom/
 &#x2502;       &#x251C;&#x2500;&#x2500; Makefile             # DOOM build system
-&#x2502;       &#x251C;&#x2500;&#x2500; doomgeneric_zenith.c # ZenithOS platform layer
+&#x2502;       &#x251C;&#x2500;&#x2500; doomgeneric_montauk.c # MontaukOS platform layer
 &#x2502;       &#x2514;&#x2500;&#x2500; libc.c               # C library implementation
 &#x251C;&#x2500;&#x2500; bin/                     # Compiled .elf binaries
 &#x2514;&#x2500;&#x2500; obj/                     # Intermediate object files</code></pre>
@@ -387,19 +387,19 @@ make          # or: make -j$(nproc)</code></pre>
   <strong>Auto-exit:</strong> If <code>_start()</code> returns normally,
   the kernel's exit stub (mapped at <code>0x3FF000</code>) automatically
   calls <code>SYS_EXIT(0)</code>. You can also call
-  <code>zenith::exit(code)</code> explicitly at any point.
+  <code>montauk::exit(code)</code> explicitly at any point.
 </div>
 
 <h3 id="hello-world">Hello World</h3>
 <p class="file-path">programs/src/hello/main.cpp</p>
-<pre><code><span style="color:#8b949e">// Minimal ZenithOS userspace program</span>
-#include &lt;zenith/syscall.h&gt;
+<pre><code><span style="color:#8b949e">// Minimal MontaukOS userspace program</span>
+#include &lt;montauk/syscall.h&gt;
 
 extern "C" void _start() {
-    zenith::print("Hello from userspace!\n");
+    montauk::print("Hello from userspace!\n");
 }</code></pre>
 <p>
-  Include <code>&lt;zenith/syscall.h&gt;</code> for the full typed API.
+  Include <code>&lt;montauk/syscall.h&gt;</code> for the full typed API.
   That header pulls in <code>&lt;Api/Syscall.hpp&gt;</code> for
   constants and data structures.
 </p>
@@ -409,7 +409,7 @@ extern "C" void _start() {
 
 <h3 id="calling-convention">Calling Convention</h3>
 <p>
-  ZenithOS uses the hardware <code>SYSCALL</code> instruction on
+  MontaukOS uses the hardware <code>SYSCALL</code> instruction on
   x86-64. The kernel sets up the required MSRs
   (<code>IA32_STAR</code>, <code>IA32_LSTAR</code>,
   <code>IA32_FMASK</code>) during boot.
@@ -440,7 +440,7 @@ extern "C" void _start() {
 </p>
 
 <h3 id="raw-wrappers">Raw Syscall Wrappers</h3>
-<p class="file-path">programs/include/zenith/syscall.h</p>
+<p class="file-path">programs/include/montauk/syscall.h</p>
 <p>
   Seven inline functions cover 0&ndash;6 argument syscalls:
 </p>
@@ -459,7 +459,7 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 
 <h3 id="typed-wrappers">Typed API Wrappers</h3>
 <p>
-  The <code>zenith::</code> namespace provides type-safe wrappers around
+  The <code>montauk::</code> namespace provides type-safe wrappers around
   the raw syscalls. These are the recommended interface for application
   code. The full reference follows below.
 </p>
@@ -467,7 +467,7 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 <!-- ================================================================= -->
 <h2 id="syscall-ref">Syscall Reference</h2>
 <p>
-  ZenithOS v0.1.0 exposes <strong>26 syscalls</strong> (numbers
+  MontaukOS v0.1.0 exposes <strong>26 syscalls</strong> (numbers
   0&ndash;25), organized into 10 categories.
 </p>
 
@@ -475,7 +475,7 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 <h3 id="cat-process"><span class="badge badge-process">Process</span> Process Management</h3>
 
 <h4 id="sys-exit"><code>SYS_EXIT</code> (0) &mdash; Terminate the current process</h4>
-<pre><code><span class="sig">[[noreturn]] void zenith::exit(int code = 0);</span></code></pre>
+<pre><code><span class="sig">[[noreturn]] void montauk::exit(int code = 0);</span></code></pre>
 <p>
   Terminates the calling process. The exit code is currently unused by
   the kernel but reserved for future wait/status support.
@@ -483,28 +483,28 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 </p>
 
 <h4 id="sys-yield"><code>SYS_YIELD</code> (1) &mdash; Yield the CPU</h4>
-<pre><code><span class="sig">void zenith::yield();</span></code></pre>
+<pre><code><span class="sig">void montauk::yield();</span></code></pre>
 <p>
   Voluntarily yields the remainder of the current time slice, allowing
   the scheduler to run another ready process immediately.
 </p>
 
 <h4 id="sys-sleep-ms"><code>SYS_SLEEP_MS</code> (2) &mdash; Sleep for a duration</h4>
-<pre><code><span class="sig">void zenith::sleep_ms(uint64_t ms);</span></code></pre>
+<pre><code><span class="sig">void montauk::sleep_ms(uint64_t ms);</span></code></pre>
 <p>
   Suspends the calling process for at least <code>ms</code>
   milliseconds. Resolution depends on the APIC timer tick rate.
 </p>
 
 <h4 id="sys-getpid"><code>SYS_GETPID</code> (3) &mdash; Get process ID</h4>
-<pre><code><span class="sig">int zenith::getpid();</span></code></pre>
+<pre><code><span class="sig">int montauk::getpid();</span></code></pre>
 <p>
   Returns the PID of the calling process. Returns <code>-1</code> if
   called from the idle context (should not happen in userspace).
 </p>
 
 <h4 id="sys-spawn"><code>SYS_SPAWN</code> (20) &mdash; Spawn a new process</h4>
-<pre><code><span class="sig">int zenith::spawn(const char* path, const char* args = nullptr);</span></code></pre>
+<pre><code><span class="sig">int montauk::spawn(const char* path, const char* args = nullptr);</span></code></pre>
 <p>
   Loads the ELF binary at <code>path</code> (a VFS path like
   <code>"0:/hello.elf"</code>) and spawns it as a new process.
@@ -516,7 +516,7 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 </p>
 
 <h4 id="sys-waitpid"><code>SYS_WAITPID</code> (23) &mdash; Wait for a process to exit</h4>
-<pre><code><span class="sig">void zenith::waitpid(int pid);</span></code></pre>
+<pre><code><span class="sig">void montauk::waitpid(int pid);</span></code></pre>
 <p>
   Blocks the calling process until the process identified by
   <code>pid</code> has exited. Internally yields the CPU in a loop
@@ -527,7 +527,7 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 </p>
 
 <h4 id="sys-getargs"><code>SYS_GETARGS</code> (25) &mdash; Get process arguments</h4>
-<pre><code><span class="sig">int zenith::getargs(char* buf, uint64_t maxLen);</span></code></pre>
+<pre><code><span class="sig">int montauk::getargs(char* buf, uint64_t maxLen);</span></code></pre>
 <p>
   Copies the argument string passed to the current process (via
   <code>spawn()</code>) into <code>buf</code>, writing at most
@@ -540,14 +540,14 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 <h3 id="cat-console"><span class="badge badge-console">Console</span> Console I/O</h3>
 
 <h4 id="sys-print"><code>SYS_PRINT</code> (4) &mdash; Print a string</h4>
-<pre><code><span class="sig">void zenith::print(const char* text);</span></code></pre>
+<pre><code><span class="sig">void montauk::print(const char* text);</span></code></pre>
 <p>
   Writes a null-terminated string to the kernel terminal. Supports
   newlines (<code>\n</code>) and standard printable ASCII.
 </p>
 
 <h4 id="sys-putchar"><code>SYS_PUTCHAR</code> (5) &mdash; Print a single character</h4>
-<pre><code><span class="sig">void zenith::putchar(char c);</span></code></pre>
+<pre><code><span class="sig">void montauk::putchar(char c);</span></code></pre>
 <p>
   Writes a single character to the kernel terminal. Useful for building
   output character by character (e.g.&nbsp;printing integers).
@@ -557,7 +557,7 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 <h3 id="cat-fileio"><span class="badge badge-fileio">File I/O</span> File I/O</h3>
 
 <h4 id="sys-open"><code>SYS_OPEN</code> (6) &mdash; Open a file</h4>
-<pre><code><span class="sig">int zenith::open(const char* path);</span></code></pre>
+<pre><code><span class="sig">int montauk::open(const char* path);</span></code></pre>
 <p>
   Opens a file on the VFS. Paths use the format
   <code>"&lt;device&gt;:/&lt;name&gt;"</code> (e.g.&nbsp;<code>"0:/hello.elf"</code>
@@ -566,7 +566,7 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 </p>
 
 <h4 id="sys-read"><code>SYS_READ</code> (7) &mdash; Read from a file</h4>
-<pre><code><span class="sig">int zenith::read(int handle, uint8_t* buf, uint64_t offset, uint64_t size);</span></code></pre>
+<pre><code><span class="sig">int montauk::read(int handle, uint8_t* buf, uint64_t offset, uint64_t size);</span></code></pre>
 <p>
   Reads up to <code>size</code> bytes from the file at the given byte
   <code>offset</code> into <code>buf</code>. Returns the number of bytes
@@ -575,15 +575,15 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 </p>
 
 <h4 id="sys-getsize"><code>SYS_GETSIZE</code> (8) &mdash; Get file size</h4>
-<pre><code><span class="sig">uint64_t zenith::getsize(int handle);</span></code></pre>
+<pre><code><span class="sig">uint64_t montauk::getsize(int handle);</span></code></pre>
 <p>Returns the total size (in bytes) of the file associated with <code>handle</code>.</p>
 
 <h4 id="sys-close"><code>SYS_CLOSE</code> (9) &mdash; Close a file</h4>
-<pre><code><span class="sig">void zenith::close(int handle);</span></code></pre>
+<pre><code><span class="sig">void montauk::close(int handle);</span></code></pre>
 <p>Closes the file handle and releases associated kernel resources.</p>
 
 <h4 id="sys-readdir"><code>SYS_READDIR</code> (10) &mdash; List directory entries</h4>
-<pre><code><span class="sig">int zenith::readdir(const char* path, const char** names, int max);</span></code></pre>
+<pre><code><span class="sig">int montauk::readdir(const char* path, const char** names, int max);</span></code></pre>
 <p>
   Reads up to <code>max</code> directory entries from <code>path</code>.
   Entry name pointers are written into the <code>names</code> array.
@@ -602,16 +602,16 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 </p>
 
 <h4>Userspace Heap (recommended)</h4>
-<p class="file-path">programs/include/zenith/heap.h</p>
+<p class="file-path">programs/include/montauk/heap.h</p>
 <p>
-  Include <code>&lt;zenith/heap.h&gt;</code> for a proper free-list
+  Include <code>&lt;montauk/heap.h&gt;</code> for a proper free-list
   allocator that runs entirely in userspace. It calls
   <code>SYS_ALLOC</code> internally to obtain pages and manages
   sub-page allocations with a linked free list &mdash; adapted from
   the kernel's own <code>HeapAllocator</code>.
 </p>
 
-<pre><code><span class="sig">void* zenith::malloc(uint64_t size);</span></code></pre>
+<pre><code><span class="sig">void* montauk::malloc(uint64_t size);</span></code></pre>
 <p>
   Allocates <code>size</code> bytes from the userspace free list.
   Returns a 16-byte-aligned pointer, or <code>nullptr</code> on failure.
@@ -619,7 +619,7 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
   from the kernel via <code>SYS_ALLOC</code> (minimum 16&nbsp;KiB growth).
 </p>
 
-<pre><code><span class="sig">void zenith::mfree(void* ptr);</span></code></pre>
+<pre><code><span class="sig">void montauk::mfree(void* ptr);</span></code></pre>
 <p>
   Returns the block to the userspace free list.
   <strong>No syscall is made</strong> &mdash; the memory stays mapped
@@ -627,7 +627,7 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
   Passing <code>nullptr</code> is a safe no-op.
 </p>
 
-<pre><code><span class="sig">void* zenith::realloc(void* ptr, uint64_t size);</span></code></pre>
+<pre><code><span class="sig">void* montauk::realloc(void* ptr, uint64_t size);</span></code></pre>
 <p>
   Resizes the allocation at <code>ptr</code> to <code>size</code> bytes.
   Allocates a new block, copies the smaller of old/new sizes, and frees
@@ -638,37 +638,37 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 <h4>Low-Level Page Syscalls</h4>
 
 <h4 id="sys-alloc"><code>SYS_ALLOC</code> (11) &mdash; Map pages</h4>
-<pre><code><span class="sig">void* zenith::alloc(uint64_t size);</span></code></pre>
+<pre><code><span class="sig">void* montauk::alloc(uint64_t size);</span></code></pre>
 <p>
   Maps <code>size</code> bytes of zeroed physical pages into the
   process's address space (starting at <code>0x40000000</code>).
   The size is rounded up to the nearest page boundary (4&nbsp;KiB).
   Returns a pointer to the mapped region, or <code>nullptr</code> on
   failure. This is the backing primitive for
-  <code>zenith::malloc</code> &mdash; most programs should use the heap
+  <code>montauk::malloc</code> &mdash; most programs should use the heap
   API instead of calling this directly.
 </p>
 
 <h4 id="sys-free"><code>SYS_FREE</code> (12) &mdash; Unmap pages (no-op)</h4>
-<pre><code><span class="sig">void zenith::free(void* ptr);</span></code></pre>
+<pre><code><span class="sig">void montauk::free(void* ptr);</span></code></pre>
 <p>
   Reserved for future page-level unmapping. Currently a no-op &mdash;
   pages are reclaimed when the process exits. Use
-  <code>zenith::mfree</code> for heap allocations.
+  <code>montauk::mfree</code> for heap allocations.
 </p>
 
 <!-- ---- Timekeeping ---- -->
 <h3 id="cat-time"><span class="badge badge-time">Time</span> Timekeeping</h3>
 
 <h4 id="sys-getticks"><code>SYS_GETTICKS</code> (13) &mdash; Get tick count</h4>
-<pre><code><span class="sig">uint64_t zenith::get_ticks();</span></code></pre>
+<pre><code><span class="sig">uint64_t montauk::get_ticks();</span></code></pre>
 <p>
   Returns the number of APIC timer ticks since boot. The tick rate
   depends on the hardware and APIC timer calibration.
 </p>
 
 <h4 id="sys-getmilliseconds"><code>SYS_GETMILLISECONDS</code> (14) &mdash; Get milliseconds since boot</h4>
-<pre><code><span class="sig">uint64_t zenith::get_milliseconds();</span></code></pre>
+<pre><code><span class="sig">uint64_t montauk::get_milliseconds();</span></code></pre>
 <p>
   Returns wall-clock milliseconds elapsed since boot. Useful for
   calculating uptime or measuring durations.
@@ -678,7 +678,7 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 <h3 id="cat-system"><span class="badge badge-system">System</span> System Information</h3>
 
 <h4 id="sys-getinfo"><code>SYS_GETINFO</code> (15) &mdash; Get OS information</h4>
-<pre><code><span class="sig">void zenith::get_info(Zenith::SysInfo* info);</span></code></pre>
+<pre><code><span class="sig">void montauk::get_info(Montauk::SysInfo* info);</span></code></pre>
 <p>
   Fills in a <a href="#struct-sysinfo"><code>SysInfo</code></a> structure
   with the OS name, version string, API version number, and maximum
@@ -689,14 +689,14 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 <h3 id="cat-keyboard"><span class="badge badge-keyboard">Keyboard</span> Keyboard Input</h3>
 
 <h4 id="sys-iskeyavailable"><code>SYS_ISKEYAVAILABLE</code> (16) &mdash; Check for pending key</h4>
-<pre><code><span class="sig">bool zenith::is_key_available();</span></code></pre>
+<pre><code><span class="sig">bool montauk::is_key_available();</span></code></pre>
 <p>
   Returns <code>true</code> if a key event is available in the PS/2
   keyboard buffer. Non-blocking.
 </p>
 
 <h4 id="sys-getkey"><code>SYS_GETKEY</code> (17) &mdash; Get a key event</h4>
-<pre><code><span class="sig">void zenith::getkey(Zenith::KeyEvent* out);</span></code></pre>
+<pre><code><span class="sig">void montauk::getkey(Montauk::KeyEvent* out);</span></code></pre>
 <p>
   Fills in a <a href="#struct-keyevent"><code>KeyEvent</code></a>
   structure with the next keyboard event (press or release), including
@@ -704,7 +704,7 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 </p>
 
 <h4 id="sys-getchar"><code>SYS_GETCHAR</code> (18) &mdash; Read a character (blocking)</h4>
-<pre><code><span class="sig">char zenith::getchar();</span></code></pre>
+<pre><code><span class="sig">char montauk::getchar();</span></code></pre>
 <p>
   Blocks until a printable character key-press is available, then
   returns the ASCII character. This is the simplest way to read
@@ -715,7 +715,7 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 <h3 id="cat-network"><span class="badge badge-network">Network</span> Networking</h3>
 
 <h4 id="sys-ping"><code>SYS_PING</code> (19) &mdash; Send an ICMP echo request</h4>
-<pre><code><span class="sig">int32_t zenith::ping(uint32_t ip, uint32_t timeoutMs = 3000);</span></code></pre>
+<pre><code><span class="sig">int32_t montauk::ping(uint32_t ip, uint32_t timeoutMs = 3000);</span></code></pre>
 <p>
   Sends an ICMP echo request to <code>ip</code> and waits up to
   <code>timeoutMs</code> milliseconds for a reply. The IP address is in
@@ -729,7 +729,7 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 <h3 id="cat-framebuffer"><span class="badge badge-framebuf">Framebuffer</span> Framebuffer Access</h3>
 
 <h4 id="sys-fbinfo"><code>SYS_FBINFO</code> (21) &mdash; Get framebuffer information</h4>
-<pre><code><span class="sig">void zenith::fb_info(Zenith::FbInfo* info);</span></code></pre>
+<pre><code><span class="sig">void montauk::fb_info(Montauk::FbInfo* info);</span></code></pre>
 <p>
   Fills in a <a href="#struct-fbinfo"><code>FbInfo</code></a> structure
   with the framebuffer dimensions, pitch (bytes per scanline), and
@@ -738,7 +738,7 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 </p>
 
 <h4 id="sys-fbmap"><code>SYS_FBMAP</code> (22) &mdash; Map framebuffer into process memory</h4>
-<pre><code><span class="sig">void* zenith::fb_map();</span></code></pre>
+<pre><code><span class="sig">void* montauk::fb_map();</span></code></pre>
 <p>
   Maps the physical framebuffer into the calling process's address
   space at <code>0x50000000</code> and returns the user virtual address.
@@ -756,7 +756,7 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 <h3 id="cat-terminal"><span class="badge badge-system">Terminal</span> Terminal</h3>
 
 <h4 id="sys-termsize"><code>SYS_TERMSIZE</code> (24) &mdash; Get terminal dimensions</h4>
-<pre><code><span class="sig">void zenith::termsize(int* cols, int* rows);</span></code></pre>
+<pre><code><span class="sig">void montauk::termsize(int* cols, int* rows);</span></code></pre>
 <p>
   Returns the current terminal dimensions (character grid) via the
   two output pointers. Columns are packed in the low 32&nbsp;bits and
@@ -768,16 +768,16 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 <!-- ================================================================= -->
 <h2 id="data-structures">Data Structures</h2>
 
-<h3 id="struct-sysinfo"><code>Zenith::SysInfo</code></h3>
+<h3 id="struct-sysinfo"><code>Montauk::SysInfo</code></h3>
 <p class="file-path">programs/include/Api/Syscall.hpp</p>
 <pre><code>struct SysInfo {
-    char     osName[32];       <span style="color:#8b949e">// e.g. "ZenithOS"</span>
+    char     osName[32];       <span style="color:#8b949e">// e.g. "MontaukOS"</span>
     char     osVersion[32];    <span style="color:#8b949e">// e.g. "0.1.0"</span>
     uint32_t apiVersion;       <span style="color:#8b949e">// Current: 2</span>
     uint32_t maxProcesses;     <span style="color:#8b949e">// Current: 16</span>
 };</code></pre>
 
-<h3 id="struct-fbinfo"><code>Zenith::FbInfo</code></h3>
+<h3 id="struct-fbinfo"><code>Montauk::FbInfo</code></h3>
 <pre><code>struct FbInfo {
     uint64_t width;       <span style="color:#8b949e">// Framebuffer width in pixels</span>
     uint64_t height;      <span style="color:#8b949e">// Framebuffer height in pixels</span>
@@ -786,7 +786,7 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
     uint64_t userAddr;    <span style="color:#8b949e">// Reserved (0 until mapped via SYS_FBMAP)</span>
 };</code></pre>
 
-<h3 id="struct-keyevent"><code>Zenith::KeyEvent</code></h3>
+<h3 id="struct-keyevent"><code>Montauk::KeyEvent</code></h3>
 <pre><code>struct KeyEvent {
     uint8_t scancode;   <span style="color:#8b949e">// Raw PS/2 scancode</span>
     char    ascii;      <span style="color:#8b949e">// Translated ASCII character (0 if non-printable)</span>
@@ -796,7 +796,7 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
     bool    alt;        <span style="color:#8b949e">// Alt modifier active</span>
 };</code></pre>
 
-<h3 id="struct-syscallframe"><code>Zenith::SyscallFrame</code> (kernel only)</h3>
+<h3 id="struct-syscallframe"><code>Montauk::SyscallFrame</code> (kernel only)</h3>
 <pre><code>struct SyscallFrame {
     uint64_t r15, r14, r13, r12, rbp, rbx;   <span style="color:#8b949e">// callee-saved</span>
     uint64_t arg6, arg5, arg4, arg3, arg2, arg1;
@@ -813,26 +813,26 @@ int64_t syscall6(uint64_t nr, uint64_t a1, ..., uint64_t a6);</code></pre>
 <h2 id="shell-walkthrough">Shell Application Walkthrough</h2>
 <p class="file-path">programs/src/shell/main.cpp</p>
 <p>
-  The built-in shell is the best example of a real ZenithOS application.
+  The built-in shell is the best example of a real MontaukOS application.
   It demonstrates most of the available syscalls.
 </p>
 
 <h3>Initialization</h3>
 <pre><code>extern "C" void _start() {
-    zenith::print("\n  ZenithOS Shell v0.1\n");
-    zenith::print("  Type 'help' for available commands.\n\n");
+    montauk::print("\n  MontaukOS Shell v0.1\n");
+    montauk::print("  Type 'help' for available commands.\n\n");
 
     char line[256];
     int pos = 0;
     prompt();
 
     while (true) {
-        char c = zenith::getchar();       <span style="color:#8b949e">// blocking read</span>
+        char c = montauk::getchar();       <span style="color:#8b949e">// blocking read</span>
         <span style="color:#8b949e">// ... handle input, echo, backspace ...</span>
     }
 }</code></pre>
 <p>
-  The shell uses <code>zenith::getchar()</code> in a loop for blocking
+  The shell uses <code>montauk::getchar()</code> in a loop for blocking
   character-by-character input, manually handling echo and backspace.
 </p>
 
@@ -898,11 +898,11 @@ char path[128];
 <span style="color:#8b949e">// ... copy "0:/" + filename into path ...</span>
 
 <span style="color:#8b949e">// 2. Open</span>
-int handle = zenith::open(path);
+int handle = montauk::open(path);
 if (handle &lt; 0) { <span style="color:#8b949e">/* error */</span> return; }
 
 <span style="color:#8b949e">// 3. Get size</span>
-uint64_t size = zenith::getsize(handle);
+uint64_t size = montauk::getsize(handle);
 
 <span style="color:#8b949e">// 4. Read in chunks</span>
 uint8_t buf[512];
@@ -910,15 +910,15 @@ uint64_t offset = 0;
 while (offset &lt; size) {
     uint64_t chunk = size - offset;
     if (chunk &gt; sizeof(buf) - 1) chunk = sizeof(buf) - 1;
-    int bytesRead = zenith::read(handle, buf, offset, chunk);
+    int bytesRead = montauk::read(handle, buf, offset, chunk);
     if (bytesRead &lt;= 0) break;
     buf[bytesRead] = '\0';
-    zenith::print((const char*)buf);
+    montauk::print((const char*)buf);
     offset += bytesRead;
 }
 
 <span style="color:#8b949e">// 5. Close</span>
-zenith::close(handle);</code></pre>
+montauk::close(handle);</code></pre>
 
 <h3>Pattern: IP Networking</h3>
 <pre><code><span style="color:#8b949e">// Parse "10.0.2.2" into uint32_t in little-endian order</span>
@@ -927,10 +927,10 @@ parse_ip("10.0.2.2", &amp;ip);  <span style="color:#8b949e">// ip = 0x0202000A</
 
 <span style="color:#8b949e">// Send 4 pings with 1-second intervals</span>
 for (int i = 0; i &lt; 4; i++) {
-    int32_t rtt = zenith::ping(ip, 3000);
+    int32_t rtt = montauk::ping(ip, 3000);
     if (rtt &lt; 0) { <span style="color:#8b949e">/* timeout */</span> }
     else { <span style="color:#8b949e">/* reply in rtt ms */</span> }
-    if (i &lt; 3) zenith::sleep_ms(1000);
+    if (i &lt; 3) montauk::sleep_ms(1000);
 }</code></pre>
 
 <!-- ================================================================= -->
@@ -975,9 +975,9 @@ for (int i = 0; i &lt; 4; i++) {
 </p>
 
 <h3>Step 4: Add a Typed Userspace Wrapper</h3>
-<p class="file-path">programs/include/zenith/syscall.h</p>
+<p class="file-path">programs/include/montauk/syscall.h</p>
 <pre><code>inline int64_t my_func(uint64_t arg1, const char* arg2) {
-    return syscall2(Zenith::SYS_MYFUNC, arg1, (uint64_t)arg2);
+    return syscall2(Montauk::SYS_MYFUNC, arg1, (uint64_t)arg2);
 }</code></pre>
 <p>
   Choose the appropriate <code>syscallN</code> variant based on the
@@ -999,7 +999,7 @@ Kt::KernelLogStream(Kt::OK, "Syscall") &lt;&lt; "SYSCALL/SYSRET initialized (LST
   <tr><td>1</td><td><code>kernel/src/Api/Syscall.hpp</code></td><td>Add <code>SYS_MYFUNC</code> constant (+ any new structs)</td></tr>
   <tr><td>2</td><td><code>kernel/src/Api/Syscall.cpp</code></td><td>Add <code>Sys_MyFunc()</code> implementation + dispatch case</td></tr>
   <tr><td>3</td><td><code>programs/include/Api/Syscall.hpp</code></td><td>Add matching <code>SYS_MYFUNC</code> constant (+ any new structs)</td></tr>
-  <tr><td>4</td><td><code>programs/include/zenith/syscall.h</code></td><td>Add typed wrapper in <code>zenith::</code> namespace</td></tr>
+  <tr><td>4</td><td><code>programs/include/montauk/syscall.h</code></td><td>Add typed wrapper in <code>montauk::</code> namespace</td></tr>
   <tr><td>5</td><td><em>(optional)</em></td><td>Update syscall count in boot log</td></tr>
 </table>
 
@@ -1032,13 +1032,13 @@ Kt::KernelLogStream(Kt::OK, "Syscall") &lt;&lt; "SYSCALL/SYSRET initialized (LST
     <code>stdlib.h</code>, and <code>string.h</code>.</li>
   <li><strong>No dynamic linking</strong> &mdash; all programs are statically linked.</li>
   <li><strong>No argc/argv</strong> &mdash; <code>_start</code> receives no
-    <code>argc</code>/<code>argv</code>. Use <code>zenith::getargs()</code>
+    <code>argc</code>/<code>argv</code>. Use <code>montauk::getargs()</code>
     to retrieve a single argument string (max 255 chars) passed via
-    <code>zenith::spawn()</code>.</li>
+    <code>montauk::spawn()</code>.</li>
   <li><strong>No page-level <code>free()</code></strong> &mdash;
     <code>SYS_FREE</code> is a no-op; pages mapped via <code>SYS_ALLOC</code>
     are only reclaimed when the process exits. However, the userspace heap
-    (<code>zenith::malloc</code>/<code>zenith::mfree</code>) does reuse
+    (<code>montauk::malloc</code>/<code>montauk::mfree</code>) does reuse
     memory via a free list.</li>
   <li><strong>16 process slots</strong> &mdash; the scheduler supports a
     maximum of 16 concurrent processes.</li>
@@ -1054,7 +1054,7 @@ Kt::KernelLogStream(Kt::OK, "Syscall") &lt;&lt; "SYSCALL/SYSRET initialized (LST
 
 <hr>
 <p style="color:var(--fg-muted); font-size:.85rem; margin-top:2rem;">
-  ZenithOS Documentation &mdash; Copyright &copy; 2025-2026 Daniel Hammer
+  MontaukOS Documentation &mdash; Copyright &copy; 2025-2026 Daniel Hammer
 </p>
 
 </main>

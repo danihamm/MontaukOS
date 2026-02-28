@@ -1,7 +1,7 @@
 #pragma once
 #include <Sched/Scheduler.hpp>
 
-namespace Zenith {
+namespace Montauk {
     // Find the process that owns the I/O ring buffers for a redirected process.
     // If proc owns buffers itself (spawned via spawn_redir), returns proc.
     // If proc inherited redirection (spawned via spawn from a redirected parent),

@@ -1,6 +1,6 @@
 /*
     * app_procmgr.cpp
-    * ZenithOS Desktop - Process Manager
+    * MontaukOS Desktop - Process Manager
     * Copyright (c) 2026 Daniel Hammer
 */
 
@@ -18,7 +18,7 @@ static constexpr int PM_POLL_MS   = 1000;
 
 struct ProcMgrState {
     DesktopState* desktop;
-    Zenith::ProcInfo procs[PM_MAX_PROCS];
+    Montauk::ProcInfo procs[PM_MAX_PROCS];
     int proc_count;
     int selected;          // selected row index (-1 = none)
     uint64_t last_poll_ms;
@@ -32,7 +32,7 @@ static void procmgr_on_poll(Window* win) {
     ProcMgrState* pm = (ProcMgrState*)win->app_data;
     if (!pm) return;
 
-    uint64_t now = zenith::get_milliseconds();
+    uint64_t now = montauk::get_milliseconds();
     if (now - pm->last_poll_ms < PM_POLL_MS) return;
     pm->last_poll_ms = now;
 
@@ -42,7 +42,7 @@ static void procmgr_on_poll(Window* win) {
         prev_pid = pm->procs[pm->selected].pid;
     }
 
-    pm->proc_count = zenith::proclist(pm->procs, PM_MAX_PROCS);
+    pm->proc_count = montauk::proclist(pm->procs, PM_MAX_PROCS);
 
     // Restore selection by matching PID
     pm->selected = -1;
@@ -172,7 +172,7 @@ static void procmgr_on_mouse(Window* win, MouseEvent& ev) {
         if (btn_rect.contains(lx, ly)) {
             if (pm->selected >= 0 && pm->selected < pm->proc_count
                 && pm->procs[pm->selected].pid != 0) {
-                zenith::kill(pm->procs[pm->selected].pid);
+                montauk::kill(pm->procs[pm->selected].pid);
                 pm->last_poll_ms = 0; // force refresh
             }
             return;
@@ -191,7 +191,7 @@ static void procmgr_on_mouse(Window* win, MouseEvent& ev) {
     }
 }
 
-static void procmgr_on_key(Window* win, const Zenith::KeyEvent& key) {
+static void procmgr_on_key(Window* win, const Montauk::KeyEvent& key) {
     ProcMgrState* pm = (ProcMgrState*)win->app_data;
     if (!pm || !key.pressed) return;
 
@@ -203,7 +203,7 @@ static void procmgr_on_key(Window* win, const Zenith::KeyEvent& key) {
     } else if (key.scancode == 0x53) { // Delete key
         if (pm->selected >= 0 && pm->selected < pm->proc_count
             && pm->procs[pm->selected].pid != 0) {
-            zenith::kill(pm->procs[pm->selected].pid);
+            montauk::kill(pm->procs[pm->selected].pid);
             pm->last_poll_ms = 0; // force refresh
         }
     }
@@ -211,7 +211,7 @@ static void procmgr_on_key(Window* win, const Zenith::KeyEvent& key) {
 
 static void procmgr_on_close(Window* win) {
     if (win->app_data) {
-        zenith::mfree(win->app_data);
+        montauk::mfree(win->app_data);
         win->app_data = nullptr;
     }
 }
@@ -226,14 +226,14 @@ void open_procmgr(DesktopState* ds) {
 
     Window* win = &ds->windows[idx];
 
-    ProcMgrState* pm = (ProcMgrState*)zenith::malloc(sizeof(ProcMgrState));
-    zenith::memset(pm, 0, sizeof(ProcMgrState));
+    ProcMgrState* pm = (ProcMgrState*)montauk::malloc(sizeof(ProcMgrState));
+    montauk::memset(pm, 0, sizeof(ProcMgrState));
     pm->desktop = ds;
     pm->selected = -1;
     pm->last_poll_ms = 0;
 
     // Initial poll
-    pm->proc_count = zenith::proclist(pm->procs, PM_MAX_PROCS);
+    pm->proc_count = montauk::proclist(pm->procs, PM_MAX_PROCS);
 
     win->app_data = pm;
     win->on_draw = procmgr_on_draw;

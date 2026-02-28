@@ -1,6 +1,6 @@
 /*
     * libc.c
-    * Minimal C standard library for ZenithOS userspace programs
+    * Minimal C standard library for MontaukOS userspace programs
     * Based on the proven libc from the DOOM port.
     * Copyright (c) 2025-2026 Daniel Hammer
 */

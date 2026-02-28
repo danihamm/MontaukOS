@@ -1,6 +1,6 @@
 /*
     * app_mandelbrot.cpp
-    * ZenithOS Desktop - Mandelbrot set visualizer
+    * MontaukOS Desktop - Mandelbrot set visualizer
     * Supports zoom (scroll wheel), pan (drag), and reset (R key)
     * Copyright (c) 2026 Daniel Hammer
 */
@@ -242,7 +242,7 @@ static void mb_on_mouse(Window* win, MouseEvent& ev) {
     }
 }
 
-static void mb_on_key(Window* win, const Zenith::KeyEvent& key) {
+static void mb_on_key(Window* win, const Montauk::KeyEvent& key) {
     MandelbrotState* mb = (MandelbrotState*)win->app_data;
     if (!mb || !key.pressed) return;
 
@@ -262,7 +262,7 @@ static void mb_on_key(Window* win, const Zenith::KeyEvent& key) {
 
 static void mb_on_close(Window* win) {
     if (win->app_data) {
-        zenith::mfree(win->app_data);
+        montauk::mfree(win->app_data);
         win->app_data = nullptr;
     }
 }
@@ -278,8 +278,8 @@ void open_mandelbrot(DesktopState* ds) {
     Window* win = &ds->windows[idx];
     Rect cr = win->content_rect();
 
-    MandelbrotState* mb = (MandelbrotState*)zenith::malloc(sizeof(MandelbrotState));
-    zenith::memset(mb, 0, sizeof(MandelbrotState));
+    MandelbrotState* mb = (MandelbrotState*)montauk::malloc(sizeof(MandelbrotState));
+    montauk::memset(mb, 0, sizeof(MandelbrotState));
     mb->desktop = ds;
     mb->center_x = -fp_from_int(1) / 2; // -0.5
     mb->center_y = 0;

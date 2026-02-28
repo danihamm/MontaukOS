@@ -248,7 +248,7 @@ extern "C" void kmain() {
     Fs::Vfs::RegisterDrive(0, &ramdiskDriver);
 
     Hal::LoadTSS();
-    Zenith::InitializeSyscalls();
+    Montauk::InitializeSyscalls();
 
     Sched::Initialize();
 

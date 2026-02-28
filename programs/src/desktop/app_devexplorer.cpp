@@ -1,6 +1,6 @@
 /*
     * app_devexplorer.cpp
-    * ZenithOS Desktop - Device Explorer (lists hardware detected by the kernel)
+    * MontaukOS Desktop - Device Explorer (lists hardware detected by the kernel)
     * Copyright (c) 2026 Daniel Hammer
 */
 
@@ -43,7 +43,7 @@ static Color category_colors[] = {
 
 struct DevExplorerState {
     DesktopState* desktop;
-    Zenith::DevInfo devs[DE_MAX_DEVS];
+    Montauk::DevInfo devs[DE_MAX_DEVS];
     int dev_count;
     bool collapsed[NUM_CATEGORIES]; // per-category collapse state
     int selected_row;               // index into visible display rows (-1 = none)
@@ -130,11 +130,11 @@ static void devexplorer_on_poll(Window* win) {
     DevExplorerState* de = (DevExplorerState*)win->app_data;
     if (!de) return;
 
-    uint64_t now = zenith::get_milliseconds();
+    uint64_t now = montauk::get_milliseconds();
     if (now - de->last_poll_ms < DE_POLL_MS) return;
     de->last_poll_ms = now;
 
-    de->dev_count = zenith::devlist(de->devs, DE_MAX_DEVS);
+    de->dev_count = montauk::devlist(de->devs, DE_MAX_DEVS);
 }
 
 static void devexplorer_on_draw(Window* win, Framebuffer& fb) {
@@ -364,7 +364,7 @@ static void devexplorer_on_mouse(Window* win, MouseEvent& ev) {
     }
 }
 
-static void devexplorer_on_key(Window* win, const Zenith::KeyEvent& key) {
+static void devexplorer_on_key(Window* win, const Montauk::KeyEvent& key) {
     DevExplorerState* de = (DevExplorerState*)win->app_data;
     if (!de || !key.pressed) return;
 
@@ -437,7 +437,7 @@ static void devexplorer_on_key(Window* win, const Zenith::KeyEvent& key) {
 
 static void devexplorer_on_close(Window* win) {
     if (win->app_data) {
-        zenith::mfree(win->app_data);
+        montauk::mfree(win->app_data);
         win->app_data = nullptr;
     }
 }
@@ -452,8 +452,8 @@ void open_devexplorer(DesktopState* ds) {
 
     Window* win = &ds->windows[idx];
 
-    DevExplorerState* de = (DevExplorerState*)zenith::malloc(sizeof(DevExplorerState));
-    zenith::memset(de, 0, sizeof(DevExplorerState));
+    DevExplorerState* de = (DevExplorerState*)montauk::malloc(sizeof(DevExplorerState));
+    montauk::memset(de, 0, sizeof(DevExplorerState));
     de->desktop = ds;
     de->selected_row = -1;
     de->scroll_y = 0;
@@ -464,7 +464,7 @@ void open_devexplorer(DesktopState* ds) {
         de->collapsed[i] = false;
 
     // Initial poll
-    de->dev_count = zenith::devlist(de->devs, DE_MAX_DEVS);
+    de->dev_count = montauk::devlist(de->devs, DE_MAX_DEVS);
 
     win->app_data = de;
     win->on_draw = devexplorer_on_draw;

@@ -12,7 +12,7 @@
 #include "Syscall.hpp"
 #include "Common.hpp"
 
-namespace Zenith {
+namespace Montauk {
 
     static int Sys_SpawnRedir(const char* path, const char* args) {
         int childPid = Sched::Spawn(path, args);

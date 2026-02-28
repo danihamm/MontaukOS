@@ -4,11 +4,11 @@
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
+#include <montauk/syscall.h>
 
 static void print_int(uint64_t n) {
     if (n == 0) {
-        zenith::putchar('0');
+        montauk::putchar('0');
         return;
     }
     char buf[20];
@@ -18,7 +18,7 @@ static void print_int(uint64_t n) {
         n /= 10;
     }
     for (int j = i - 1; j >= 0; j--) {
-        zenith::putchar(buf[j]);
+        montauk::putchar(buf[j]);
     }
 }
 
@@ -52,55 +52,55 @@ static bool parse_ip(const char* s, uint32_t* out) {
 
 static void print_ip(uint32_t ip) {
     print_int(ip & 0xFF);
-    zenith::putchar('.');
+    montauk::putchar('.');
     print_int((ip >> 8) & 0xFF);
-    zenith::putchar('.');
+    montauk::putchar('.');
     print_int((ip >> 16) & 0xFF);
-    zenith::putchar('.');
+    montauk::putchar('.');
     print_int((ip >> 24) & 0xFF);
 }
 
 extern "C" void _start() {
     char args[256];
-    int len = zenith::getargs(args, sizeof(args));
+    int len = montauk::getargs(args, sizeof(args));
 
     if (len <= 0 || args[0] == '\0') {
-        zenith::print("Usage: ping <host>\n");
-        zenith::exit(1);
+        montauk::print("Usage: ping <host>\n");
+        montauk::exit(1);
     }
 
     uint32_t ip;
     if (!parse_ip(args, &ip)) {
-        ip = zenith::resolve(args);
+        ip = montauk::resolve(args);
         if (ip == 0) {
-            zenith::print("Could not resolve: ");
-            zenith::print(args);
-            zenith::putchar('\n');
-            zenith::exit(1);
+            montauk::print("Could not resolve: ");
+            montauk::print(args);
+            montauk::putchar('\n');
+            montauk::exit(1);
         }
     }
 
-    zenith::print("PING ");
-    zenith::print(args);
-    zenith::print(" (");
+    montauk::print("PING ");
+    montauk::print(args);
+    montauk::print(" (");
     print_ip(ip);
-    zenith::print(")\n");
+    montauk::print(")\n");
 
     for (int i = 0; i < 4; i++) {
-        int32_t rtt = zenith::ping(ip, 3000);
+        int32_t rtt = montauk::ping(ip, 3000);
         if (rtt < 0) {
-            zenith::print("  Request timed out\n");
+            montauk::print("  Request timed out\n");
         } else {
-            zenith::print("  Reply from ");
+            montauk::print("  Reply from ");
             print_ip(ip);
-            zenith::print(": time=");
+            montauk::print(": time=");
             print_int((uint64_t)rtt);
-            zenith::print("ms\n");
+            montauk::print("ms\n");
         }
         if (i < 3) {
-            zenith::sleep_ms(1000);
+            montauk::sleep_ms(1000);
         }
     }
 
-    zenith::exit(0);
+    montauk::exit(0);
 }

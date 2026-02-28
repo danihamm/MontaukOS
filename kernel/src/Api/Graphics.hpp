@@ -16,7 +16,7 @@
 #include "Common.hpp"
 #include "../Libraries/flanterm/src/flanterm.h"
 
-namespace Zenith {
+namespace Montauk {
 
     static void Sys_FbInfo(FbInfo* out) {
         if (out == nullptr) return;

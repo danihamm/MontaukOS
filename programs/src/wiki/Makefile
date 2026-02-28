@@ -1,4 +1,4 @@
-# Makefile for wiki (Wikipedia client) on ZenithOS
+# Makefile for wiki (Wikipedia client) on MontaukOS
 # Copyright (c) 2025-2026 Daniel Hammer
 
 MAKEFLAGS += -rR

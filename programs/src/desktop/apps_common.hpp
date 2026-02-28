@@ -6,9 +6,9 @@
 
 #pragma once
 
-#include <zenith/syscall.h>
-#include <zenith/string.h>
-#include <zenith/heap.h>
+#include <montauk/syscall.h>
+#include <montauk/string.h>
+#include <montauk/heap.h>
 #include <gui/gui.hpp>
 #include <gui/framebuffer.hpp>
 #include <gui/font.hpp>
@@ -95,7 +95,7 @@ inline int snprintf(char* buf, int size, const char* fmt, ...) {
 // ============================================================================
 
 inline void str_append(char* dst, const char* src, int max) {
-    int len = zenith::slen(dst);
+    int len = montauk::slen(dst);
     int i = 0;
     while (src[i] && len < max - 1) {
         dst[len++] = src[i++];

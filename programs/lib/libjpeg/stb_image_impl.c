@@ -1,6 +1,6 @@
 /*
  * stb_image_impl.c
- * Single compilation unit for stb_image JPEG decoder on ZenithOS
+ * Single compilation unit for stb_image JPEG decoder on MontaukOS
  * Copyright (c) 2026 Daniel Hammer
  */
 
@@ -21,7 +21,7 @@
 #define STBI_NO_STDIO
 #define STBI_NO_THREAD_LOCALS
 
-/* Route allocations through libc (which uses ZenithOS heap). */
+/* Route allocations through libc (which uses MontaukOS heap). */
 #define STBI_MALLOC(sz)         malloc(sz)
 #define STBI_FREE(p)            free(p)
 #define STBI_REALLOC(p, newsz)  realloc(p, newsz)

@@ -1,13 +1,13 @@
 /*
     * main.cpp
-    * ZenithOS Wikipedia GUI client - standalone Window Server process
+    * MontaukOS Wikipedia GUI client - standalone Window Server process
     * Fetches articles via TLS (BearSSL), renders with Roboto TTF
     * Copyright (c) 2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
-#include <zenith/string.h>
-#include <zenith/heap.h>
+#include <montauk/syscall.h>
+#include <montauk/string.h>
+#include <montauk/heap.h>
 #include <gui/gui.hpp>
 #include <gui/truetype.hpp>
 #include <tls/tls.hpp>
@@ -139,7 +139,7 @@ static int wiki_fetch(const char* path, char* respBuf, int respMax) {
     int reqLen = snprintf(request, sizeof(request),
         "GET %s HTTP/1.0\r\n"
         "Host: %s\r\n"
-        "User-Agent: ZenithOS/1.0 wikipedia\r\n"
+        "User-Agent: MontaukOS/1.0 wikipedia\r\n"
         "Accept: application/json\r\n"
         "Connection: close\r\n"
         "\r\n",
@@ -381,7 +381,7 @@ static void build_display_lines(const char* title, const char* extract, int extr
 static void do_search(const char* query) {
     // Lazy TLS/DNS init
     if (!g_tls_ready) {
-        g_server_ip = zenith::resolve(WIKI_HOST);
+        g_server_ip = montauk::resolve(WIKI_HOST);
         if (g_server_ip == 0) {
             snprintf(g_status, sizeof(g_status),
                      "Error: could not resolve en.wikipedia.org");
@@ -536,52 +536,52 @@ static void render(uint32_t* pixels) {
 
 extern "C" void _start() {
     // Allocate large buffers from heap
-    g_lines       = (WikiLine*)zenith::malloc(MAX_LINES * sizeof(WikiLine));
+    g_lines       = (WikiLine*)montauk::malloc(MAX_LINES * sizeof(WikiLine));
     g_resp_buf    = (char*)malloc(RESP_MAX + 1);
     g_extract_buf = (char*)malloc(RESP_MAX + 1);
-    if (!g_lines || !g_resp_buf || !g_extract_buf) zenith::exit(1);
+    if (!g_lines || !g_resp_buf || !g_extract_buf) montauk::exit(1);
 
     // Load fonts
     auto load_font = [](const char* path) -> TrueTypeFont* {
-        TrueTypeFont* f = (TrueTypeFont*)zenith::malloc(sizeof(TrueTypeFont));
+        TrueTypeFont* f = (TrueTypeFont*)montauk::malloc(sizeof(TrueTypeFont));
         if (!f) return nullptr;
-        zenith::memset(f, 0, sizeof(TrueTypeFont));
-        if (!f->init(path)) { zenith::mfree(f); return nullptr; }
+        montauk::memset(f, 0, sizeof(TrueTypeFont));
+        if (!f->init(path)) { montauk::mfree(f); return nullptr; }
         return f;
     };
     g_font       = load_font("0:/fonts/Roboto-Medium.ttf");
     g_font_bold  = load_font("0:/fonts/Roboto-Bold.ttf");
     g_font_serif = load_font("0:/fonts/NotoSerif-SemiBold.ttf");
-    if (!g_font) zenith::exit(1);
+    if (!g_font) montauk::exit(1);
 
     g_line_h = g_font->get_line_height(FONT_SIZE) + 4;
 
-    apply_scale(zenith::win_getscale());
+    apply_scale(montauk::win_getscale());
 
     // Create window
-    Zenith::WinCreateResult wres;
-    if (zenith::win_create("Wikipedia", INIT_W, INIT_H, &wres) < 0 || wres.id < 0)
-        zenith::exit(1);
+    Montauk::WinCreateResult wres;
+    if (montauk::win_create("Wikipedia", INIT_W, INIT_H, &wres) < 0 || wres.id < 0)
+        montauk::exit(1);
 
     int      win_id = wres.id;
     uint32_t* pixels = (uint32_t*)(uintptr_t)wres.pixelVa;
 
     render(pixels);
-    zenith::win_present(win_id);
+    montauk::win_present(win_id);
 
     bool search_pending = false;
 
     while (true) {
-        Zenith::WinEvent ev;
-        int r = zenith::win_poll(win_id, &ev);
+        Montauk::WinEvent ev;
+        int r = montauk::win_poll(win_id, &ev);
 
         if (r < 0) break;  // window closed / error
 
         if (r == 0) {
             // No event — idle at ~60 fps
-            zenith::sleep_ms(16);
+            montauk::sleep_ms(16);
             render(pixels);
-            zenith::win_present(win_id);
+            montauk::win_present(win_id);
             continue;
         }
 
@@ -599,7 +599,7 @@ extern "C" void _start() {
             int new_w = ev.resize.w;
             int new_h = ev.resize.h;
             if (new_w > 0 && new_h > 0 && (new_w != g_win_w || new_h != g_win_h)) {
-                uint64_t new_va = zenith::win_resize(win_id, new_w, new_h);
+                uint64_t new_va = montauk::win_resize(win_id, new_w, new_h);
                 if (new_va != 0) {
                     pixels = (uint32_t*)(uintptr_t)new_va;
                     g_win_w = new_w;
@@ -667,14 +667,14 @@ extern "C" void _start() {
             search_pending = false;
             g_phase = AppPhase::LOADING;
             render(pixels);
-            zenith::win_present(win_id);
+            montauk::win_present(win_id);
             do_search(g_query);  // blocking
         }
 
         render(pixels);
-        zenith::win_present(win_id);
+        montauk::win_present(win_id);
     }
 
-    zenith::win_destroy(win_id);
-    zenith::exit(0);
+    montauk::win_destroy(win_id);
+    montauk::exit(0);
 }

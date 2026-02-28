@@ -1,21 +1,21 @@
 /*
     * main.cpp
-    * IRC client for ZenithOS
+    * IRC client for MontaukOS
     * Split-screen terminal UI with ANSI escape codes
     * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <zenith/syscall.h>
-#include <zenith/string.h>
+#include <montauk/syscall.h>
+#include <montauk/string.h>
 
-using zenith::slen;
-using zenith::streq;
-using zenith::starts_with;
-using zenith::skip_spaces;
-using zenith::strcpy;
-using zenith::strncpy;
-using zenith::memcpy;
-using zenith::memmove;
+using montauk::slen;
+using montauk::streq;
+using montauk::starts_with;
+using montauk::skip_spaces;
+using montauk::strcpy;
+using montauk::strncpy;
+using montauk::memcpy;
+using montauk::memmove;
 
 // ---- Minimal snprintf (no libc available) ----
 
@@ -241,7 +241,7 @@ static void sb_cursor_to(int row, int col) {
 
 static void sb_flush() {
     screen.buf[screen.pos] = '\0';
-    zenith::print(screen.buf);
+    montauk::print(screen.buf);
 }
 
 // ---- Globals ----
@@ -308,7 +308,7 @@ static void irc_send(const char* fmt, ...) {
     buf[len] = '\r';
     buf[len + 1] = '\n';
     buf[len + 2] = '\0';
-    zenith::send(irc.fd, buf, len + 2);
+    montauk::send(irc.fd, buf, len + 2);
 }
 
 // ---- Sanitize incoming text (strip control chars) ----
@@ -603,7 +603,7 @@ static void irc_process_line(char* line) {
 
 static void recv_process() {
     char tmp[512];
-    int r = zenith::recv(irc.fd, tmp, sizeof(tmp));
+    int r = montauk::recv(irc.fd, tmp, sizeof(tmp));
     if (r < 0) {
         irc.connected = false;
         msg_add("\033[31m*** Connection lost\033[0m");
@@ -832,12 +832,12 @@ static void handle_user_input() {
 extern "C" void _start() {
     // Parse arguments: <server_ip> <port> <nickname> [#channel]
     char argbuf[256];
-    zenith::getargs(argbuf, sizeof(argbuf));
+    montauk::getargs(argbuf, sizeof(argbuf));
     const char* arg = skip_spaces(argbuf);
 
     if (*arg == '\0') {
-        zenith::print("Usage: irc <server> <port> <nickname> [#channel]\n");
-        zenith::print("Example: irc irc.libera.chat 6667 ZenithUser #general\n");
+        montauk::print("Usage: irc <server> <port> <nickname> [#channel]\n");
+        montauk::print("Example: irc irc.libera.chat 6667 MontaukUser #general\n");
         return;
     }
 
@@ -849,11 +849,11 @@ extern "C" void _start() {
     arg = skip_spaces(arg + i);
 
     if (!parse_ip(hostStr, &irc.serverIp)) {
-        irc.serverIp = zenith::resolve(hostStr);
+        irc.serverIp = montauk::resolve(hostStr);
         if (irc.serverIp == 0) {
-            zenith::print("Could not resolve: ");
-            zenith::print(hostStr);
-            zenith::putchar('\n');
+            montauk::print("Could not resolve: ");
+            montauk::print(hostStr);
+            montauk::putchar('\n');
             return;
         }
     }
@@ -866,9 +866,9 @@ extern "C" void _start() {
     arg = skip_spaces(arg + i);
 
     if (!parse_uint16(portStr, &irc.serverPort)) {
-        zenith::print("Invalid port: ");
-        zenith::print(portStr);
-        zenith::putchar('\n');
+        montauk::print("Invalid port: ");
+        montauk::print(portStr);
+        montauk::putchar('\n');
         return;
     }
 
@@ -879,7 +879,7 @@ extern "C" void _start() {
     arg = skip_spaces(arg + i);
 
     if (!irc.nick[0]) {
-        zenith::print("Missing nickname\n");
+        montauk::print("Missing nickname\n");
         return;
     }
 
@@ -903,35 +903,35 @@ extern "C" void _start() {
     running = true;
 
     // Get terminal size
-    zenith::termsize(&term.cols, &term.rows);
+    montauk::termsize(&term.cols, &term.rows);
     term.msgAreaRows = term.rows - 3;
     if (term.msgAreaRows < 1) term.msgAreaRows = 1;
 
     // Enter alternate screen buffer, hide cursor
-    zenith::print("\033[?1049h");
-    zenith::print("\033[?25l");
+    montauk::print("\033[?1049h");
+    montauk::print("\033[?25l");
 
     // Initial draw
-    msg_add("\033[1m*** ZenithOS IRC Client\033[0m");
+    msg_add("\033[1m*** MontaukOS IRC Client\033[0m");
     msg_add_fmt("*** Connecting to %s:%d as %s...", hostStr, (int)irc.serverPort, irc.nick);
     ui_render();
 
     // Create socket and connect
-    irc.fd = zenith::socket(Zenith::SOCK_TCP);
+    irc.fd = montauk::socket(Montauk::SOCK_TCP);
     if (irc.fd < 0) {
         msg_add("\033[31m*** Failed to create socket\033[0m");
         ui_render();
         // Wait for keypress then exit
-        while (!zenith::is_key_available()) zenith::yield();
+        while (!montauk::is_key_available()) montauk::yield();
         goto cleanup;
     }
 
-    if (zenith::connect(irc.fd, irc.serverIp, irc.serverPort) < 0) {
+    if (montauk::connect(irc.fd, irc.serverIp, irc.serverPort) < 0) {
         msg_add("\033[31m*** Connection failed\033[0m");
         ui_render();
-        zenith::closesocket(irc.fd);
+        montauk::closesocket(irc.fd);
         irc.fd = -1;
-        while (!zenith::is_key_available()) zenith::yield();
+        while (!montauk::is_key_available()) montauk::yield();
         goto cleanup;
     }
 
@@ -954,9 +954,9 @@ extern "C" void _start() {
         if (msgBuf.count != prevCount) dirty = true;
 
         // Poll keyboard
-        if (zenith::is_key_available()) {
-            Zenith::KeyEvent ev;
-            zenith::getkey(&ev);
+        if (montauk::is_key_available()) {
+            Montauk::KeyEvent ev;
+            montauk::getkey(&ev);
 
             if (!ev.pressed) {
                 if (dirty) ui_render();
@@ -1028,7 +1028,7 @@ extern "C" void _start() {
             }
         } else {
             if (!dirty) {
-                zenith::yield();
+                montauk::yield();
                 continue;
             }
         }
@@ -1037,11 +1037,11 @@ extern "C" void _start() {
     }
 
     if (irc.fd >= 0) {
-        zenith::closesocket(irc.fd);
+        montauk::closesocket(irc.fd);
     }
 
 cleanup:
     // Restore terminal
-    zenith::print("\033[?25h");
-    zenith::print("\033[?1049l");
+    montauk::print("\033[?25h");
+    montauk::print("\033[?1049l");
 }
