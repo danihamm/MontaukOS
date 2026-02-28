@@ -148,7 +148,7 @@ static bool run_service(const char* path, const char* name) {
 
 extern "C" void _start() {
 
-    log_info("The MontaukOS Operating System");
+    log_info("The Montauk Operating System");
 
     // ---- Stage 1: Network configuration ----
     run_service("0:/os/dhcp.elf", "dhcp");
