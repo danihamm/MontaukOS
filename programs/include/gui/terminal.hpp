@@ -562,8 +562,8 @@ static inline void terminal_resize(TerminalState* t, int new_cols, int new_rows)
         }
     }
 
-    if (t->cells) montauk::mfree(t->cells);
-    if (t->alt_cells) montauk::mfree(t->alt_cells);
+    if (t->cells) montauk::free(t->cells);
+    if (t->alt_cells) montauk::free(t->alt_cells);
 
     t->cells = new_cells;
     t->alt_cells = new_alt;

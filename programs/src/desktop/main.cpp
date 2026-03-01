@@ -87,7 +87,7 @@ void gui::desktop_init(DesktopState* ds) {
     ds->settings.ui_scale = 1;
 
     // Try to load default wallpaper
-    wallpaper_load(&ds->settings, "0:/home/gustav-gullstrand-d6kSvT2xZQo-unsplash.jpg",
+    wallpaper_load(&ds->settings, "0:/home/stephen-walker-DaC8D3USffk-unsplash.jpg",
                    ds->screen_w, ds->screen_h);
     montauk::win_setscale(1);
 

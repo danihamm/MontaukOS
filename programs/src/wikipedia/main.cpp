@@ -283,7 +283,8 @@ static void add_empty_line() {
 // Word-wrap a text segment into display lines using pixel-width measurement.
 static void wrap_text(TrueTypeFont* font, int size, const char* text, int textLen,
                       int max_px, Color color) {
-    char  cur[256];
+    static constexpr int MAX_LINE = 255;
+    char  cur[MAX_LINE + 1];
     int   cur_len = 0;
     const char* p   = text;
     const char* end = text + textLen;
@@ -298,14 +299,16 @@ static void wrap_text(TrueTypeFont* font, int size, const char* text, int textLe
         if (word_len <= 0) continue;
 
         // Build candidate: current line + space + word
-        char test[260];
+        char test[MAX_LINE + 1];
         int test_len = cur_len;
         memcpy(test, cur, cur_len);
-        if (cur_len > 0) test[test_len++] = ' ';
-        int copy = word_len < (int)(sizeof(test) - test_len - 1)
-                 ? word_len : (int)(sizeof(test) - test_len - 1);
-        memcpy(test + test_len, word_start, copy);
-        test_len += copy;
+        if (cur_len > 0 && test_len < MAX_LINE) test[test_len++] = ' ';
+        int avail = MAX_LINE - test_len;
+        int copy = word_len < avail ? word_len : avail;
+        if (copy > 0) {
+            memcpy(test + test_len, word_start, copy);
+            test_len += copy;
+        }
         test[test_len] = '\0';
 
         int test_w = font->measure_text(test, size);
@@ -316,7 +319,7 @@ static void wrap_text(TrueTypeFont* font, int size, const char* text, int textLe
         } else {
             // Emit current line and start fresh
             if (cur_len > 0) add_line(cur, cur_len, color, size, font);
-            int wl = word_len < 254 ? word_len : 254;
+            int wl = word_len < MAX_LINE ? word_len : MAX_LINE;
             memcpy(cur, word_start, wl);
             cur_len = wl;
             cur[cur_len] = '\0';

@@ -101,8 +101,8 @@ static void klog_on_poll(Window* win) {
 static void klog_on_close(Window* win) {
     KlogState* klog = (KlogState*)win->app_data;
     if (klog) {
-        if (klog->term.cells) montauk::mfree(klog->term.cells);
-        if (klog->term.alt_cells) montauk::mfree(klog->term.alt_cells);
+        if (klog->term.cells) montauk::free(klog->term.cells);
+        if (klog->term.alt_cells) montauk::free(klog->term.alt_cells);
         if (klog->klog_buf) montauk::mfree(klog->klog_buf);
         montauk::mfree(klog);
         win->app_data = nullptr;

@@ -39,7 +39,8 @@ static void terminal_on_key(Window* win, const Montauk::KeyEvent& key) {
 static void terminal_on_close(Window* win) {
     TerminalState* ts = (TerminalState*)win->app_data;
     if (ts) {
-        if (ts->cells) montauk::mfree(ts->cells);
+        if (ts->cells) montauk::free(ts->cells);
+        if (ts->alt_cells) montauk::free(ts->alt_cells);
         montauk::mfree(ts);
         win->app_data = nullptr;
     }
