@@ -245,7 +245,16 @@ static int extract_json_string(const char* buf, int len, const char* key,
                 default: out[j++] = buf[p]; break;
                 }
             } else {
-                out[j++] = buf[p];
+                unsigned char uc = (unsigned char)buf[p];
+                if (uc < 0x80) {
+                    out[j++] = buf[p];
+                } else {
+                    // Skip multi-byte UTF-8 sequence (non-ASCII)
+                    if      (uc >= 0xF0) p += 3; // 4-byte seq: skip 3 continuation bytes
+                    else if (uc >= 0xE0) p += 2; // 3-byte seq: skip 2 continuation bytes
+                    else if (uc >= 0xC0) p += 1; // 2-byte seq: skip 1 continuation byte
+                    // else: stray continuation byte (0x80-0xBF), just skip it
+                }
             }
             p++;
         }
