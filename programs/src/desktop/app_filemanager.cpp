@@ -179,6 +179,7 @@ static void filemanager_read_dir(FileManagerState* fm) {
 
     fm->selected = -1;
     fm->scroll_offset = 0;
+    fm->scrollbar.scroll_offset = 0;
     fm->last_click_item = -1;
     fm->last_click_time = 0;
 }
@@ -252,22 +253,13 @@ static void filemanager_go_home(FileManagerState* fm) {
 // Drawing
 // ============================================================================
 
-static void filemanager_on_draw(Window* win, Framebuffer& fb) {
-    FileManagerState* fm = (FileManagerState*)win->app_data;
-    if (!fm) return;
-
-    Canvas c(win);
-    c.fill(colors::WINDOW_BG);
-
-    Color toolbar_color = Color::from_rgb(0xF5, 0xF5, 0xF5);
-    Color btn_bg = Color::from_rgb(0xE8, 0xE8, 0xE8);
-    Color dim = Color::from_rgb(0x88, 0x88, 0x88);
+static void filemanager_draw_header(Canvas& c, FileManagerState* fm,
+                                    Color toolbar_color, Color btn_bg) {
     DesktopState* ds = fm->desktop;
 
     // ---- Toolbar (32px) ----
     c.fill_rect(0, 0, c.w, FM_TOOLBAR_H, toolbar_color);
 
-    // Toolbar buttons: Back, Forward, Up, Home
     struct ToolBtn { int x; SvgIcon* icon; };
     ToolBtn btns[4] = {
         {  4, ds ? &ds->icon_go_back    : nullptr },
@@ -293,12 +285,10 @@ static void filemanager_on_draw(Window* win, Framebuffer& fb) {
         int bx = 120, by = 4;
         c.fill_rect(bx, by, 24, 24, btn_bg);
         if (fm->grid_view) {
-            // Draw 4 small squares to indicate grid mode
             for (int r = 0; r < 2; r++)
                 for (int cc = 0; cc < 2; cc++)
                     c.fill_rect(bx + 5 + cc * 8, by + 5 + r * 8, 6, 6, colors::TEXT_COLOR);
         } else {
-            // Draw 3 horizontal lines to indicate list mode
             for (int r = 0; r < 3; r++)
                 c.fill_rect(bx + 5, by + 5 + r * 5, 14, 2, colors::TEXT_COLOR);
         }
@@ -314,6 +304,22 @@ static void filemanager_on_draw(Window* win, Framebuffer& fb) {
 
     // Path bar separator
     c.hline(0, pathbar_y + FM_PATHBAR_H - 1, c.w, colors::BORDER);
+}
+
+static void filemanager_on_draw(Window* win, Framebuffer& fb) {
+    FileManagerState* fm = (FileManagerState*)win->app_data;
+    if (!fm) return;
+
+    Canvas c(win);
+    c.fill(colors::WINDOW_BG);
+
+    Color toolbar_color = Color::from_rgb(0xF5, 0xF5, 0xF5);
+    Color btn_bg = Color::from_rgb(0xE8, 0xE8, 0xE8);
+    Color dim = Color::from_rgb(0x88, 0x88, 0x88);
+    DesktopState* ds = fm->desktop;
+
+    // Draw header (toolbar + path bar)
+    filemanager_draw_header(c, fm, toolbar_color, btn_bg);
 
     if (fm->grid_view) {
         // ---- Grid View ----
@@ -493,6 +499,10 @@ static void filemanager_on_draw(Window* win, Framebuffer& fb) {
         int tty = fm->scrollbar.thumb_y();
         c.fill_rect(sbx + 1, tty, sbw - 2, th, sb_fg_color);
     }
+
+    // Repaint header on top of content to clip scrolled icon overflow
+    if (fm->scrollbar.scroll_offset > 0)
+        filemanager_draw_header(c, fm, toolbar_color, btn_bg);
 }
 
 // ============================================================================
