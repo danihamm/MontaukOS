@@ -25,13 +25,10 @@ using namespace gui;
 
 static constexpr int INIT_W      = 800;
 static constexpr int INIT_H      = 600;
-static constexpr int STATUS_H    = 24;
 static constexpr int PAN_STEP    = 40;
 static constexpr int FONT_SIZE   = 13;
 
 static constexpr Color BG_COLOR     = Color::from_rgb(0x30, 0x30, 0x30);
-static constexpr Color STATUS_BG    = Color::from_rgb(0x24, 0x24, 0x24);
-static constexpr Color STATUS_TEXT  = Color::from_rgb(0xCC, 0xCC, 0xCC);
 static constexpr Color ERR_COLOR    = Color::from_rgb(0xCC, 0x33, 0x33);
 
 // ============================================================================
@@ -58,7 +55,6 @@ static int       g_drag_pan_x   = 0;
 static int       g_drag_pan_y   = 0;
 
 // File info
-static char      g_filename[128] = {};
 static char      g_status[256]   = {};
 static bool      g_load_ok       = false;
 
@@ -182,20 +178,6 @@ static bool load_image(const char* path) {
     g_img_w = w;
     g_img_h = h;
 
-    // Build status string: "filename.jpg  (1920 x 1080)"
-    const char* name = basename(path);
-    montauk::strncpy(g_filename, name, 127);
-
-    montauk::strcpy(g_status, g_filename);
-    str_append(g_status, "  (", 256);
-    char num[16];
-    int_to_str(num, w);
-    str_append(g_status, num, 256);
-    str_append(g_status, " x ", 256);
-    int_to_str(num, h);
-    str_append(g_status, num, 256);
-    str_append(g_status, ")", 256);
-
     return true;
 }
 
@@ -204,8 +186,6 @@ static bool load_image(const char* path) {
 // ============================================================================
 
 static void clamp_pan() {
-    int view_h = g_win_h - STATUS_H;
-
     // If image fits in viewport, center it
     if (g_img_w <= g_win_w) {
         g_pan_x = (g_win_w - g_img_w) / 2;
@@ -215,18 +195,17 @@ static void clamp_pan() {
         if (g_pan_x < g_win_w - g_img_w) g_pan_x = g_win_w - g_img_w;
     }
 
-    if (g_img_h <= view_h) {
-        g_pan_y = (view_h - g_img_h) / 2;
+    if (g_img_h <= g_win_h) {
+        g_pan_y = (g_win_h - g_img_h) / 2;
     } else {
         if (g_pan_y > 0) g_pan_y = 0;
-        if (g_pan_y < view_h - g_img_h) g_pan_y = view_h - g_img_h;
+        if (g_pan_y < g_win_h - g_img_h) g_pan_y = g_win_h - g_img_h;
     }
 }
 
 static void center_image() {
-    int view_h = g_win_h - STATUS_H;
     g_pan_x = (g_win_w - g_img_w) / 2;
-    g_pan_y = (view_h - g_img_h) / 2;
+    g_pan_y = (g_win_h - g_img_h) / 2;
     clamp_pan();
 }
 
@@ -235,16 +214,14 @@ static void center_image() {
 // ============================================================================
 
 static void render(uint32_t* pixels) {
-    int view_h = g_win_h - STATUS_H;
-
     // Fill background
-    px_fill(pixels, g_win_w, g_win_h, 0, 0, g_win_w, view_h, BG_COLOR);
+    px_fill(pixels, g_win_w, g_win_h, 0, 0, g_win_w, g_win_h, BG_COLOR);
 
     // Draw image
     if (g_image && g_load_ok) {
         for (int row = 0; row < g_img_h; row++) {
             int dy = g_pan_y + row;
-            if (dy < 0 || dy >= view_h) continue;
+            if (dy < 0 || dy >= g_win_h) continue;
             for (int col = 0; col < g_img_w; col++) {
                 int dx = g_pan_x + col;
                 if (dx < 0 || dx >= g_win_w) continue;
@@ -254,14 +231,7 @@ static void render(uint32_t* pixels) {
     } else if (!g_load_ok && g_font) {
         // Show error message centered
         g_font->draw_to_buffer(pixels, g_win_w, g_win_h,
-            20, view_h / 2 - 8, g_status, ERR_COLOR, 15);
-    }
-
-    // Status bar
-    px_fill(pixels, g_win_w, g_win_h, 0, view_h, g_win_w, STATUS_H, STATUS_BG);
-    if (g_font) {
-        g_font->draw_to_buffer(pixels, g_win_w, g_win_h,
-            8, view_h + (STATUS_H - FONT_SIZE) / 2, g_status, STATUS_TEXT, FONT_SIZE);
+            20, g_win_h / 2 - 8, g_status, ERR_COLOR, 15);
     }
 }
 
@@ -287,11 +257,31 @@ extern "C" void _start() {
     };
     g_font = load_font("0:/fonts/Roboto-Medium.ttf");
 
-    // Determine window title from filename
-    char title[64] = "Image Viewer";
+    // Load image before creating window so dimensions are available for title
+    if (filepath[0]) {
+        g_load_ok = load_image(filepath);
+    } else {
+        montauk::strcpy(g_status, "No file specified");
+        g_load_ok = false;
+    }
+
+    // Build window title: "filename.jpg (1920 x 1080)" or just "Image Viewer"
+    char title[128] = "Image Viewer";
     if (filepath[0]) {
         const char* name = basename(filepath);
-        if (name[0]) montauk::strncpy(title, name, 63);
+        if (name[0]) {
+            montauk::strcpy(title, name);
+            if (g_load_ok) {
+                str_append(title, " (", sizeof(title));
+                char num[16];
+                int_to_str(num, g_img_w);
+                str_append(title, num, sizeof(title));
+                str_append(title, " x ", sizeof(title));
+                int_to_str(num, g_img_h);
+                str_append(title, num, sizeof(title));
+                str_append(title, ")", sizeof(title));
+            }
+        }
     }
 
     // Create window
@@ -301,14 +291,6 @@ extern "C" void _start() {
 
     int       win_id = wres.id;
     uint32_t* pixels = (uint32_t*)(uintptr_t)wres.pixelVa;
-
-    // Load image
-    if (filepath[0]) {
-        g_load_ok = load_image(filepath);
-    } else {
-        montauk::strcpy(g_status, "No file specified");
-        g_load_ok = false;
-    }
 
     // Center image initially
     if (g_load_ok) center_image();
