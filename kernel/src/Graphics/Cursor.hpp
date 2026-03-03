@@ -20,4 +20,6 @@ namespace Graphics::Cursor {
     void SetFramebuffer(uint32_t* base, uint64_t width, uint64_t height, uint64_t pitch);
     uint64_t GetFramebufferPhysBase();
 
+    void MapWriteCombining();
+
 };

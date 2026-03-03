@@ -34,13 +34,11 @@
 #include <Drivers/PS2/Keyboard.hpp>
 #include <Drivers/PS2/Mouse.hpp>
 #include <Drivers/USB/Xhci.hpp>
-#include <Drivers/Net/E1000.hpp>
-#include <Drivers/Net/E1000E.hpp>
-#include <Drivers/Graphics/IntelGPU.hpp>
-#include <Net/Net.hpp>
+#include <Drivers/Init.hpp>
 #include <CppLib/BoxUI.hpp>
 #include <Graphics/Cursor.hpp>
 #include <Hal/MSR.hpp>
+#include <Hal/Cpu.hpp>
 #include <Fs/Ramdisk.hpp>
 #include <Fs/Vfs.hpp>
 #include <Sched/Scheduler.hpp>
@@ -98,22 +96,7 @@ extern "C" void kmain() {
     Hal::PrepareGDT();
     Hal::BridgeLoadGDT();
 
-    // Enable SSE/SSE2 — required for userspace programs compiled with SSE
-    // CR0: clear EM (bit 2), set MP (bit 1)
-    {
-        uint64_t cr0;
-        asm volatile("mov %%cr0, %0" : "=r"(cr0));
-        cr0 &= ~(1ULL << 2);  // Clear EM
-        cr0 |=  (1ULL << 1);  // Set MP
-        asm volatile("mov %0, %%cr0" :: "r"(cr0));
-
-        // CR4: set OSFXSR (bit 9) and OSXMMEXCPT (bit 10)
-        uint64_t cr4;
-        asm volatile("mov %%cr4, %0" : "=r"(cr4));
-        cr4 |= (1ULL << 9);   // OSFXSR
-        cr4 |= (1ULL << 10);  // OSXMMEXCPT
-        asm volatile("mov %0, %%cr4" :: "r"(cr4));
-    }
+    Hal::EnableSSE();
 #endif
 
     uint64_t hhdm_offset = hhdm_request.response->offset;
@@ -155,22 +138,7 @@ extern "C" void kmain() {
 #if defined (__x86_64__)
     // Map framebuffer as Write-Combining immediately for faster screen writes.
     // All subsequent log output benefits from WC burst transfers.
-    {
-        uint64_t fbPhys = Graphics::Cursor::GetFramebufferPhysBase();
-        uint64_t fbSize = Graphics::Cursor::GetFramebufferHeight()
-                        * Graphics::Cursor::GetFramebufferPitch();
-        uint64_t numPages = (fbSize + 0xFFF) / 0x1000;
-
-        for (uint64_t i = 0; i < numPages; i++) {
-            uint64_t phys = fbPhys + i * 0x1000;
-            g_paging.MapWC(phys, Memory::HHDM(phys));
-        }
-
-        Memory::VMM::FlushTLB();
-
-        Kt::KernelLogStream(OK, "Graphics") << "Framebuffer mapped as Write-Combining ("
-            << kcp::dec << numPages << " pages)";
-    }
+    Graphics::Cursor::MapWriteCombining();
 #endif
 
     Hal::ACPI g_acpi((Hal::ACPI::XSDP*)Memory::HHDM(rsdp_request.response->address));
@@ -181,17 +149,7 @@ extern "C" void kmain() {
 
         Pci::Initialize(g_acpi.GetXSDT());
 
-        // Intel GPU driver — initialize right after PCI so the native
-        // driver takes over early and all subsequent logs use it.
-        Drivers::Graphics::IntelGPU::Initialize();
-        if (Drivers::Graphics::IntelGPU::IsInitialized()) {
-            Graphics::Cursor::SetFramebuffer(
-                Drivers::Graphics::IntelGPU::GetFramebufferBase(),
-                Drivers::Graphics::IntelGPU::GetWidth(),
-                Drivers::Graphics::IntelGPU::GetHeight(),
-                Drivers::Graphics::IntelGPU::GetPitch()
-            );
-        }
+        Drivers::InitializeGraphics();
 
         Timekeeping::ApicTimerInitialize();
 
@@ -201,12 +159,7 @@ extern "C" void kmain() {
 
         Drivers::USB::Xhci::Initialize();
 
-        Drivers::Net::E1000::Initialize();
-        if (!Drivers::Net::E1000::IsInitialized()) {
-            KernelLogStream(INFO, "Init") << "E1000 not found, trying E1000E...";
-            Drivers::Net::E1000E::Initialize();
-        }
-        Net::Initialize();
+        Drivers::InitializeNetwork();
     }
 #endif
 

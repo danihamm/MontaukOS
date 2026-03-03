@@ -7,6 +7,8 @@
 #include "Cursor.hpp"
 #include <Terminal/Terminal.hpp>
 #include <Memory/HHDM.hpp>
+#include <Memory/Paging.hpp>
+#include <CppLib/Stream.hpp>
 
 namespace Graphics::Cursor {
 
@@ -42,6 +44,22 @@ namespace Graphics::Cursor {
 
     uint64_t GetFramebufferPhysBase() {
         return Memory::SubHHDM((uint64_t)g_FbBase);
+    }
+
+    void MapWriteCombining() {
+        uint64_t fbPhys = GetFramebufferPhysBase();
+        uint64_t fbSize = g_FbHeight * g_FbPitch;
+        uint64_t numPages = (fbSize + 0xFFF) / 0x1000;
+
+        for (uint64_t i = 0; i < numPages; i++) {
+            uint64_t phys = fbPhys + i * 0x1000;
+            Memory::VMM::g_paging->MapWC(phys, Memory::HHDM(phys));
+        }
+
+        Memory::VMM::FlushTLB();
+
+        Kt::KernelLogStream(Kt::OK, "Graphics") << "Framebuffer mapped as Write-Combining ("
+            << kcp::dec << numPages << " pages)";
     }
 
 };
