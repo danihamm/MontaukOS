@@ -323,9 +323,9 @@ static void settings_draw_about(Canvas& c, SettingsState* st) {
     snprintf(line, sizeof(line), "Uptime: %d:%02d:%02d", up_hr, up_min % 60, up_sec % 60);
     c.kv_line(x, &y, line, colors::TEXT_COLOR, line_h);
 
-    snprintf(line, sizeof(line), "Build: %s %s", __DATE__, __TIME__);
-    c.text(x, y, line, colors::TEXT_COLOR);
-    y += line_h + 16;
+    // snprintf(line, sizeof(line), "Build: %s %s", __DATE__, __TIME__);
+    // c.text(x, y, line, colors::TEXT_COLOR);
+    // y += line_h + 16;
 
     c.hline(x, y, c.w - 2 * x, colors::BORDER);
     y += 12;
