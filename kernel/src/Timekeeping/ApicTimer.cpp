@@ -13,6 +13,7 @@
 #include <Sched/Scheduler.hpp>
 #include <Drivers/Net/E1000E.hpp>
 #include <Drivers/USB/Xhci.hpp>
+#include <Drivers/USB/HidKeyboard.hpp>
 
 using namespace Kt;
 
@@ -47,6 +48,7 @@ namespace Timekeeping {
         // (equivalent to a real NIC IRQ handler, runs with interrupts disabled)
         Drivers::Net::E1000E::Poll();
         Drivers::USB::Xhci::ProcessDeferredWork();
+        Drivers::USB::HidKeyboard::Tick();
 
         if (g_schedEnabled) {
             Sched::Tick();

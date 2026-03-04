@@ -7,6 +7,7 @@
 
 #pragma once
 #include <cstdint>
+#include <Pci/Pci.hpp>
 
 namespace Drivers::Graphics::IntelGPU {
 
@@ -18,14 +19,8 @@ namespace Drivers::Graphics::IntelGPU {
     static constexpr uint8_t  ClassDisplay = 0x03;
     static constexpr uint8_t  SubclassVGA  = 0x00;
 
-    // PCI config space offsets
-    static constexpr uint16_t PCI_REG_BAR0    = 0x10;
+    // PCI config space offsets (GPU-specific, not in shared Pci::)
     static constexpr uint16_t PCI_REG_BAR2    = 0x18;
-    static constexpr uint16_t PCI_REG_COMMAND  = 0x04;
-    static constexpr uint16_t PCI_CMD_MEM_SPACE  = (1 << 1);
-    static constexpr uint16_t PCI_CMD_BUS_MASTER = (1 << 2);
-
-    // Graphics control register (PCI config offset 0x50 on SNB+)
     static constexpr uint16_t PCI_REG_GMCH_CTL = 0x50;
 
     // Supported Intel GPU device IDs (representative subset)
@@ -399,6 +394,9 @@ namespace Drivers::Graphics::IntelGPU {
 
     // Initialize the Intel GPU driver (scans PCI, maps MMIO, sets up GTT + FB)
     void Initialize();
+
+    // Probe a specific PCI device (called by PCI driver matching framework)
+    bool Probe(const Pci::PciDevice& dev);
 
     // Check if an Intel GPU was found and initialized
     bool IsInitialized();

@@ -398,6 +398,86 @@ namespace Pci {
         return g_devices;
     }
 
+    // -------------------------------------------------------------------------
+    // Shared PCI utilities
+    // -------------------------------------------------------------------------
+
+    uint64_t ReadBar0(uint8_t bus, uint8_t device, uint8_t function) {
+        uint32_t bar0Low = LegacyRead32(bus, device, function, (uint8_t)PCI_REG_BAR0);
+        uint64_t addr = bar0Low & 0xFFFFFFF0u;
+
+        // Check for 64-bit BAR (type field bits 2:1 == 0b10)
+        if ((bar0Low & 0x06) == 0x04) {
+            uint32_t bar0High = LegacyRead32(bus, device, function, (uint8_t)(PCI_REG_BAR0 + 4));
+            addr |= ((uint64_t)bar0High << 32);
+        }
+
+        return addr;
+    }
+
+    void EnableBusMaster(uint8_t bus, uint8_t device, uint8_t function) {
+        uint16_t cmd = LegacyRead16(bus, device, function, (uint8_t)PCI_REG_COMMAND);
+        cmd |= PCI_CMD_MEM_SPACE | PCI_CMD_BUS_MASTER;
+        LegacyWrite16(bus, device, function, (uint8_t)PCI_REG_COMMAND, cmd);
+    }
+
+    // -------------------------------------------------------------------------
+    // PCI driver matching
+    // -------------------------------------------------------------------------
+
+    static bool MatchDriver(const PciDriverDesc& drv, const PciDevice& dev) {
+        if (drv.VendorId != 0 && drv.VendorId != dev.VendorId)
+            return false;
+        if (drv.ClassCode != 0xFF && drv.ClassCode != dev.ClassCode)
+            return false;
+        if (drv.SubClass != 0xFF && drv.SubClass != dev.SubClass)
+            return false;
+        if (drv.ProgIf != 0xFF && drv.ProgIf != dev.ProgIf)
+            return false;
+
+        if (drv.DeviceIdCount > 0 && drv.DeviceIds != nullptr) {
+            bool found = false;
+            for (uint16_t i = 0; i < drv.DeviceIdCount; i++) {
+                if (drv.DeviceIds[i] == dev.DeviceId) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return false;
+        }
+
+        return true;
+    }
+
+    void ProbeAll(const PciDriverDesc* table, uint16_t count, ProbePhase phase) {
+        for (uint64_t d = 0; d < g_devices.size(); d++) {
+            const PciDevice& dev = g_devices[d];
+
+            for (uint16_t i = 0; i < count; i++) {
+                if (table[i].Phase != phase)
+                    continue;
+                if (!MatchDriver(table[i], dev))
+                    continue;
+
+                KernelLogStream(INFO, "PCI") << "Probing " << table[i].Name
+                    << " for device " << base::hex
+                    << (uint64_t)dev.Bus << ":" << (uint64_t)dev.Device
+                    << "." << (uint64_t)dev.Function;
+
+                if (table[i].Probe(dev)) {
+                    KernelLogStream(OK, "PCI") << table[i].Name << " claimed device "
+                        << base::hex << (uint64_t)dev.Bus << ":"
+                        << (uint64_t)dev.Device << "." << (uint64_t)dev.Function;
+                    break; // device claimed, move to next device
+                }
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Public API
+    // -------------------------------------------------------------------------
+
     void Initialize(Hal::ACPI::CommonSDTHeader* xsdt) {
         KernelLogStream(INFO, "PCI") << "Initializing PCI subsystem";
 

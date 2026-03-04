@@ -216,9 +216,9 @@ namespace Drivers::USB::Xhci {
         Pci::LegacyWrite16(bus, dev, func, cap + 2, msgCtrl);
 
         // Disable legacy INTx in PCI command register
-        uint16_t pciCmd = Pci::LegacyRead16(bus, dev, func, PCI_REG_COMMAND);
-        pciCmd |= PCI_CMD_INTX_DISABLE;
-        Pci::LegacyWrite16(bus, dev, func, PCI_REG_COMMAND, pciCmd);
+        uint16_t pciCmd = Pci::LegacyRead16(bus, dev, func, (uint8_t)Pci::PCI_REG_COMMAND);
+        pciCmd |= Pci::PCI_CMD_INTX_DISABLE;
+        Pci::LegacyWrite16(bus, dev, func, (uint8_t)Pci::PCI_REG_COMMAND, pciCmd);
 
         // Register the interrupt handler for MSI vector
         Hal::RegisterIrqHandler(MSI_IRQ, HandleInterrupt);
@@ -299,15 +299,17 @@ namespace Drivers::USB::Xhci {
                                     HidMouse::ProcessReport(g_interruptDataBuf[slotId], len);
                                 }
                             }
-
-                            // Only re-queue on success — re-queuing on error would
-                            // create an infinite loop of failed transfers.
-                            QueueInterruptTransfer(slotId);
                         } else {
                             KernelLogStream(WARNING, "xHCI") << "Transfer error on slot "
                                 << base::dec << (uint64_t)slotId << " ep " << (uint64_t)epDci
                                 << " cc=" << (uint64_t)completionCode;
                         }
+
+                        // Always re-queue the next interrupt transfer so the
+                        // device can continue delivering reports. Transient
+                        // errors (stall, babble, etc.) must not permanently
+                        // kill the transfer chain.
+                        QueueInterruptTransfer(slotId);
                     }
                     break;
                 }
@@ -645,7 +647,221 @@ namespace Drivers::USB::Xhci {
     }
 
     // -------------------------------------------------------------------------
-    // Initialize
+    // Probe (called by PCI driver matching framework)
+    // -------------------------------------------------------------------------
+
+    bool Probe(const Pci::PciDevice& dev) {
+        if (g_initialized) return false;
+
+        KernelLogStream(OK, "xHCI") << "Found controller at PCI "
+            << base::hex << (uint64_t)dev.Bus << ":"
+            << (uint64_t)dev.Device << "." << (uint64_t)dev.Function;
+
+        // Read BAR0 and map MMIO region
+        uint64_t mmioPhys = Pci::ReadBar0(dev.Bus, dev.Device, dev.Function);
+
+        KernelLogStream(INFO, "xHCI") << "BAR0 physical: " << base::hex << mmioPhys;
+
+        constexpr uint64_t MmioSize = 0x10000;
+        for (uint64_t offset = 0; offset < MmioSize; offset += 0x1000) {
+            Memory::VMM::g_paging->MapMMIO(mmioPhys + offset, Memory::HHDM(mmioPhys + offset));
+        }
+
+        g_mmioBase = (volatile uint8_t*)Memory::HHDM(mmioPhys);
+
+        Pci::EnableBusMaster(dev.Bus, dev.Device, dev.Function);
+        KernelLogStream(OK, "xHCI") << "Bus mastering enabled";
+
+        // Parse capability registers
+        g_capLength = *(volatile uint8_t*)(g_mmioBase + CAP_CAPLENGTH);
+
+        uint32_t hciVersion = *(volatile uint16_t*)(g_mmioBase + CAP_HCIVERSION);
+        KernelLogStream(INFO, "xHCI") << "Version: " << base::hex << (uint64_t)hciVersion
+            << ", CapLength: " << (uint64_t)g_capLength;
+
+        uint32_t hcsParams1 = ReadCap(CAP_HCSPARAMS1);
+        g_maxSlots = hcsParams1 & 0xFF;
+        g_maxPorts = (hcsParams1 >> 24) & 0xFF;
+
+        uint32_t hcsParams2 = ReadCap(CAP_HCSPARAMS2);
+        uint32_t scratchpadBufsHi = (hcsParams2 >> 21) & 0x1F;
+        uint32_t scratchpadBufsLo = (hcsParams2 >> 27) & 0x1F;
+        uint32_t maxScratchpadBufs = (scratchpadBufsHi << 5) | scratchpadBufsLo;
+
+        uint32_t dbOff = ReadCap(CAP_DBOFF) & ~0x3u;
+        uint32_t rtsOff = ReadCap(CAP_RTSOFF) & ~0x1Fu;
+
+        g_opBase = g_mmioBase + g_capLength;
+        g_rtBase = g_mmioBase + rtsOff;
+        g_dbBase = g_mmioBase + dbOff;
+
+        KernelLogStream(INFO, "xHCI") << "MaxSlots: " << base::dec << (uint64_t)g_maxSlots
+            << ", MaxPorts: " << (uint64_t)g_maxPorts
+            << ", ScratchpadBufs: " << (uint64_t)maxScratchpadBufs;
+
+        if (g_maxSlots > MAX_SLOTS) g_maxSlots = MAX_SLOTS;
+        if (g_maxPorts > MAX_PORTS) g_maxPorts = MAX_PORTS;
+
+        // Halt controller
+        uint32_t usbcmd = ReadOp(OP_USBCMD);
+        usbcmd &= ~USBCMD_RS;
+        WriteOp(OP_USBCMD, usbcmd);
+
+        for (uint32_t i = 0; i < 100000; i++) {
+            if (ReadOp(OP_USBSTS) & USBSTS_HCH) break;
+            for (int j = 0; j < 10; j++) asm volatile("" ::: "memory");
+        }
+
+        if (!(ReadOp(OP_USBSTS) & USBSTS_HCH)) {
+            KernelLogStream(WARNING, "xHCI") << "Controller failed to halt";
+        }
+        KernelLogStream(OK, "xHCI") << "Controller halted";
+
+        // Reset controller
+        WriteOp(OP_USBCMD, USBCMD_HCRST);
+        for (uint32_t i = 0; i < 100000; i++) {
+            if (!(ReadOp(OP_USBCMD) & USBCMD_HCRST)) break;
+            for (int j = 0; j < 10; j++) asm volatile("" ::: "memory");
+        }
+        for (uint32_t i = 0; i < 100000; i++) {
+            if (!(ReadOp(OP_USBSTS) & USBSTS_CNR)) break;
+            for (int j = 0; j < 10; j++) asm volatile("" ::: "memory");
+        }
+        if (ReadOp(OP_USBSTS) & USBSTS_CNR) {
+            KernelLogStream(WARNING, "xHCI") << "Controller not ready after reset";
+        }
+        KernelLogStream(OK, "xHCI") << "Controller reset complete";
+
+        // Program CONFIG
+        WriteOp(OP_CONFIG, g_maxSlots);
+
+        // Allocate DCBAA
+        g_dcbaa = (uint64_t*)AllocateDmaBuffer(g_dcbaaPhys);
+        WriteOp(OP_DCBAAP, (uint32_t)(g_dcbaaPhys & 0xFFFFFFFF));
+        WriteOp(OP_DCBAAP + 4, (uint32_t)(g_dcbaaPhys >> 32));
+        KernelLogStream(OK, "xHCI") << "DCBAA at phys " << base::hex << g_dcbaaPhys;
+
+        // Scratchpad buffers
+        if (maxScratchpadBufs > 0) {
+            uint64_t spArrayPhys;
+            g_scratchpadBufs = (uint64_t*)AllocateDmaBuffer(spArrayPhys);
+            for (uint32_t i = 0; i < maxScratchpadBufs; i++) {
+                uint64_t bufPhys;
+                AllocateDmaBuffer(bufPhys);
+                g_scratchpadBufs[i] = bufPhys;
+            }
+            g_dcbaa[0] = spArrayPhys;
+            KernelLogStream(OK, "xHCI") << "Allocated " << base::dec << (uint64_t)maxScratchpadBufs << " scratchpad buffers";
+        }
+
+        // Command ring
+        g_cmdRing = (TRB*)AllocateDmaBuffer(g_cmdRingPhys);
+        TRB& linkTrb = g_cmdRing[CMD_RING_SIZE - 1];
+        linkTrb.Parameter0 = (uint32_t)(g_cmdRingPhys & 0xFFFFFFFF);
+        linkTrb.Parameter1 = (uint32_t)(g_cmdRingPhys >> 32);
+        linkTrb.Status = 0;
+        linkTrb.Control = (TRB_LINK << TRB_TYPE_SHIFT) | TRB_ENT;
+        uint64_t crcr = g_cmdRingPhys | TRB_CYCLE_BIT;
+        WriteOp(OP_CRCR, (uint32_t)(crcr & 0xFFFFFFFF));
+        WriteOp(OP_CRCR + 4, (uint32_t)(crcr >> 32));
+        g_cmdRingCCS = true;
+        g_cmdRingEnqueue = 0;
+        KernelLogStream(OK, "xHCI") << "Command ring at phys " << base::hex << g_cmdRingPhys;
+
+        // Event ring + ERST
+        g_evtRing = (TRB*)AllocateDmaBuffer(g_evtRingPhys);
+        g_erst = (ERSTEntry*)AllocateDmaBuffer(g_erstPhys);
+        g_erst[0].RingSegmentBase = g_evtRingPhys;
+        g_erst[0].RingSegmentSize = EVT_RING_SIZE;
+        g_erst[0].Reserved = 0;
+        WriteRt(IR0_ERSTSZ, 1);
+        WriteRt(IR0_ERDP, (uint32_t)(g_evtRingPhys & 0xFFFFFFFF));
+        WriteRt(IR0_ERDP + 4, (uint32_t)(g_evtRingPhys >> 32));
+        WriteRt(IR0_ERSTBA, (uint32_t)(g_erstPhys & 0xFFFFFFFF));
+        WriteRt(IR0_ERSTBA + 4, (uint32_t)(g_erstPhys >> 32));
+        g_evtRingCCS = true;
+        g_evtRingDequeue = 0;
+        KernelLogStream(OK, "xHCI") << "Event ring at phys " << base::hex << g_evtRingPhys;
+
+        // MSI setup
+        if (!SetupMsi(dev.Bus, dev.Device, dev.Function)) {
+            KernelLogStream(WARNING, "xHCI") << "MSI not available, using poll mode";
+        }
+
+        // Enable interrupter 0
+        WriteRt(IR0_IMAN, IMAN_IE);
+        WriteRt(IR0_IMOD, 0);
+
+        // Start controller
+        WriteOp(OP_USBCMD, USBCMD_RS | USBCMD_INTE | USBCMD_HSEE);
+        for (uint32_t i = 0; i < 100000; i++) {
+            if (!(ReadOp(OP_USBSTS) & USBSTS_HCH)) break;
+            for (int j = 0; j < 10; j++) asm volatile("" ::: "memory");
+        }
+        KernelLogStream(OK, "xHCI") << "Controller started";
+        g_initialized = true;
+
+        // Power on all ports
+        for (uint32_t port = 0; port < g_maxPorts; port++) {
+            uint32_t portsc = ReadOp(OP_PORTSC_BASE + port * OP_PORTSC_STRIDE);
+            if (!(portsc & PORTSC_PP)) {
+                WriteOp(OP_PORTSC_BASE + port * OP_PORTSC_STRIDE, PORTSC_PP);
+            }
+        }
+        BusyWaitMs(20);
+        KernelLogStream(OK, "xHCI") << "All ports powered";
+
+        // Port scanning
+        for (uint32_t port = 0; port < g_maxPorts; port++) {
+            uint32_t portsc = ReadOp(OP_PORTSC_BASE + port * OP_PORTSC_STRIDE);
+            if (!(portsc & PORTSC_CCS)) continue;
+
+            KernelLogStream(INFO, "xHCI") << "Port " << base::dec << (uint64_t)(port + 1)
+                << ": device connected, PORTSC=" << base::hex << (uint64_t)portsc;
+
+            WriteOp(OP_PORTSC_BASE + port * OP_PORTSC_STRIDE,
+                    (portsc & PORTSC_PRESERVE) | PORTSC_PR | PORTSC_CHANGE_BITS);
+
+            bool resetDone = false;
+            for (uint32_t i = 0; i < 100000; i++) {
+                PollEvents();
+                uint32_t ps = ReadOp(OP_PORTSC_BASE + port * OP_PORTSC_STRIDE);
+                if (ps & PORTSC_PRC) { resetDone = true; break; }
+                for (int j = 0; j < 100; j++) asm volatile("" ::: "memory");
+            }
+
+            if (!resetDone) {
+                KernelLogStream(WARNING, "xHCI") << "Port " << base::dec << (uint64_t)(port + 1) << " reset timeout";
+                continue;
+            }
+
+            portsc = ReadOp(OP_PORTSC_BASE + port * OP_PORTSC_STRIDE);
+            uint32_t speed = (portsc >> 10) & 0xF;
+            WriteOp(OP_PORTSC_BASE + port * OP_PORTSC_STRIDE,
+                    (portsc & PORTSC_PRESERVE) | PORTSC_CHANGE_BITS);
+
+            const char* speedStr = "Unknown";
+            switch (speed) {
+                case SPEED_FULL:  speedStr = "Full (12 Mbps)"; break;
+                case SPEED_LOW:   speedStr = "Low (1.5 Mbps)"; break;
+                case SPEED_HIGH:  speedStr = "High (480 Mbps)"; break;
+                case SPEED_SUPER: speedStr = "Super (5 Gbps)"; break;
+            }
+
+            KernelLogStream(OK, "xHCI") << "Port " << base::dec << (uint64_t)(port + 1)
+                << ": reset complete, speed=" << speedStr;
+
+            BusyWaitMs(10);
+            UsbDevice::EnumerateDevice(port + 1, speed);
+        }
+
+        g_bootScanComplete = true;
+        KernelLogStream(OK, "xHCI") << "Initialization complete";
+        return true;
+    }
+
+    // -------------------------------------------------------------------------
+    // Initialize (standalone fallback path)
     // -------------------------------------------------------------------------
 
     void Initialize() {
@@ -678,14 +894,7 @@ namespace Drivers::USB::Xhci {
         // -----------------------------------------------------------------
         // Step 2: Read BAR0 and map MMIO region
         // -----------------------------------------------------------------
-        uint32_t bar0 = Pci::LegacyRead32(foundDev->Bus, foundDev->Device, foundDev->Function, PCI_REG_BAR0);
-        uint64_t mmioPhys = bar0 & 0xFFFFFFF0;
-
-        // Check if 64-bit BAR (type field bits 2:1 == 0b10)
-        if ((bar0 & 0x06) == 0x04) {
-            uint32_t bar1 = Pci::LegacyRead32(foundDev->Bus, foundDev->Device, foundDev->Function, PCI_REG_BAR1);
-            mmioPhys |= ((uint64_t)bar1 << 32);
-        }
+        uint64_t mmioPhys = Pci::ReadBar0(foundDev->Bus, foundDev->Device, foundDev->Function);
 
         KernelLogStream(INFO, "xHCI") << "BAR0 physical: " << base::hex << mmioPhys;
 
@@ -700,9 +909,7 @@ namespace Drivers::USB::Xhci {
         // -----------------------------------------------------------------
         // Step 3: Enable PCI bus master and memory space
         // -----------------------------------------------------------------
-        uint16_t pciCmd = Pci::LegacyRead16(foundDev->Bus, foundDev->Device, foundDev->Function, PCI_REG_COMMAND);
-        pciCmd |= PCI_CMD_BUS_MASTER | PCI_CMD_MEM_SPACE;
-        Pci::LegacyWrite16(foundDev->Bus, foundDev->Device, foundDev->Function, PCI_REG_COMMAND, pciCmd);
+        Pci::EnableBusMaster(foundDev->Bus, foundDev->Device, foundDev->Function);
 
         KernelLogStream(OK, "xHCI") << "Bus mastering enabled";
 

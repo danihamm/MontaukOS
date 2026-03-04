@@ -77,17 +77,6 @@ namespace Drivers::Net::E1000E {
 
     static constexpr uint32_t g_deviceTableSize = sizeof(g_deviceTable) / sizeof(g_deviceTable[0]);
 
-    // PCI config space offsets
-    static constexpr uint8_t PCI_REG_BAR0       = 0x10;
-    static constexpr uint8_t PCI_REG_BAR1       = 0x14;
-    static constexpr uint8_t PCI_REG_COMMAND     = 0x04;
-    static constexpr uint8_t PCI_REG_INTERRUPT   = 0x3C;
-
-    // PCI command register bits
-    static constexpr uint16_t PCI_CMD_BUS_MASTER    = (1 << 2);
-    static constexpr uint16_t PCI_CMD_MEM_SPACE     = (1 << 1);
-    static constexpr uint16_t PCI_CMD_INTX_DISABLE  = (1 << 10);
-
     // MSI configuration
     static constexpr uint8_t  MSI_IRQ      = 24;       // IRQ slot 24 = vector 56 (first MSI slot)
     static constexpr uint32_t MSI_VECTOR   = 56;       // IRQ_VECTOR_BASE + MSI_IRQ
@@ -451,9 +440,9 @@ namespace Drivers::Net::E1000E {
         Pci::LegacyWrite16(bus, dev, func, cap + 2, msgCtrl);
 
         // Disable legacy INTx in PCI command register
-        uint16_t pciCmd = Pci::LegacyRead16(bus, dev, func, PCI_REG_COMMAND);
-        pciCmd |= PCI_CMD_INTX_DISABLE;
-        Pci::LegacyWrite16(bus, dev, func, PCI_REG_COMMAND, pciCmd);
+        uint16_t pciCmd = Pci::LegacyRead16(bus, dev, func, (uint8_t)Pci::PCI_REG_COMMAND);
+        pciCmd |= Pci::PCI_CMD_INTX_DISABLE;
+        Pci::LegacyWrite16(bus, dev, func, (uint8_t)Pci::PCI_REG_COMMAND, pciCmd);
 
         // Register the interrupt handler for MSI vector
         Hal::RegisterIrqHandler(MSI_IRQ, HandleInterrupt);
@@ -518,6 +507,129 @@ namespace Drivers::Net::E1000E {
     // Public API
     // -------------------------------------------------------------------------
 
+    // -------------------------------------------------------------------------
+    // Shared init logic (used by both Probe and Initialize)
+    // -------------------------------------------------------------------------
+
+    static bool InitDevice(uint8_t bus, uint8_t device, uint8_t function, const char* deviceName) {
+        KernelLogStream(OK, "E1000E") << "Found " << deviceName << " at PCI "
+            << base::hex << (uint64_t)bus << ":"
+            << (uint64_t)device << "." << (uint64_t)function;
+
+        // Read BAR0
+        uint64_t mmioPhys = Pci::ReadBar0(bus, device, function);
+        KernelLogStream(INFO, "E1000E") << "BAR0 physical: " << base::hex << mmioPhys;
+
+        // Map the MMIO region (128KB = 32 pages)
+        constexpr uint64_t MmioSize = 0x20000;
+        for (uint64_t offset = 0; offset < MmioSize; offset += 0x1000) {
+            Memory::VMM::g_paging->MapMMIO(mmioPhys + offset, Memory::HHDM(mmioPhys + offset));
+        }
+
+        g_mmioBase = (volatile uint8_t*)Memory::HHDM(mmioPhys);
+
+        // Enable bus mastering and memory space
+        Pci::EnableBusMaster(bus, device, function);
+        KernelLogStream(OK, "E1000E") << "Bus mastering enabled";
+
+        // Read interrupt line from PCI config (used for legacy IRQ fallback)
+        g_irqLine = Pci::LegacyRead8(bus, device, function, (uint8_t)Pci::PCI_REG_INTERRUPT);
+        KernelLogStream(INFO, "E1000E") << "PCI IRQ line: " << base::dec << (uint64_t)g_irqLine;
+
+        // --- ICH/PCH reset sequence ---
+
+        KernelLogStream(INFO, "E1000E") << "Disabling interrupts...";
+        WriteReg(REG_IMC, 0xFFFFFFFF);
+        ReadReg(REG_ICR);
+
+        KernelLogStream(INFO, "E1000E") << "Acquiring semaphore...";
+        AcquireSwFwSync();
+
+        KernelLogStream(INFO, "E1000E") << "Resetting device...";
+        uint32_t ctrl = ReadReg(REG_CTRL);
+        WriteReg(REG_CTRL, ctrl | CTRL_RST);
+
+        for (int i = 0; i < 100000; i++) {
+            asm volatile("" ::: "memory");
+        }
+        for (int i = 0; i < 10000; i++) {
+            if (!(ReadReg(REG_CTRL) & CTRL_RST)) break;
+        }
+
+        ReleaseSwFwSync();
+
+        WriteReg(REG_IMC, 0xFFFFFFFF);
+        ReadReg(REG_ICR);
+
+        KernelLogStream(OK, "E1000E") << "Reset complete";
+
+        ctrl = ReadReg(REG_CTRL);
+        ctrl |= CTRL_SLU;
+        ctrl &= ~CTRL_FRCSPD;
+        ctrl &= ~CTRL_FRCDPLX;
+        ctrl &= ~(1u << 3);
+        ctrl &= ~(1u << 31);
+        ctrl &= ~(1u << 7);
+        WriteReg(REG_CTRL, ctrl);
+
+        InitPhy();
+        ReadMacAddress();
+
+        KernelLogStream(OK, "E1000E") << "MAC: " << base::hex
+            << (uint64_t)g_macAddress[0] << ":" << (uint64_t)g_macAddress[1] << ":"
+            << (uint64_t)g_macAddress[2] << ":" << (uint64_t)g_macAddress[3] << ":"
+            << (uint64_t)g_macAddress[4] << ":" << (uint64_t)g_macAddress[5];
+
+        for (uint32_t i = 0; i < 128; i++) {
+            WriteReg(REG_MTA + (i * 4), 0);
+        }
+
+        SetupRx();
+        SetupTx();
+
+        if (SetupMsi(bus, device, function)) {
+            WriteReg(REG_IMS, ICR_RXT0 | ICR_TXDW | ICR_TXQE | ICR_LSC | ICR_RXDMT0);
+        } else if (g_irqLine != 0xFF) {
+            KernelLogStream(INFO, "E1000E") << "Falling back to legacy IRQ " << base::dec << (uint64_t)g_irqLine;
+            Hal::RegisterIrqHandler(g_irqLine, HandleInterrupt);
+            Hal::IoApic::UnmaskIrq(Hal::IoApic::GetGsiForIrq(g_irqLine));
+            WriteReg(REG_IMS, ICR_RXT0 | ICR_TXDW | ICR_TXQE | ICR_LSC | ICR_RXDMT0);
+        } else {
+            KernelLogStream(WARNING, "E1000E") << "No MSI or legacy IRQ available, using polling mode";
+            g_pollingMode = true;
+        }
+
+        g_initialized = true;
+
+        uint32_t status = ReadReg(REG_STATUS);
+        bool linkUp = (status & (1 << 1)) != 0;
+        KernelLogStream(OK, "E1000E") << "Initialization complete, link: " << (linkUp ? "UP" : "DOWN");
+        return true;
+    }
+
+    // -------------------------------------------------------------------------
+    // Probe (called by PCI driver matching framework)
+    // -------------------------------------------------------------------------
+
+    bool Probe(const Pci::PciDevice& dev) {
+        if (g_initialized) return false;
+
+        // Look up device name from table
+        const char* name = "e1000e";
+        for (uint32_t j = 0; j < g_deviceTableSize; j++) {
+            if (dev.DeviceId == g_deviceTable[j].DeviceId) {
+                name = g_deviceTable[j].Name;
+                break;
+            }
+        }
+
+        return InitDevice(dev.Bus, dev.Device, dev.Function, name);
+    }
+
+    // -------------------------------------------------------------------------
+    // Initialize (standalone fallback path)
+    // -------------------------------------------------------------------------
+
     void Initialize() {
         KernelLogStream(INFO, "E1000E") << "Scanning for Intel e1000e NIC...";
 
@@ -546,133 +658,7 @@ namespace Drivers::Net::E1000E {
             return;
         }
 
-        KernelLogStream(OK, "E1000E") << "Found " << foundName << " at PCI "
-            << base::hex << (uint64_t)foundDev->Bus << ":"
-            << (uint64_t)foundDev->Device << "." << (uint64_t)foundDev->Function;
-
-        // Read BAR0 (MMIO base address), check for 64-bit BAR
-        uint32_t bar0 = Pci::LegacyRead32(foundDev->Bus, foundDev->Device, foundDev->Function, PCI_REG_BAR0);
-        uint64_t mmioPhys = bar0 & 0xFFFFFFF0;
-
-        // Check if 64-bit BAR (type field bits 2:1 == 0b10)
-        if ((bar0 & 0x06) == 0x04) {
-            uint32_t bar1 = Pci::LegacyRead32(foundDev->Bus, foundDev->Device, foundDev->Function, PCI_REG_BAR1);
-            mmioPhys |= ((uint64_t)bar1 << 32);
-        }
-
-        KernelLogStream(INFO, "E1000E") << "BAR0 physical: " << base::hex << mmioPhys;
-
-        // Map the MMIO region (128KB = 32 pages)
-        constexpr uint64_t MmioSize = 0x20000;
-        for (uint64_t offset = 0; offset < MmioSize; offset += 0x1000) {
-            Memory::VMM::g_paging->MapMMIO(mmioPhys + offset, Memory::HHDM(mmioPhys + offset));
-        }
-
-        g_mmioBase = (volatile uint8_t*)Memory::HHDM(mmioPhys);
-
-        // Enable bus mastering and memory space in PCI command register
-        uint16_t pciCmd = Pci::LegacyRead16(foundDev->Bus, foundDev->Device, foundDev->Function, PCI_REG_COMMAND);
-        pciCmd |= PCI_CMD_BUS_MASTER | PCI_CMD_MEM_SPACE;
-        Pci::LegacyWrite16(foundDev->Bus, foundDev->Device, foundDev->Function, PCI_REG_COMMAND, pciCmd);
-
-        KernelLogStream(OK, "E1000E") << "Bus mastering enabled";
-
-        // Read interrupt line from PCI config (used for legacy IRQ fallback)
-        g_irqLine = Pci::LegacyRead8(foundDev->Bus, foundDev->Device, foundDev->Function, PCI_REG_INTERRUPT);
-        KernelLogStream(INFO, "E1000E") << "PCI IRQ line: " << base::dec << (uint64_t)g_irqLine;
-
-        // --- ICH/PCH reset sequence ---
-
-        // 1. Disable interrupts, flush ICR
-        KernelLogStream(INFO, "E1000E") << "Disabling interrupts...";
-        WriteReg(REG_IMC, 0xFFFFFFFF);
-        ReadReg(REG_ICR);
-
-        // 2. Acquire SW/FW semaphore (non-fatal if it fails)
-        KernelLogStream(INFO, "E1000E") << "Acquiring semaphore...";
-        AcquireSwFwSync();
-
-        // 3. Reset the device
-        KernelLogStream(INFO, "E1000E") << "Resetting device...";
-        uint32_t ctrl = ReadReg(REG_CTRL);
-        WriteReg(REG_CTRL, ctrl | CTRL_RST);
-
-        // Post-reset settling delay (give hardware time before polling)
-        for (int i = 0; i < 100000; i++) {
-            asm volatile("" ::: "memory");
-        }
-
-        // Poll for reset completion
-        for (int i = 0; i < 10000; i++) {
-            if (!(ReadReg(REG_CTRL) & CTRL_RST)) {
-                break;
-            }
-        }
-
-        // 4. Release semaphore
-        ReleaseSwFwSync();
-
-        // 5. Disable interrupts again after reset
-        WriteReg(REG_IMC, 0xFFFFFFFF);
-        ReadReg(REG_ICR);
-
-        KernelLogStream(OK, "E1000E") << "Reset complete";
-
-        // Set link up: SLU on, but let auto-negotiation decide speed/duplex
-        ctrl = ReadReg(REG_CTRL);
-        ctrl |= CTRL_SLU;
-        ctrl &= ~CTRL_FRCSPD;
-        ctrl &= ~CTRL_FRCDPLX;
-        ctrl &= ~(1u << 3);  // Clear LRST
-        ctrl &= ~(1u << 31); // Clear PHY_RST
-        ctrl &= ~(1u << 7);  // Clear ILOS
-        WriteReg(REG_CTRL, ctrl);
-
-        // Initialize PHY
-        InitPhy();
-
-        // Read MAC address
-        ReadMacAddress();
-
-        KernelLogStream(OK, "E1000E") << "MAC: "
-            << base::hex
-            << (uint64_t)g_macAddress[0] << ":"
-            << (uint64_t)g_macAddress[1] << ":"
-            << (uint64_t)g_macAddress[2] << ":"
-            << (uint64_t)g_macAddress[3] << ":"
-            << (uint64_t)g_macAddress[4] << ":"
-            << (uint64_t)g_macAddress[5];
-
-        // Zero out the Multicast Table Array (128 entries)
-        for (uint32_t i = 0; i < 128; i++) {
-            WriteReg(REG_MTA + (i * 4), 0);
-        }
-
-        // Set up RX and TX descriptor rings
-        SetupRx();
-        SetupTx();
-
-        // Three-tier interrupt strategy: MSI → legacy IRQ → polling
-        if (SetupMsi(foundDev->Bus, foundDev->Device, foundDev->Function)) {
-            // MSI configured — enable NIC interrupt causes
-            WriteReg(REG_IMS, ICR_RXT0 | ICR_TXDW | ICR_TXQE | ICR_LSC | ICR_RXDMT0);
-        } else if (g_irqLine != 0xFF) {
-            // Legacy IRQ fallback
-            KernelLogStream(INFO, "E1000E") << "Falling back to legacy IRQ " << base::dec << (uint64_t)g_irqLine;
-            Hal::RegisterIrqHandler(g_irqLine, HandleInterrupt);
-            Hal::IoApic::UnmaskIrq(Hal::IoApic::GetGsiForIrq(g_irqLine));
-            WriteReg(REG_IMS, ICR_RXT0 | ICR_TXDW | ICR_TXQE | ICR_LSC | ICR_RXDMT0);
-        } else {
-            // Polling as last resort
-            KernelLogStream(WARNING, "E1000E") << "No MSI or legacy IRQ available, using polling mode";
-            g_pollingMode = true;
-        }
-
-        g_initialized = true;
-
-        uint32_t status = ReadReg(REG_STATUS);
-        bool linkUp = (status & (1 << 1)) != 0;
-        KernelLogStream(OK, "E1000E") << "Initialization complete, link: " << (linkUp ? "UP" : "DOWN");
+        InitDevice(foundDev->Bus, foundDev->Device, foundDev->Function, foundName);
     }
 
     // -------------------------------------------------------------------------

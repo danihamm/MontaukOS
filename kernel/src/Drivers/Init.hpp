@@ -8,10 +8,16 @@
 
 namespace Drivers {
 
-    // Initialize Intel GPU driver and update the cursor framebuffer if found.
+    // Probe PCI devices for Early-phase drivers (GPU).
+    void ProbeEarly();
+
+    // Post-probe: wire up GPU framebuffer to cursor subsystem.
     void InitializeGraphics();
 
-    // Initialize network driver (E1000, falling back to E1000E) and the net stack.
+    // Probe PCI devices for Normal-phase drivers (xHCI, E1000, E1000E).
+    void ProbeNormal();
+
+    // Post-probe: initialize network stack.
     void InitializeNetwork();
 
 }

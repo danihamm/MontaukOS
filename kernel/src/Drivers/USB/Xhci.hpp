@@ -6,6 +6,7 @@
 
 #pragma once
 #include <cstdint>
+#include <Pci/Pci.hpp>
 
 namespace Drivers::USB::Xhci {
 
@@ -28,16 +29,6 @@ namespace Drivers::USB::Xhci {
     constexpr uint8_t  PCI_CLASS_SERIAL = 0x0C;
     constexpr uint8_t  PCI_SUBCLASS_USB = 0x03;
     constexpr uint8_t  PCI_PROGIF_XHCI  = 0x30;
-
-    // PCI config space offsets
-    constexpr uint8_t  PCI_REG_BAR0     = 0x10;
-    constexpr uint8_t  PCI_REG_BAR1     = 0x14;
-    constexpr uint8_t  PCI_REG_COMMAND  = 0x04;
-
-    // PCI command register bits
-    constexpr uint16_t PCI_CMD_BUS_MASTER   = (1 << 2);
-    constexpr uint16_t PCI_CMD_MEM_SPACE    = (1 << 1);
-    constexpr uint16_t PCI_CMD_INTX_DISABLE = (1 << 10);
 
     // ---------------------------------------------------------------------------
     // xHCI Capability Register offsets (from BAR0)
@@ -272,6 +263,7 @@ namespace Drivers::USB::Xhci {
     // ---------------------------------------------------------------------------
 
     void Initialize();
+    bool Probe(const Pci::PciDevice& dev);
     bool IsInitialized();
 
     // Deferred hot-plug processing (call from timer tick, not interrupt context)

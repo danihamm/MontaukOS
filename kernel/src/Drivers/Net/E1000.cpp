@@ -23,15 +23,6 @@ namespace Drivers::Net::E1000 {
     static constexpr uint16_t VendorIntel = 0x8086;
     static constexpr uint16_t DeviceE1000 = 0x100E;
 
-    // PCI config space offsets
-    static constexpr uint8_t PCI_REG_BAR0       = 0x10;
-    static constexpr uint8_t PCI_REG_COMMAND     = 0x04;
-    static constexpr uint8_t PCI_REG_INTERRUPT   = 0x3C;
-
-    // PCI command register bits
-    static constexpr uint16_t PCI_CMD_BUS_MASTER = (1 << 2);
-    static constexpr uint16_t PCI_CMD_MEM_SPACE  = (1 << 1);
-
     // Driver state
     static bool g_initialized = false;
     static volatile uint8_t* g_mmioBase = nullptr;
@@ -296,6 +287,81 @@ namespace Drivers::Net::E1000 {
     // Public API
     // -------------------------------------------------------------------------
 
+    // -------------------------------------------------------------------------
+    // Probe (called by PCI driver matching framework)
+    // -------------------------------------------------------------------------
+
+    bool Probe(const Pci::PciDevice& dev) {
+        if (g_initialized) return false;
+
+        KernelLogStream(OK, "E1000") << "Found E1000 at PCI "
+            << base::hex << (uint64_t)dev.Bus << ":"
+            << (uint64_t)dev.Device << "." << (uint64_t)dev.Function;
+
+        // Read BAR0 (MMIO base address)
+        uint64_t mmioPhys = Pci::ReadBar0(dev.Bus, dev.Device, dev.Function);
+        KernelLogStream(INFO, "E1000") << "BAR0 physical: " << base::hex << mmioPhys;
+
+        // Map the MMIO region (128KB = 32 pages)
+        constexpr uint64_t MmioSize = 0x20000;
+        for (uint64_t offset = 0; offset < MmioSize; offset += 0x1000) {
+            Memory::VMM::g_paging->MapMMIO(mmioPhys + offset, Memory::HHDM(mmioPhys + offset));
+        }
+        g_mmioBase = (volatile uint8_t*)Memory::HHDM(mmioPhys);
+
+        // Enable bus mastering and memory space
+        Pci::EnableBusMaster(dev.Bus, dev.Device, dev.Function);
+        KernelLogStream(OK, "E1000") << "Bus mastering enabled";
+
+        // Read interrupt line from PCI config
+        g_irqLine = Pci::LegacyRead8(dev.Bus, dev.Device, dev.Function, (uint8_t)Pci::PCI_REG_INTERRUPT);
+        KernelLogStream(INFO, "E1000") << "IRQ line: " << base::dec << (uint64_t)g_irqLine;
+
+        // Reset the device
+        uint32_t ctrl = ReadReg(REG_CTRL);
+        WriteReg(REG_CTRL, ctrl | CTRL_RST);
+        for (int i = 0; i < 100000; i++) {
+            if (!(ReadReg(REG_CTRL) & CTRL_RST)) break;
+        }
+
+        WriteReg(REG_IMC, 0xFFFFFFFF);
+
+        ctrl = ReadReg(REG_CTRL);
+        ctrl |= CTRL_SLU;
+        ctrl &= ~(1u << 3);
+        ctrl &= ~(1u << 31);
+        ctrl &= ~(1u << 7);
+        WriteReg(REG_CTRL, ctrl);
+
+        ReadMacAddress();
+        KernelLogStream(OK, "E1000") << "MAC: " << base::hex
+            << (uint64_t)g_macAddress[0] << ":" << (uint64_t)g_macAddress[1] << ":"
+            << (uint64_t)g_macAddress[2] << ":" << (uint64_t)g_macAddress[3] << ":"
+            << (uint64_t)g_macAddress[4] << ":" << (uint64_t)g_macAddress[5];
+
+        for (uint32_t i = 0; i < 128; i++) {
+            WriteReg(REG_MTA + (i * 4), 0);
+        }
+
+        SetupRx();
+        SetupTx();
+
+        Hal::RegisterIrqHandler(g_irqLine, HandleInterrupt);
+        Hal::IoApic::UnmaskIrq(Hal::IoApic::GetGsiForIrq(g_irqLine));
+        WriteReg(REG_IMS, ICR_RXT0 | ICR_TXDW | ICR_TXQE | ICR_LSC | ICR_RXDMT0);
+
+        g_initialized = true;
+
+        uint32_t status = ReadReg(REG_STATUS);
+        bool linkUp = (status & (1 << 1)) != 0;
+        KernelLogStream(OK, "E1000") << "Initialization complete, link: " << (linkUp ? "UP" : "DOWN");
+        return true;
+    }
+
+    // -------------------------------------------------------------------------
+    // Initialize (standalone fallback path)
+    // -------------------------------------------------------------------------
+
     void Initialize() {
         KernelLogStream(INFO, "E1000") << "Scanning for Intel E1000 NIC...";
 
@@ -320,8 +386,7 @@ namespace Drivers::Net::E1000 {
             << (uint64_t)e1000Dev->Device << "." << (uint64_t)e1000Dev->Function;
 
         // Read BAR0 (MMIO base address)
-        uint32_t bar0 = Pci::LegacyRead32(e1000Dev->Bus, e1000Dev->Device, e1000Dev->Function, PCI_REG_BAR0);
-        uint64_t mmioPhys = bar0 & 0xFFFFFFF0; // Mask low 4 bits (type/prefetchable flags)
+        uint64_t mmioPhys = Pci::ReadBar0(e1000Dev->Bus, e1000Dev->Device, e1000Dev->Function);
 
         KernelLogStream(INFO, "E1000") << "BAR0 physical: " << base::hex << mmioPhys;
 
@@ -333,15 +398,13 @@ namespace Drivers::Net::E1000 {
 
         g_mmioBase = (volatile uint8_t*)Memory::HHDM(mmioPhys);
 
-        // Enable bus mastering and memory space in PCI command register
-        uint16_t pciCmd = Pci::LegacyRead16(e1000Dev->Bus, e1000Dev->Device, e1000Dev->Function, PCI_REG_COMMAND);
-        pciCmd |= PCI_CMD_BUS_MASTER | PCI_CMD_MEM_SPACE;
-        Pci::LegacyWrite16(e1000Dev->Bus, e1000Dev->Device, e1000Dev->Function, PCI_REG_COMMAND, pciCmd);
+        // Enable bus mastering and memory space
+        Pci::EnableBusMaster(e1000Dev->Bus, e1000Dev->Device, e1000Dev->Function);
 
         KernelLogStream(OK, "E1000") << "Bus mastering enabled";
 
         // Read interrupt line from PCI config
-        g_irqLine = Pci::LegacyRead8(e1000Dev->Bus, e1000Dev->Device, e1000Dev->Function, PCI_REG_INTERRUPT);
+        g_irqLine = Pci::LegacyRead8(e1000Dev->Bus, e1000Dev->Device, e1000Dev->Function, (uint8_t)Pci::PCI_REG_INTERRUPT);
         KernelLogStream(INFO, "E1000") << "IRQ line: " << base::dec << (uint64_t)g_irqLine;
 
         // Reset the device

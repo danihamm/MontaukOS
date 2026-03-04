@@ -26,7 +26,6 @@
 #include <Drivers/PS2/PS2Controller.hpp>
 #include <Drivers/PS2/Keyboard.hpp>
 #include <Drivers/PS2/Mouse.hpp>
-#include <Drivers/USB/Xhci.hpp>
 #include <Drivers/Init.hpp>
 #include <Graphics/Cursor.hpp>
 #include <Hal/MSR.hpp>
@@ -141,6 +140,7 @@ extern "C" void kmain() {
 
         Pci::Initialize(g_acpi.GetXSDT());
 
+        Drivers::ProbeEarly();
         Drivers::InitializeGraphics();
 
         Timekeeping::ApicTimerInitialize();
@@ -149,8 +149,7 @@ extern "C" void kmain() {
         Drivers::PS2::Keyboard::Initialize();
         Drivers::PS2::Mouse::Initialize();
 
-        Drivers::USB::Xhci::Initialize();
-
+        Drivers::ProbeNormal();
         Drivers::InitializeNetwork();
     }
 #endif

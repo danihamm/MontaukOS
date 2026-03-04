@@ -132,14 +132,7 @@ namespace Drivers::Graphics::IntelGPU {
         uint8_t func = g_gpuInfo.pciFunction;
 
         // Read BAR0
-        uint32_t bar0Low = Pci::LegacyRead32(bus, dev, func, (uint8_t)PCI_REG_BAR0);
-        uint64_t mmioPhys = bar0Low & 0xFFFFFFF0u; // Mask off type/prefetchable bits
-
-        // Check for 64-bit BAR (bit 2 of BAR type field)
-        if (bar0Low & 0x04) {
-            uint32_t bar0High = Pci::LegacyRead32(bus, dev, func, (uint8_t)(PCI_REG_BAR0 + 4));
-            mmioPhys |= ((uint64_t)bar0High << 32);
-        }
+        uint64_t mmioPhys = Pci::ReadBar0(bus, dev, func);
 
         g_gpuInfo.mmioPhys = mmioPhys;
         g_gpuInfo.mmioSize = 0x200000; // Map 2MB of MMIO space
@@ -155,10 +148,8 @@ namespace Drivers::Graphics::IntelGPU {
 
         KernelLogStream(OK, "IntelGPU") << "MMIO mapped at virtual " << base::hex << (uint64_t)g_mmioBase;
 
-        // Enable memory space and bus master in PCI command register
-        uint16_t pciCmd = Pci::LegacyRead16(bus, dev, func, (uint8_t)PCI_REG_COMMAND);
-        pciCmd |= PCI_CMD_MEM_SPACE | PCI_CMD_BUS_MASTER;
-        Pci::LegacyWrite16(bus, dev, func, (uint8_t)PCI_REG_COMMAND, pciCmd);
+        // Enable memory space and bus master
+        Pci::EnableBusMaster(bus, dev, func);
 
         KernelLogStream(OK, "IntelGPU") << "PCI memory space and bus mastering enabled";
 
@@ -471,6 +462,94 @@ namespace Drivers::Graphics::IntelGPU {
 
     // =========================================================================
     // Public API
+    // =========================================================================
+
+    // =========================================================================
+    // Probe (called by PCI driver matching framework)
+    // =========================================================================
+
+    bool Probe(const Pci::PciDevice& dev) {
+        if (g_initialized) return false;
+
+        // Fill in PCI location
+        g_gpuInfo.pciBus      = dev.Bus;
+        g_gpuInfo.pciDevice   = dev.Device;
+        g_gpuInfo.pciFunction = dev.Function;
+        g_gpuInfo.deviceId    = dev.DeviceId;
+
+        // Match device ID against supported table
+        const DeviceInfo* matchedInfo = nullptr;
+        for (int j = 0; j < SupportedDeviceCount; j++) {
+            if (dev.DeviceId == SupportedDevices[j].deviceId) {
+                matchedInfo = &SupportedDevices[j];
+                break;
+            }
+        }
+
+        if (matchedInfo != nullptr) {
+            g_gpuInfo.gen  = matchedInfo->gen;
+            g_gpuInfo.name = matchedInfo->name;
+            KernelLogStream(OK, "IntelGPU") << "Found " << matchedInfo->name
+                << " (device " << base::hex << (uint64_t)dev.DeviceId << ")"
+                << " at PCI " << (uint64_t)dev.Bus << ":"
+                << (uint64_t)dev.Device << "." << (uint64_t)dev.Function;
+        } else {
+            g_gpuInfo.gen  = 7;
+            g_gpuInfo.name = "Intel GPU";
+            KernelLogStream(WARNING, "IntelGPU") << "Unknown Intel display controller "
+                << "(device " << base::hex << (uint64_t)dev.DeviceId << ")"
+                << " at PCI " << (uint64_t)dev.Bus << ":"
+                << (uint64_t)dev.Device << "." << (uint64_t)dev.Function
+                << " - attempting generic initialization";
+        }
+
+        g_gpuGen = g_gpuInfo.gen;
+
+        if (!MapMmio()) {
+            KernelLogStream(ERROR, "IntelGPU") << "Failed to map MMIO region";
+            return false;
+        }
+
+        DisableVga();
+
+        if (!ReadDisplayState()) {
+            KernelLogStream(ERROR, "IntelGPU") << "Failed to read display state";
+            return false;
+        }
+
+        if (!InitializeGtt()) {
+            KernelLogStream(ERROR, "IntelGPU") << "Failed to initialize GTT";
+            return false;
+        }
+
+        if (!SetupFramebuffer()) {
+            KernelLogStream(ERROR, "IntelGPU") << "Failed to set up framebuffer";
+            return false;
+        }
+
+        ProgramDisplayPlane();
+        g_initialized = true;
+
+        uint64_t fwWidth  = ::Graphics::Cursor::GetFramebufferWidth();
+        uint64_t fwHeight = ::Graphics::Cursor::GetFramebufferHeight();
+        uint64_t fwPitch  = ::Graphics::Cursor::GetFramebufferPitch();
+
+        if (g_fbWidth != fwWidth || g_fbHeight != fwHeight || g_fbPitch != fwPitch) {
+            KernelLogStream(WARNING, "IntelGPU") << "GPU dimensions differ from firmware!";
+            KernelLogStream(WARNING, "IntelGPU") << "  GPU:      "
+                << base::dec << g_fbWidth << "x" << g_fbHeight << " pitch=" << g_fbPitch;
+            KernelLogStream(WARNING, "IntelGPU") << "  Firmware: "
+                << base::dec << fwWidth << "x" << fwHeight << " pitch=" << fwPitch;
+        }
+
+        KernelLogStream(OK, "IntelGPU") << "Initialization complete: "
+            << base::dec << g_fbWidth << "x" << g_fbHeight
+            << " @ " << base::hex << (uint64_t)g_fbBase;
+        return true;
+    }
+
+    // =========================================================================
+    // Initialize (standalone fallback path)
     // =========================================================================
 
     void Initialize() {

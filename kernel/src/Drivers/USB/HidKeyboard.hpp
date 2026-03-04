@@ -15,4 +15,7 @@ namespace Drivers::USB::HidKeyboard {
     // Process an 8-byte boot protocol keyboard report
     void ProcessReport(const uint8_t* data, uint16_t length);
 
+    // Timer tick for typematic repeat (call from periodic timer, e.g. 1ms)
+    void Tick();
+
 };

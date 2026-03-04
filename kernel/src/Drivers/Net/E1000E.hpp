@@ -6,6 +6,7 @@
 
 #pragma once
 #include <cstdint>
+#include <Pci/Pci.hpp>
 
 namespace Drivers::Net::E1000E {
 
@@ -133,6 +134,9 @@ namespace Drivers::Net::E1000E {
 
     // Initialize the E1000E driver (scans PCI for the device)
     void Initialize();
+
+    // Probe a specific PCI device (called by PCI driver matching framework)
+    bool Probe(const Pci::PciDevice& dev);
 
     // Send a raw Ethernet frame
     bool SendPacket(const uint8_t* data, uint16_t length);

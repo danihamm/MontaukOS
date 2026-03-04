@@ -7,6 +7,7 @@
 #include "HidKeyboard.hpp"
 #include <Drivers/PS2/Keyboard.hpp>
 #include <Terminal/Terminal.hpp>
+#include <Timekeeping/ApicTimer.hpp>
 #include <CppLib/Stream.hpp>
 
 using namespace Kt;
@@ -171,13 +172,13 @@ namespace Drivers::USB::HidKeyboard {
     static uint8_t g_PrevKeys[6] = {};
     static uint8_t g_PrevModifiers = 0;
 
-    // Typematic repeat state
-    static uint8_t  g_RepeatKey = 0;     // HID usage ID currently repeating
-    static uint16_t g_HoldCount = 0;     // Reports since key was first held
+    // Typematic repeat state (timestamp-based, independent of report rate)
+    static uint8_t  g_RepeatKey = 0;         // HID usage ID currently repeating
+    static uint64_t g_RepeatStartMs = 0;     // Timestamp when key was first held
+    static uint64_t g_LastRepeatMs = 0;       // Timestamp of last repeat event
 
-    // Tuned for ~16ms report interval (SET_IDLE(4))
-    constexpr uint16_t TYPEMATIC_DELAY  = 31;  // ~500ms before repeat starts
-    constexpr uint16_t TYPEMATIC_PERIOD = 2;   // ~32ms between repeats (~31 chars/sec)
+    constexpr uint64_t TYPEMATIC_DELAY_MS  = 500;  // ms before repeat starts
+    constexpr uint64_t TYPEMATIC_PERIOD_MS = 32;    // ms between repeats (~31 chars/sec)
 
     // -------------------------------------------------------------------------
     // Helpers
@@ -252,7 +253,8 @@ namespace Drivers::USB::HidKeyboard {
         for (int i = 0; i < 6; i++) g_PrevKeys[i] = 0;
         g_PrevModifiers = 0;
         g_RepeatKey = 0;
-        g_HoldCount = 0;
+        g_RepeatStartMs = 0;
+        g_LastRepeatMs = 0;
 
         KernelLogStream(OK, "USB/KB") << "Registered HID keyboard on slot " << (uint64_t)slotId;
     }
@@ -263,6 +265,16 @@ namespace Drivers::USB::HidKeyboard {
         uint8_t modifiers   = data[0];
         // data[1] is reserved
         const uint8_t* keys = &data[2];
+
+        // -----------------------------------------------------------------
+        // Detect ErrorRollOver (phantom keys) — ignore entire report
+        // When the keyboard can't reliably report all pressed keys, it
+        // fills key slots with 0x01. Updating state from this would
+        // falsely release all held keys, so we skip the report entirely.
+        // -----------------------------------------------------------------
+        for (int i = 0; i < 6; i++) {
+            if (keys[i] == 0x01) return;
+        }
 
         // -----------------------------------------------------------------
         // Handle modifier changes
@@ -291,6 +303,7 @@ namespace Drivers::USB::HidKeyboard {
         // -----------------------------------------------------------------
         // Detect newly pressed keys (in current but not in previous)
         // -----------------------------------------------------------------
+        uint64_t now = Timekeeping::GetMilliseconds();
         bool newKeyPressed = false;
         for (int i = 0; i < 6; i++) {
             uint8_t key = keys[i];
@@ -301,7 +314,8 @@ namespace Drivers::USB::HidKeyboard {
                 if (scancode != 0) {
                     InjectKey(scancode, true, modifiers, IsNonCharKey(key));
                     g_RepeatKey = key;
-                    g_HoldCount = 0;
+                    g_RepeatStartMs = now;
+                    g_LastRepeatMs = 0;
                     newKeyPressed = true;
                 }
             }
@@ -321,21 +335,6 @@ namespace Drivers::USB::HidKeyboard {
                 }
                 if (key == g_RepeatKey) {
                     g_RepeatKey = 0;
-                    g_HoldCount = 0;
-                }
-            }
-        }
-
-        // -----------------------------------------------------------------
-        // Typematic repeat for held keys
-        // -----------------------------------------------------------------
-        if (!newKeyPressed && g_RepeatKey != 0 && KeyInArray(g_RepeatKey, keys)) {
-            g_HoldCount++;
-            if (g_HoldCount >= TYPEMATIC_DELAY &&
-                (g_HoldCount - TYPEMATIC_DELAY) % TYPEMATIC_PERIOD == 0) {
-                uint8_t scancode = g_HidToScancode[g_RepeatKey];
-                if (scancode != 0) {
-                    InjectKey(scancode, true, modifiers, IsNonCharKey(g_RepeatKey));
                 }
             }
         }
@@ -345,6 +344,29 @@ namespace Drivers::USB::HidKeyboard {
         // -----------------------------------------------------------------
         for (int i = 0; i < 6; i++) g_PrevKeys[i] = keys[i];
         g_PrevModifiers = modifiers;
+    }
+
+    // -------------------------------------------------------------------------
+    // Tick — called from periodic timer (1ms) to drive typematic repeat
+    // With SET_IDLE(0) the keyboard only reports on changes, so we need
+    // an external clock to fire repeats while a key is held unchanged.
+    // -------------------------------------------------------------------------
+
+    void Tick() {
+        if (g_RepeatKey == 0) return;
+
+        uint64_t now = Timekeeping::GetMilliseconds();
+        uint64_t held = now - g_RepeatStartMs;
+        if (held < TYPEMATIC_DELAY_MS) return;
+
+        if (g_LastRepeatMs == 0 ||
+            (now - g_LastRepeatMs) >= TYPEMATIC_PERIOD_MS) {
+            uint8_t scancode = g_HidToScancode[g_RepeatKey];
+            if (scancode != 0) {
+                InjectKey(scancode, true, g_PrevModifiers, IsNonCharKey(g_RepeatKey));
+            }
+            g_LastRepeatMs = now;
+        }
     }
 
 }

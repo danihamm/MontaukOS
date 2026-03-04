@@ -501,14 +501,14 @@ namespace Drivers::USB::UsbDevice {
         }
 
         // -----------------------------------------------------------------
-        // Step 11: SET_IDLE(4) -- 16ms idle rate for software typematic
+        // Step 11: SET_IDLE(0) -- only report on changes (no idle reports)
         // -----------------------------------------------------------------
         if (foundEp && dev->InterfaceProtocol == PROTOCOL_KEYBOARD) {
-            // wValue upper byte = duration in 4ms units, lower byte = report ID
+            // wValue upper byte = duration (0 = indefinite), lower byte = report ID
             cc = Xhci::ControlTransfer(slotId, REQTYPE_CLASS_IFACE, REQ_SET_IDLE,
-                                       (4 << 8), 0, 0, nullptr, false);
+                                       (0 << 8), 0, 0, nullptr, false);
             if (cc != Xhci::CC_SUCCESS) {
-                KernelLogStream(WARNING, "USB") << "SET_IDLE(4) failed, cc=" << (uint64_t)cc;
+                KernelLogStream(WARNING, "USB") << "SET_IDLE(0) failed, cc=" << (uint64_t)cc;
                 // Non-fatal: not all devices support SET_IDLE
             }
         }

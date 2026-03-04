@@ -76,4 +76,47 @@ namespace Pci {
     // Initialize PCI subsystem: parse MCFG, enumerate devices
     // xsdt: pointer to the XSDT (already HHDM-mapped)
     void Initialize(Hal::ACPI::CommonSDTHeader* xsdt);
+
+    // =========================================================================
+    // Shared PCI constants
+    // =========================================================================
+
+    constexpr uint16_t PCI_REG_COMMAND      = 0x04;
+    constexpr uint16_t PCI_REG_BAR0         = 0x10;
+    constexpr uint16_t PCI_REG_BAR1         = 0x14;
+    constexpr uint16_t PCI_REG_INTERRUPT    = 0x3C;
+
+    constexpr uint16_t PCI_CMD_MEM_SPACE    = (1 << 1);
+    constexpr uint16_t PCI_CMD_BUS_MASTER   = (1 << 2);
+    constexpr uint16_t PCI_CMD_INTX_DISABLE = (1 << 10);
+
+    // Read BAR0, handling 32/64-bit BARs. Returns physical base address.
+    uint64_t ReadBar0(uint8_t bus, uint8_t device, uint8_t function);
+
+    // Enable memory space access and bus mastering in PCI command register.
+    void EnableBusMaster(uint8_t bus, uint8_t device, uint8_t function);
+
+    // =========================================================================
+    // PCI driver matching
+    // =========================================================================
+
+    enum class ProbePhase : uint8_t { Early = 0, Normal = 1 };
+
+    using PciProbeFunc = bool(*)(const PciDevice& dev);
+
+    struct PciDriverDesc {
+        const char*     Name;
+        uint16_t        VendorId;       // 0 = any
+        uint8_t         ClassCode;      // 0xFF = any
+        uint8_t         SubClass;       // 0xFF = any
+        uint8_t         ProgIf;         // 0xFF = any
+        const uint16_t* DeviceIds;      // optional device ID whitelist
+        uint16_t        DeviceIdCount;  // 0 = skip device ID check
+        ProbePhase      Phase;
+        PciProbeFunc    Probe;
+    };
+
+    // Probe all PCI devices against a driver table for a given phase.
+    // First driver whose Probe() returns true claims each device.
+    void ProbeAll(const PciDriverDesc* table, uint16_t count, ProbePhase phase);
 };
