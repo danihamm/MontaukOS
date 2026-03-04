@@ -92,8 +92,7 @@ namespace Montauk {
                     buf[count].name[j] = proc->name[j];
                 buf[count].name[j] = '\0';
             }
-            buf[count].heapUsed = (proc->heapNext > Sched::UserHeapBase)
-                ? proc->heapNext - Sched::UserHeapBase : 0;
+            buf[count].heapUsed = Sched::g_allocatedPages[i] * 0x1000;
             count++;
         }
         return count;

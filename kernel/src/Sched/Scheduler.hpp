@@ -88,4 +88,7 @@ namespace Sched {
     // Get a pointer to slot i in the process table (for enumeration)
     Process* GetProcessSlot(int slot);
 
+    // Per-process allocated page count (tracked by Heap syscalls, separate from Process struct)
+    inline uint64_t g_allocatedPages[MaxProcesses] = {};
+
 }

@@ -54,6 +54,7 @@ namespace Montauk {
 
         // Track the allocation so Sys_Free can release it
         int slot = GetCurrentSlot();
+        if (slot >= 0) Sched::g_allocatedPages[slot] += numPages;
         if (slot >= 0 && g_heapAllocCount[slot] < MaxHeapAllocs) {
             g_heapAllocs[slot][g_heapAllocCount[slot]++] = { userVa, numPages };
         }
@@ -66,6 +67,7 @@ namespace Montauk {
     static void CleanupHeapForSlot(int slot, uint64_t /*pml4Phys*/) {
         if (slot < 0 || slot >= Sched::MaxProcesses) return;
         g_heapAllocCount[slot] = 0;
+        Sched::g_allocatedPages[slot] = 0;
     }
 
     static void Sys_Free(uint64_t addr) {
@@ -97,6 +99,8 @@ namespace Montauk {
             }
             Memory::VMM::Paging::UnmapUserIn(proc->pml4Phys, pageVa);
         }
+
+        if (slot >= 0) Sched::g_allocatedPages[slot] -= numPages;
 
         // Remove tracking entry by swapping with the last element
         g_heapAllocs[slot][idx] = g_heapAllocs[slot][g_heapAllocCount[slot] - 1];

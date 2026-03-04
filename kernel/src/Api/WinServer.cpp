@@ -85,6 +85,25 @@ namespace WinServer {
         WindowSlot& slot = g_slots[windowId];
         if (!slot.used || slot.ownerPid != callerPid) return -1;
 
+        // Unmap pixel pages from desktop's address space
+        if (slot.desktopVa != 0 && slot.desktopPid != 0) {
+            auto* desktopProc = Sched::GetProcessByPid(slot.desktopPid);
+            if (desktopProc) {
+                for (int p = 0; p < slot.pixelNumPages; p++) {
+                    Memory::VMM::Paging::UnmapUserIn(
+                        desktopProc->pml4Phys,
+                        slot.desktopVa + (uint64_t)p * 0x1000);
+                }
+            }
+        }
+
+        // Free physical pixel pages
+        for (int i = 0; i < slot.pixelNumPages; i++) {
+            if (slot.pixelPhysPages[i] != 0) {
+                Memory::g_pfa->Free((void*)Memory::HHDM(slot.pixelPhysPages[i]));
+            }
+        }
+
         slot.used = false;
         return 0;
     }
@@ -179,6 +198,15 @@ namespace WinServer {
         int numPages = (int)((bufSize + 0xFFF) / 0x1000);
         if (numPages > MaxPixelPages) return -1;
 
+        // Free old pixel pages before allocating new ones
+        int oldNumPages = slot.pixelNumPages;
+        for (int i = 0; i < oldNumPages; i++) {
+            if (slot.pixelPhysPages[i] != 0) {
+                Memory::g_pfa->Free((void*)Memory::HHDM(slot.pixelPhysPages[i]));
+                slot.pixelPhysPages[i] = 0;
+            }
+        }
+
         // Allocate new pages and map into owner's address space
         uint64_t userVa = heapNext;
         for (int i = 0; i < numPages; i++) {
@@ -240,6 +268,13 @@ namespace WinServer {
                                 desktopProc->pml4Phys,
                                 g_slots[i].desktopVa + (uint64_t)p * 0x1000);
                         }
+                    }
+                }
+
+                // Free physical pixel pages
+                for (int p = 0; p < g_slots[i].pixelNumPages; p++) {
+                    if (g_slots[i].pixelPhysPages[p] != 0) {
+                        Memory::g_pfa->Free((void*)Memory::HHDM(g_slots[i].pixelPhysPages[p]));
                     }
                 }
 
