@@ -1484,6 +1484,11 @@ static int stbtt_InitFont_internal(stbtt_fontinfo *info, unsigned char *data, in
             // all the encodingIDs are unicode, so we don't bother to check it
             info->index_map = cmap + ttULONG(data+encoding_record+4);
             break;
+        case STBTT_PLATFORM_ID_MAC:
+            // Accept Mac Roman as fallback (common in PDF subset fonts)
+            if (info->index_map == 0)
+               info->index_map = cmap + ttULONG(data+encoding_record+4);
+            break;
       }
    }
    if (info->index_map == 0)

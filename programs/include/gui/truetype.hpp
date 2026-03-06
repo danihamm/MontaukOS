@@ -63,9 +63,11 @@ struct TrueTypeFont {
     GlyphCache caches[4];
     int cache_count;
     bool valid;
+    bool em_scaling;  // true for PDF embedded fonts: scale by em square, not ascent-descent
 
     bool init(const char* vfs_path) {
         valid = false;
+        em_scaling = false;
         data = nullptr;
         cache_count = 0;
 
@@ -97,19 +99,20 @@ struct TrueTypeFont {
         return true;
     }
 
-    GlyphCache* get_cache(int pixel_size) {
-        // Search existing caches
-        for (int i = 0; i < cache_count; i++) {
-            if (caches[i].pixel_size == pixel_size)
-                return &caches[i];
+    void init_cache(GlyphCache* gc, int pixel_size) {
+        // Free any existing glyph bitmaps
+        for (int i = 0; i < 256; i++) {
+            if (gc->glyphs[i].bitmap) {
+                montauk::mfree(gc->glyphs[i].bitmap);
+            }
+            gc->glyphs[i].bitmap = nullptr;
+            gc->glyphs[i].loaded = false;
         }
 
-        // Create new cache
-        if (cache_count >= 4) return &caches[0]; // fallback to first
-
-        GlyphCache* gc = &caches[cache_count++];
         gc->pixel_size = pixel_size;
-        gc->scale = stbtt_ScaleForPixelHeight(&info, (float)pixel_size);
+        gc->scale = em_scaling
+            ? stbtt_ScaleForMappingEmToPixels(&info, (float)pixel_size)
+            : stbtt_ScaleForPixelHeight(&info, (float)pixel_size);
 
         int asc, desc, lg;
         stbtt_GetFontVMetrics(&info, &asc, &desc, &lg);
@@ -117,13 +120,29 @@ struct TrueTypeFont {
         gc->descent = (int)(desc * gc->scale);
         gc->line_gap = (int)(lg * gc->scale);
         gc->line_height = gc->ascent - gc->descent + gc->line_gap;
+    }
 
-        for (int i = 0; i < 128; i++) {
-            gc->glyphs[i].bitmap = nullptr;
-            gc->glyphs[i].loaded = false;
+    GlyphCache* get_cache(int pixel_size) {
+        // Search existing caches
+        for (int i = 0; i < cache_count; i++) {
+            if (caches[i].pixel_size == pixel_size)
+                return &caches[i];
         }
 
-        return gc;
+        // Use a free slot if available
+        if (cache_count < 4) {
+            GlyphCache* gc = &caches[cache_count++];
+            init_cache(gc, pixel_size);
+            return gc;
+        }
+
+        // Evict oldest cache (slot 0) and shift others down
+        GlyphCache evicted = caches[0];
+        for (int i = 0; i < 3; i++)
+            caches[i] = caches[i + 1];
+        caches[3] = evicted;
+        init_cache(&caches[3], pixel_size);
+        return &caches[3];
     }
 
     CachedGlyph* get_glyph(GlyphCache* gc, int codepoint) {

@@ -65,6 +65,14 @@ static bool is_font_file(const char* name) {
     return str_ends_with(name, ".ttf");
 }
 
+static bool is_pdf_file(const char* name) {
+    return str_ends_with(name, ".pdf");
+}
+
+static bool is_spreadsheet_file(const char* name) {
+    return str_ends_with(name, ".mss");
+}
+
 static int detect_file_type(const char* name, bool is_dir) {
     if (is_dir) return 1;
     if (str_ends_with(name, ".elf")) return 2;
@@ -567,6 +575,10 @@ static void filemanager_on_mouse(Window* win, MouseEvent& ev) {
                                 montauk::spawn("0:/os/imageviewer.elf", fullpath);
                             } else if (is_font_file(fm->entry_names[clicked_idx])) {
                                 montauk::spawn("0:/os/fontpreview.elf", fullpath);
+                            } else if (is_pdf_file(fm->entry_names[clicked_idx])) {
+                                montauk::spawn("0:/os/pdfviewer.elf", fullpath);
+                            } else if (is_spreadsheet_file(fm->entry_names[clicked_idx])) {
+                                montauk::spawn("0:/os/spreadsheet.elf", fullpath);
                             } else if (fm->desktop) {
                                 open_texteditor_with_file(fm->desktop, fullpath);
                             }
@@ -608,6 +620,10 @@ static void filemanager_on_mouse(Window* win, MouseEvent& ev) {
                                 montauk::spawn("0:/os/imageviewer.elf", fullpath);
                             } else if (is_font_file(fm->entry_names[clicked_idx])) {
                                 montauk::spawn("0:/os/fontpreview.elf", fullpath);
+                            } else if (is_pdf_file(fm->entry_names[clicked_idx])) {
+                                montauk::spawn("0:/os/pdfviewer.elf", fullpath);
+                            } else if (is_spreadsheet_file(fm->entry_names[clicked_idx])) {
+                                montauk::spawn("0:/os/spreadsheet.elf", fullpath);
                             } else if (fm->desktop) {
                                 open_texteditor_with_file(fm->desktop, fullpath);
                             }
