@@ -277,6 +277,57 @@ struct TrueTypeFont {
         }
     }
 
+    // Draw text to buffer with clip rectangle (pixels outside clip_x..clip_x+clip_w are not drawn)
+    void draw_to_buffer_clipped(uint32_t* pixels, int buf_w, int buf_h,
+                        int x, int y, const char* text,
+                        Color color, int pixel_size,
+                        int clip_x, int clip_y, int clip_w, int clip_h) {
+        if (!valid) return;
+        GlyphCache* gc = get_cache(pixel_size);
+        int cx = x;
+        int baseline = y + gc->ascent;
+        int clip_x2 = clip_x + clip_w;
+        int clip_y2 = clip_y + clip_h;
+
+        for (int i = 0; text[i]; i++) {
+            CachedGlyph* g = get_glyph(gc, (unsigned char)text[i]);
+            if (!g) continue;
+
+            if (g->bitmap) {
+                int gx = cx + g->xoff;
+                int gy = baseline + g->yoff;
+                for (int row = 0; row < g->height; row++) {
+                    int dy = gy + row;
+                    if (dy < clip_y || dy >= clip_y2 || dy < 0 || dy >= buf_h) continue;
+                    for (int col = 0; col < g->width; col++) {
+                        int dx = gx + col;
+                        if (dx < clip_x || dx >= clip_x2 || dx < 0 || dx >= buf_w) continue;
+                        uint8_t alpha = g->bitmap[row * g->width + col];
+                        if (alpha == 0) continue;
+
+                        if (alpha == 255) {
+                            pixels[dy * buf_w + dx] =
+                                0xFF000000 | ((uint32_t)color.r << 16) |
+                                ((uint32_t)color.g << 8) | color.b;
+                        } else {
+                            uint32_t dst = pixels[dy * buf_w + dx];
+                            uint8_t dr = (dst >> 16) & 0xFF;
+                            uint8_t dg = (dst >> 8) & 0xFF;
+                            uint8_t db = dst & 0xFF;
+                            uint32_t a = alpha, inv_a = 255 - alpha;
+                            uint32_t rr = (a * color.r + inv_a * dr + 128) / 255;
+                            uint32_t gg = (a * color.g + inv_a * dg + 128) / 255;
+                            uint32_t bb = (a * color.b + inv_a * db + 128) / 255;
+                            pixels[dy * buf_w + dx] =
+                                0xFF000000 | (rr << 16) | (gg << 8) | bb;
+                        }
+                    }
+                }
+            }
+            cx += g->advance;
+        }
+    }
+
     // Draw single character to buffer, returning advance width
     int draw_char_to_buffer(uint32_t* pixels, int buf_w, int buf_h,
                             int x, int baseline, int codepoint,

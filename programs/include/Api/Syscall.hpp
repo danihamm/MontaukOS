@@ -77,6 +77,7 @@ namespace Montauk {
     static constexpr uint64_t SYS_WINRESIZE   = 64;
     static constexpr uint64_t SYS_WINSETSCALE = 65;
     static constexpr uint64_t SYS_WINGETSCALE = 66;
+    static constexpr uint64_t SYS_WINSETCURSOR = 68;
 
     // Process management syscalls
     static constexpr uint64_t SYS_PROCLIST    = 61;
@@ -156,7 +157,8 @@ namespace Montauk {
         char     title[64];
         int32_t  width, height;
         uint8_t  dirty;
-        uint8_t  _pad2[3];
+        uint8_t  cursor;    // 0=arrow, 1=resize_h, 2=resize_v
+        uint8_t  _pad2[2];
     };
 
     struct WinCreateResult {

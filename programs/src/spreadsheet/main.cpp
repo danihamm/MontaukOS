@@ -51,6 +51,11 @@ TrueTypeFont* g_font_bold = nullptr;
 
 bool g_fmt_dropdown_open = false;
 
+bool g_col_resizing = false;
+int  g_col_resize_idx = -1;
+int  g_col_resize_start_x = 0;
+int  g_col_resize_start_w = 0;
+
 UndoEntry* g_undo[UNDO_MAX + 1];
 int g_undo_count = 0;
 int g_undo_pos = 0;
@@ -499,6 +504,58 @@ extern "C" void _start() {
             uint8_t btns = ev.mouse.buttons;
             uint8_t prev = ev.mouse.prev_buttons;
             bool clicked = (btns & 1) && !(prev & 1);
+            bool left_held = (btns & 1);
+            bool left_released = !(btns & 1) && (prev & 1);
+
+            int pbh = g_pathbar_open ? PATHBAR_H : 0;
+            int header_y = TOOLBAR_H + pbh + FORMULA_BAR_H;
+
+            // Update cursor style: resize_h when hovering near column border in header
+            {
+                int cursor = 0; // arrow
+                if (g_col_resizing) {
+                    cursor = 1; // resize_h while dragging
+                } else if (my >= header_y && my < header_y + COL_HEADER_H) {
+                    for (int c = 0; c < MAX_COLS; c++) {
+                        int cx = col_x(c) - g_scroll_x + g_col_widths[c] - 1;
+                        if (mx >= cx - COL_RESIZE_GRAB && mx <= cx + COL_RESIZE_GRAB) {
+                            cursor = 1; // resize_h
+                            break;
+                        }
+                    }
+                }
+                montauk::win_setcursor(win_id, cursor);
+            }
+
+            // Column resize: drag in progress
+            if (g_col_resizing) {
+                if (left_held) {
+                    int delta = mx - g_col_resize_start_x;
+                    int new_w = g_col_resize_start_w + delta;
+                    if (new_w < MIN_COL_W) new_w = MIN_COL_W;
+                    g_col_widths[g_col_resize_idx] = new_w;
+                    clamp_scroll();
+                    redraw = true;
+                }
+                if (left_released) {
+                    g_col_resizing = false;
+                }
+                goto done_mouse;
+            }
+
+            // Column resize: start drag (click near right edge of column header)
+            if (clicked && my >= header_y && my < header_y + COL_HEADER_H) {
+                for (int c = 0; c < MAX_COLS; c++) {
+                    int cx = col_x(c) - g_scroll_x + g_col_widths[c] - 1;
+                    if (mx >= cx - COL_RESIZE_GRAB && mx <= cx + COL_RESIZE_GRAB) {
+                        g_col_resizing = true;
+                        g_col_resize_idx = c;
+                        g_col_resize_start_x = mx;
+                        g_col_resize_start_w = g_col_widths[c];
+                        goto done_mouse;
+                    }
+                }
+            }
 
             if (clicked) {
                 if (handle_fmt_dropdown_click(mx, my)) {
@@ -526,6 +583,7 @@ extern "C" void _start() {
                 redraw = true;
             }
         }
+        done_mouse:
 
         if (redraw) {
             render(pixels);

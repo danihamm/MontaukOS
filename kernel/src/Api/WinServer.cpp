@@ -153,6 +153,7 @@ namespace WinServer {
             info.width = g_slots[i].width;
             info.height = g_slots[i].height;
             info.dirty = g_slots[i].dirty ? 1 : 0;
+            info.cursor = g_slots[i].cursor;
             g_slots[i].dirty = false; // clear dirty after read
             count++;
         }
@@ -243,6 +244,14 @@ namespace WinServer {
         slot.desktopPid = 0;
 
         outVa = userVa;
+        return 0;
+    }
+
+    int SetCursor(int windowId, int callerPid, int cursor) {
+        if (windowId < 0 || windowId >= MaxWindows) return -1;
+        WindowSlot& slot = g_slots[windowId];
+        if (!slot.used || slot.ownerPid != callerPid) return -1;
+        slot.cursor = (uint8_t)cursor;
         return 0;
     }
 

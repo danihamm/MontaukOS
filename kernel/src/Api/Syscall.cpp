@@ -213,6 +213,8 @@ namespace Montauk {
                 return (int64_t)Sys_WinSetScale((int)frame->arg1);
             case SYS_WINGETSCALE:
                 return (int64_t)Sys_WinGetScale();
+            case SYS_WINSETCURSOR:
+                return (int64_t)Sys_WinSetCursor((int)frame->arg1, (int)frame->arg2);
             case SYS_MEMSTATS:
                 Sys_MemStats((MemStats*)frame->arg1);
                 return 0;

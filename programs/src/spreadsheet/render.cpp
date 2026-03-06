@@ -249,8 +249,17 @@ void render(uint32_t* pixels) {
                 else
                     text_x = x + 6;
 
-                if (text_x >= ROW_HEADER_W - tw && text_x < g_win_w)
-                    cf->draw_to_buffer(pixels, g_win_w, g_win_h, text_x, y + (ROW_H - FONT_SIZE) / 2, cell->display, col, FONT_SIZE);
+                {
+                    // Clip text to cell boundaries
+                    int cell_left = x < ROW_HEADER_W ? ROW_HEADER_W : x;
+                    int cell_right = x + g_col_widths[c] - 1;
+                    if (cell_right > g_win_w) cell_right = g_win_w;
+                    if (text_x < g_win_w && cell_left < cell_right)
+                        cf->draw_to_buffer_clipped(pixels, g_win_w, g_win_h,
+                            text_x, y + (ROW_H - FONT_SIZE) / 2,
+                            cell->display, col, FONT_SIZE,
+                            cell_left, y, cell_right - cell_left, ROW_H);
+                }
             }
 
             // Cell right border

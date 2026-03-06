@@ -66,6 +66,7 @@ struct Window {
 
     bool external;      // true = shared-memory window from external process
     int  ext_win_id;    // window server ID (valid when external == true)
+    uint8_t ext_cursor; // cursor style requested by external app (0=arrow, 1=resize_h, 2=resize_v)
 
     Rect titlebar_rect() const {
         return {frame.x, frame.y, frame.w, TITLEBAR_HEIGHT};

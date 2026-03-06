@@ -65,6 +65,10 @@ namespace Montauk {
         return (r == 0) ? outVa : 0;
     }
 
+    static int Sys_WinSetCursor(int windowId, int cursor) {
+        return WinServer::SetCursor(windowId, Sched::GetCurrentPid(), cursor);
+    }
+
     static int Sys_WinSetScale(int scale) {
         return WinServer::SetScale(scale);
     }

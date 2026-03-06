@@ -149,6 +149,18 @@ void gui::desktop_compose(DesktopState* ds) {
         }
     }
 
+    // Check if focused external window requests a cursor style
+    if (cur_style == CURSOR_ARROW && ds->focused_window >= 0) {
+        Window* fwin = &ds->windows[ds->focused_window];
+        if (fwin->external && fwin->ext_cursor > 0) {
+            Rect cr = fwin->content_rect();
+            if (cr.contains(ds->mouse.x, ds->mouse.y)) {
+                if (fwin->ext_cursor == 1) cur_style = CURSOR_RESIZE_H;
+                else if (fwin->ext_cursor == 2) cur_style = CURSOR_RESIZE_V;
+            }
+        }
+    }
+
     // Draw cursor last
     draw_cursor(fb, ds->mouse.x, ds->mouse.y, cur_style);
 }

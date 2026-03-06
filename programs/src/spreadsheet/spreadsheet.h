@@ -38,7 +38,9 @@ static constexpr int TB_BTN_RAD    = 3;
 static constexpr int MAX_COLS      = 26;   // A-Z
 static constexpr int MAX_ROWS      = 100;
 static constexpr int DEF_COL_W     = 100;
+static constexpr int MIN_COL_W     = 30;
 static constexpr int ROW_H         = 26;
+static constexpr int COL_RESIZE_GRAB = 5;  // pixels from border edge for grab zone
 
 static constexpr int CELL_TEXT_MAX = 128;
 static constexpr int FONT_SIZE     = 18;
@@ -162,6 +164,11 @@ extern TrueTypeFont* g_font;
 extern TrueTypeFont* g_font_bold;
 
 extern bool g_fmt_dropdown_open;
+
+extern bool g_col_resizing;
+extern int  g_col_resize_idx;
+extern int  g_col_resize_start_x;
+extern int  g_col_resize_start_w;
 
 extern UndoEntry* g_undo[UNDO_MAX + 1];
 extern int g_undo_count;

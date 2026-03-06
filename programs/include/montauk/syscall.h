@@ -329,5 +329,8 @@ namespace montauk {
     inline int win_getscale() {
         return (int)syscall0(Montauk::SYS_WINGETSCALE);
     }
+    inline int win_setcursor(int id, int cursor) {
+        return (int)syscall2(Montauk::SYS_WINSETCURSOR, (uint64_t)id, (uint64_t)cursor);
+    }
 
 }

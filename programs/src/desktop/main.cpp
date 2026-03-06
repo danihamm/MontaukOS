@@ -114,10 +114,11 @@ void desktop_poll_external_windows(DesktopState* ds) {
         for (int i = 0; i < ds->window_count; i++) {
             if (ds->windows[i].external && ds->windows[i].ext_win_id == extId) {
                 found = true;
-                // Update dirty flag
+                // Update dirty flag and cursor
                 if (extWins[e].dirty) {
                     ds->windows[i].dirty = true;
                 }
+                ds->windows[i].ext_cursor = extWins[e].cursor;
                 // Re-map if external app resized its buffer
                 if (extWins[e].width != ds->windows[i].content_w ||
                     extWins[e].height != ds->windows[i].content_h) {

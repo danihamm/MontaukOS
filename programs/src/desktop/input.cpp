@@ -434,6 +434,32 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
         ds->ctx_menu_open = false;
     }
 
+    // Forward continuous mouse events to focused window (hover, drag, release)
+    if (!left_pressed && ds->focused_window >= 0) {
+        Window* win = &ds->windows[ds->focused_window];
+        if (win->state != WIN_MINIMIZED && win->state != WIN_CLOSED) {
+            Rect cr = win->content_rect();
+            // Forward if mouse is over content (hover/move) or button is held/released (drag continuity)
+            if (cr.contains(mx, my) || left_held || left_released) {
+                if (win->external) {
+                    Montauk::WinEvent wev;
+                    montauk::memset(&wev, 0, sizeof(wev));
+                    wev.type = 1; // mouse
+                    wev.mouse.x = mx - cr.x;
+                    wev.mouse.y = my - cr.y;
+                    wev.mouse.scroll = 0;
+                    wev.mouse.buttons = buttons;
+                    wev.mouse.prev_buttons = prev;
+                    montauk::win_sendevent(win->ext_win_id, &wev);
+                } else if (win->on_mouse) {
+                    ev.x = mx;
+                    ev.y = my;
+                    win->on_mouse(win, ev);
+                }
+            }
+        }
+    }
+
     // Handle scroll events on focused window
     if (ev.scroll != 0 && ds->focused_window >= 0) {
         Window* win = &ds->windows[ds->focused_window];

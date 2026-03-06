@@ -27,6 +27,7 @@ namespace WinServer {
         Montauk::WinEvent events[MaxEvents];
         int eventHead, eventTail;
         bool dirty;
+        uint8_t cursor;     // cursor style requested by app (0=arrow, 1=resize_h, 2=resize_v)
     };
 
     int Create(int ownerPid, uint64_t ownerPml4, const char* title, int w, int h,
@@ -40,6 +41,7 @@ namespace WinServer {
     int Resize(int windowId, int callerPid, uint64_t ownerPml4, int newW, int newH,
                uint64_t& heapNext, uint64_t& outVa);
     void CleanupProcess(int pid);
+    int SetCursor(int windowId, int callerPid, int cursor);
     int SetScale(int scale);
     int GetScale();
 
