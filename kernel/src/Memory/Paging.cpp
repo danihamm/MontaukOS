@@ -24,14 +24,21 @@ namespace Memory::VMM {
             Map(GetPhysKernelAddress(pageAddr), pageAddr);
         }
 
-        // Map HHDM memMap entries
+        // Map HHDM: find the highest physical address and map everything
+        // from 0 to that point.  This covers gaps between memory map entries
+        // (e.g. BIOS ROM at 0xE0000) that firmware may not list but the
+        // kernel still needs to access via HHDM.
 
+        uint64_t maxPhysAddr = 0;
         for (size_t i = 0; i < memMap->entry_count; i++) {
             auto entry = memMap->entries[i];
+            uint64_t entryEnd = entry->base + entry->length;
+            if (entryEnd > maxPhysAddr) maxPhysAddr = entryEnd;
+        }
+        maxPhysAddr = (maxPhysAddr + 0xFFF) & ~0xFFFULL;
 
-            for (size_t pageAddr = entry->base; pageAddr < (entry->base + entry->length); pageAddr += 0x1000) {
-                Map(pageAddr, HHDM(pageAddr));
-            }
+        for (uint64_t pageAddr = 0; pageAddr < maxPhysAddr; pageAddr += 0x1000) {
+            Map(pageAddr, HHDM(pageAddr));
         }
 
         LoadCR3(PML4);
@@ -322,6 +329,11 @@ namespace Memory::VMM {
         }
     }
 
+    // Mask to extract only the 40-bit physical address from a PTE Address field
+    // (bits 12-51 of the PTE). The PageTableEntry::Address field is 52 bits wide
+    // and includes NX, PK, and software-available bits that must be stripped.
+    static constexpr uint64_t kPhysAddrMask = 0xFFFFFFFFFFULL; // 40 bits
+
     std::uint64_t Paging::GetPhysAddr(std::uint64_t pml4, std::uint64_t virtualAddress, bool use40BitL1) {
         VirtualAddress virtualAddressObj(virtualAddress);
 
@@ -329,13 +341,25 @@ namespace Memory::VMM {
 
         PageTableEntry* pml4_entry = &pml4Virt->entries[virtualAddressObj.GetL4Index()];
 
-        PageTable* pml3 = (PageTable*)HHDM(pml4_entry->Address << 12);
+        PageTable* pml3 = (PageTable*)HHDM((pml4_entry->Address & kPhysAddrMask) << 12);
         PageTableEntry* pml3_entry = &pml3->entries[virtualAddressObj.GetL3Index()];
 
-        PageTable* pml2 = (PageTable*)HHDM(pml3_entry->Address << 12);
+        // 1GB large page at PML3 level
+        if (pml3_entry->LargerPages) {
+            uint64_t physBase = ((uint64_t)(pml3_entry->Address & kPhysAddrMask) << 12) & ~0x3FFFFFFFULL;
+            return physBase | (virtualAddress & 0x3FFFFFFFULL);
+        }
+
+        PageTable* pml2 = (PageTable*)HHDM((pml3_entry->Address & kPhysAddrMask) << 12);
         PageTableEntry* pml2_entry = &pml2->entries[virtualAddressObj.GetL2Index()];
 
-        PageTable* pml1 = (PageTable*)HHDM(pml2_entry->Address << 12);
+        // 2MB large page at PML2 level
+        if (pml2_entry->LargerPages) {
+            uint64_t physBase = ((uint64_t)(pml2_entry->Address & kPhysAddrMask) << 12) & ~0x1FFFFFULL;
+            return physBase | (virtualAddress & 0x1FFFFFULL);
+        }
+
+        PageTable* pml1 = (PageTable*)HHDM((pml2_entry->Address & kPhysAddrMask) << 12);
 
         if (use40BitL1 == true) {
             PageTableEntry40Bit* pml1_entry = (PageTableEntry40Bit*)&pml1->entries[virtualAddressObj.GetPageIndex()];
@@ -343,7 +367,7 @@ namespace Memory::VMM {
         }
 
         PageTableEntry* pml1_entry = &pml1->entries[virtualAddressObj.GetPageIndex()];
-        return (uint64_t)pml1_entry->Address << 12;
+        return (uint64_t)(pml1_entry->Address & kPhysAddrMask) << 12;
     }
 
     std::uint64_t Paging::GetPhysAddr(std::uint64_t virtualAddress) {
