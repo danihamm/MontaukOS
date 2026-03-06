@@ -17,7 +17,8 @@ using namespace Kt;
 namespace Hal {
     namespace AcpiShutdown {
 
-        static constexpr uint16_t SLP_EN = 1 << 13;
+        static constexpr uint16_t SLP_EN      = 1 << 13;
+        static constexpr uint16_t SLP_TYP_MASK = 0x1C00; // bits 10-12
 
         static bool     g_available = false;
         static uint32_t g_pm1aControlBlock = 0;
@@ -60,16 +61,32 @@ namespace Hal {
 
             KernelLogStream(INFO, "ACPI") << "Performing ACPI S5 shutdown...";
 
-            // Write SLP_TYPa | SLP_EN to PM1a control register
-            Io::Out16((g_slpTypA << 10) | SLP_EN, (uint16_t)g_pm1aControlBlock);
+            asm volatile("cli");
 
-            // If PM1b exists, write to it as well
+            // Phase 1: Write SLP_TYP to PM1x_CNT without SLP_EN,
+            //          preserving existing register bits
+            uint16_t pm1a = Io::In16((uint16_t)g_pm1aControlBlock);
+            pm1a = (pm1a & ~SLP_TYP_MASK) | (g_slpTypA << 10);
+            Io::Out16(pm1a, (uint16_t)g_pm1aControlBlock);
+
             if (g_pm1bControlBlock != 0) {
-                Io::Out16((g_slpTypB << 10) | SLP_EN, (uint16_t)g_pm1bControlBlock);
+                uint16_t pm1b = Io::In16((uint16_t)g_pm1bControlBlock);
+                pm1b = (pm1b & ~SLP_TYP_MASK) | (g_slpTypB << 10);
+                Io::Out16(pm1b, (uint16_t)g_pm1bControlBlock);
             }
 
-            // If we're still here, the shutdown didn't work immediately.
-            // Halt and wait for the hardware to power off.
+            // Flush all caches before entering sleep state
+            asm volatile("wbinvd");
+
+            // Phase 2: Assert SLP_EN to trigger the transition
+            Io::Out16(pm1a | SLP_EN, (uint16_t)g_pm1aControlBlock);
+
+            if (g_pm1bControlBlock != 0) {
+                uint16_t pm1b = Io::In16((uint16_t)g_pm1bControlBlock);
+                Io::Out16(pm1b | SLP_EN, (uint16_t)g_pm1bControlBlock);
+            }
+
+            // Halt and wait for the hardware to power off
             for (;;) {
                 asm volatile("hlt");
             }
