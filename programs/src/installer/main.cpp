@@ -19,6 +19,7 @@ int FONT_SM   = 14;
 InstallerState g_state;
 TrueTypeFont* g_font = nullptr;
 uint32_t* g_pixels = nullptr;
+uint32_t* g_backbuf = nullptr;
 int g_win_id = -1;
 
 void apply_scale(int scale) {
@@ -55,8 +56,9 @@ void add_log(const char* msg) {
 }
 
 void flush_ui() {
-    if (g_pixels && g_win_id >= 0) {
-        render(g_pixels);
+    if (g_pixels && g_backbuf && g_win_id >= 0) {
+        render(g_backbuf);
+        montauk::memcpy(g_pixels, g_backbuf, g_win_w * g_win_h * 4);
         montauk::win_present(g_win_id);
     }
 }
@@ -84,12 +86,34 @@ void format_disk_size(char* buf, int bufsize, uint64_t sectors, uint16_t sectorS
 static bool handle_click(int mx, int my) {
     auto& st = g_state;
     int fh = g_font ? g_font->get_cache(FONT_SIZE)->ascent - g_font->get_cache(FONT_SIZE)->descent : 16;
+    int fh_sm = g_font ? g_font->get_cache(FONT_SM)->ascent - g_font->get_cache(FONT_SM)->descent : 12;
 
     // Common bottom button area
     int btn_w = 120, btn_h = 34;
     int btn_y = g_win_h - STATUS_H - btn_h - 12;
 
-    if (st.step == STEP_SELECT_DISK) {
+    if (st.step == STEP_MODE_SELECT) {
+        // Two mode cards
+        int y = CONTENT_TOP + 16 + fh + 4 + fh_sm + 16;
+        int card_h = 52, card_x = 16, card_w = g_win_w - 32;
+
+        // Install card
+        if (mx >= card_x && mx < card_x + card_w && my >= y && my < y + card_h) {
+            st.mode = MODE_INSTALL;
+            installer_refresh_disks();
+            st.step = STEP_SELECT_DISK;
+            return true;
+        }
+        y += card_h + 8;
+
+        // Update card
+        if (mx >= card_x && mx < card_x + card_w && my >= y && my < y + card_h) {
+            st.mode = MODE_UPDATE;
+            installer_refresh_parts();
+            st.step = STEP_UPDATE_SELECT_PART;
+            return true;
+        }
+    } else if (st.step == STEP_SELECT_DISK) {
         // Disk list items
         int y = CONTENT_TOP + 40 + fh + 12;
         for (int i = 0; i < st.disk_count; i++) {
@@ -171,6 +195,54 @@ static bool handle_click(int mx, int my) {
             my >= btn_y && my < btn_y + btn_h) {
             return false; // signal quit
         }
+    } else if (st.step == STEP_UPDATE_SELECT_PART) {
+        // Partition list items
+        int y = CONTENT_TOP + 16 + fh + 4 + fh_sm + 12;
+        for (int i = 0; i < st.part_count; i++) {
+            int item_h = 48;
+            if (mx >= 16 && mx < g_win_w - 16 && my >= y && my < y + item_h) {
+                st.selected_part = i;
+                return true;
+            }
+            y += item_h + 4;
+        }
+
+        // "Next" button
+        int next_x = g_win_w - btn_w - 16;
+        if (st.selected_part >= 0 &&
+            mx >= next_x && mx < next_x + btn_w &&
+            my >= btn_y && my < btn_y + btn_h) {
+            st.step = STEP_UPDATE_CONFIRM;
+            return true;
+        }
+
+        // "Back" button
+        int back_x = next_x - btn_w - 8;
+        if (mx >= back_x && mx < back_x + btn_w &&
+            my >= btn_y && my < btn_y + btn_h) {
+            st.step = STEP_MODE_SELECT;
+            return true;
+        }
+    } else if (st.step == STEP_UPDATE_CONFIRM) {
+        int center_x = g_win_w / 2;
+        int gap = 16;
+
+        // "Update" button
+        int upd_x = center_x - btn_w - gap / 2;
+        if (mx >= upd_x && mx < upd_x + btn_w &&
+            my >= btn_y && my < btn_y + btn_h) {
+            st.step = STEP_UPDATING;
+            st.log_count = 0;
+            return true;
+        }
+
+        // "Back" button
+        int back_x = center_x + gap / 2;
+        if (mx >= back_x && mx < back_x + btn_w &&
+            my >= btn_y && my < btn_y + btn_h) {
+            st.step = STEP_UPDATE_SELECT_PART;
+            return true;
+        }
     }
 
     return true;
@@ -183,8 +255,9 @@ static bool handle_click(int mx, int my) {
 extern "C" void _start() {
     montauk::memset(&g_state, 0, sizeof(g_state));
     g_state.selected_disk = -1;
-    g_state.partition_scheme = SCHEME_SINGLE_FAT32;
-    g_state.step = STEP_SELECT_DISK;
+    g_state.selected_part = -1;
+    g_state.partition_scheme = SCHEME_EFI_EXT2;
+    g_state.step = STEP_MODE_SELECT;
 
     // Load font
     {
@@ -209,8 +282,10 @@ extern "C" void _start() {
     uint32_t* pixels = (uint32_t*)(uintptr_t)wres.pixelVa;
     g_pixels = pixels;
     g_win_id = win_id;
+    g_backbuf = (uint32_t*)montauk::malloc(g_win_w * g_win_h * 4);
 
-    render(pixels);
+    render(g_backbuf);
+    montauk::memcpy(pixels, g_backbuf, g_win_w * g_win_h * 4);
     montauk::win_present(win_id);
 
     bool install_triggered = false;
@@ -225,11 +300,15 @@ extern "C" void _start() {
         if (r == 0) {
             if (g_state.step == STEP_INSTALLING && !install_triggered) {
                 install_triggered = true;
-                render(pixels);
-                montauk::win_present(win_id);
+                flush_ui();
                 do_install();
-                render(pixels);
-                montauk::win_present(win_id);
+                flush_ui();
+            }
+            if (g_state.step == STEP_UPDATING && !install_triggered) {
+                install_triggered = true;
+                flush_ui();
+                do_update();
+                flush_ui();
             }
             montauk::sleep_ms(16);
             continue;
@@ -246,6 +325,9 @@ extern "C" void _start() {
             g_win_w = ev.resize.w;
             g_win_h = ev.resize.h;
             pixels = (uint32_t*)(uintptr_t)montauk::win_resize(win_id, g_win_w, g_win_h);
+            g_pixels = pixels;
+            montauk::mfree(g_backbuf);
+            g_backbuf = (uint32_t*)montauk::malloc(g_win_w * g_win_h * 4);
             redraw = true;
         }
 
@@ -263,7 +345,7 @@ extern "C" void _start() {
             }
         }
 
-        if (redraw) { render(pixels); montauk::win_present(win_id); }
+        if (redraw) flush_ui();
     }
 
     montauk::win_destroy(win_id);

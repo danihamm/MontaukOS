@@ -32,9 +32,9 @@ namespace Montauk {
 
     static int Sys_ReadDir(const char* path, const char** outNames, int maxEntries) {
         // Get entries from VFS into a kernel-local array
-        const char* kernelNames[64];
+        const char* kernelNames[256];
         int max = maxEntries;
-        if (max > 64) max = 64;
+        if (max > 256) max = 256;
         int count = Fs::Vfs::VfsReadDir(path, kernelNames, max);
         if (count <= 0) return count;
 
@@ -47,7 +47,7 @@ namespace Montauk {
         uint64_t physAddr = Memory::SubHHDM((uint64_t)page);
         uint64_t userVa = proc->heapNext;
         proc->heapNext += 0x1000;
-        Memory::VMM::Paging::MapUserIn(proc->pml4Phys, physAddr, userVa);
+        if (!Memory::VMM::Paging::MapUserIn(proc->pml4Phys, physAddr, userVa)) return -1;
 
         // Copy strings into the user page and write pointers to outNames
         uint64_t offset = 0;

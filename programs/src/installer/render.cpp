@@ -138,6 +138,36 @@ static void px_button_outline(uint32_t* px, int bw, int bh,
 }
 
 // ============================================================================
+// Render: mode selection step
+// ============================================================================
+
+static void render_mode_select(uint32_t* px) {
+    int fh = font_h();
+    int y = CONTENT_TOP + 16;
+
+    px_text(px, g_win_w, g_win_h, 16, y, "Welcome to MontaukOS Installer", TEXT_COLOR);
+    y += fh + 4;
+    px_text(px, g_win_w, g_win_h, 16, y, "Choose an action below.", DIM_TEXT, FONT_SM);
+    y += font_h(FONT_SM) + 16;
+
+    // Install card
+    int card_h = 52, card_x = 16, card_w = g_win_w - 32;
+    px_fill_rounded(px, g_win_w, g_win_h, card_x, y, card_w, card_h, 6,
+                    Color::from_rgb(0xF4, 0xF4, 0xF4));
+    px_text(px, g_win_w, g_win_h, card_x + 16, y + 8, "Install", TEXT_COLOR);
+    px_text(px, g_win_w, g_win_h, card_x + 16, y + 8 + fh + 2,
+            "Erase a disk and install MontaukOS.", DIM_TEXT, FONT_SM);
+    y += card_h + 8;
+
+    // Update card
+    px_fill_rounded(px, g_win_w, g_win_h, card_x, y, card_w, card_h, 6,
+                    Color::from_rgb(0xF4, 0xF4, 0xF4));
+    px_text(px, g_win_w, g_win_h, card_x + 16, y + 8, "Update", TEXT_COLOR);
+    px_text(px, g_win_w, g_win_h, card_x + 16, y + 8 + fh + 2,
+            "Update OS and apps on an existing partition.", DIM_TEXT, FONT_SM);
+}
+
+// ============================================================================
 // Render: disk selection step
 // ============================================================================
 
@@ -161,22 +191,24 @@ static void render_select_disk(uint32_t* px) {
         int item_w = g_win_w - 32;
         bool sel = (i == st.selected_disk);
 
-        Color bg = sel
-            ? Color::from_rgb(0xD8, 0xE8, 0xF8)
-            : Color::from_rgb(0xF4, 0xF4, 0xF4);
+        px_fill_rounded(px, g_win_w, g_win_h, item_x, y, item_w, item_h, 6,
+                        Color::from_rgb(0xF4, 0xF4, 0xF4));
 
-        px_fill_rounded(px, g_win_w, g_win_h, item_x, y, item_w, item_h, 6, bg);
-
+        // Radio indicator
+        int rx = item_x + 14;
+        int ry = y + item_h / 2;
+        px_fill_rounded(px, g_win_w, g_win_h, rx - 6, ry - 6, 12, 12, 6, DIM_TEXT);
+        px_fill_rounded(px, g_win_w, g_win_h, rx - 5, ry - 5, 10, 10, 5, BG_COLOR);
         if (sel)
-            px_fill_rounded(px, g_win_w, g_win_h, item_x, y, 4, item_h, 2, ACCENT);
+            px_fill_rounded(px, g_win_w, g_win_h, rx - 3, ry - 3, 6, 6, 3, ACCENT);
 
-        px_text(px, g_win_w, g_win_h, item_x + 12, y + 6, st.disks[i].model, TEXT_COLOR);
+        px_text(px, g_win_w, g_win_h, item_x + 32, y + 6, st.disks[i].model, TEXT_COLOR);
 
         char info[64], sz[24];
         format_disk_size(sz, sizeof(sz), st.disks[i].sectorCount, st.disks[i].sectorSizeLog);
         const char* dtype = st.disks[i].rpm == 1 ? "SSD" : "HDD";
         snprintf(info, sizeof(info), "%s  %s  (Disk %d)", sz, dtype, i);
-        px_text(px, g_win_w, g_win_h, item_x + 12, y + 6 + fh + 2, info, DIM_TEXT, FONT_SM);
+        px_text(px, g_win_w, g_win_h, item_x + 32, y + 6 + fh + 2, info, DIM_TEXT, FONT_SM);
 
         y += item_h + 4;
     }
@@ -217,14 +249,9 @@ static void render_partition_scheme(uint32_t* px) {
         int item_w = g_win_w - 32;
 
         bool selected = (i == st.partition_scheme);
-        Color bg = selected
-            ? Color::from_rgb(0xD8, 0xE8, 0xF8)
-            : Color::from_rgb(0xF4, 0xF4, 0xF4);
 
-        px_fill_rounded(px, g_win_w, g_win_h, item_x, y, item_w, item_h, 6, bg);
-
-        if (selected)
-            px_fill_rounded(px, g_win_w, g_win_h, item_x, y, 4, item_h, 2, ACCENT);
+        px_fill_rounded(px, g_win_w, g_win_h, item_x, y, item_w, item_h, 6,
+                        Color::from_rgb(0xF4, 0xF4, 0xF4));
 
         // Radio indicator
         int rx = item_x + 14;
@@ -300,6 +327,112 @@ static void render_confirm(uint32_t* px) {
 }
 
 // ============================================================================
+// Render: update partition selection step
+// ============================================================================
+
+static void render_update_select_part(uint32_t* px) {
+    auto& st = g_state;
+    int fh = font_h();
+    int fh_sm = font_h(FONT_SM);
+
+    int y = CONTENT_TOP + 16;
+    px_text(px, g_win_w, g_win_h, 16, y, "Select a root partition", TEXT_COLOR);
+    y += fh + 4;
+    px_text(px, g_win_w, g_win_h, 16, y,
+            "OS and apps will be updated on this partition.", DIM_TEXT, FONT_SM);
+    y += fh_sm + 12;
+
+    if (st.part_count == 0) {
+        px_text(px, g_win_w, g_win_h, 16, y, "No partitions detected", FAINT_TEXT);
+    }
+
+    for (int i = 0; i < st.part_count; i++) {
+        int item_h = 48;
+        int item_x = 16;
+        int item_w = g_win_w - 32;
+        bool sel = (i == st.selected_part);
+
+        px_fill_rounded(px, g_win_w, g_win_h, item_x, y, item_w, item_h, 6,
+                        Color::from_rgb(0xF4, 0xF4, 0xF4));
+
+        // Radio indicator
+        int rx = item_x + 14;
+        int ry = y + item_h / 2;
+        px_fill_rounded(px, g_win_w, g_win_h, rx - 6, ry - 6, 12, 12, 6, DIM_TEXT);
+        px_fill_rounded(px, g_win_w, g_win_h, rx - 5, ry - 5, 10, 10, 5, BG_COLOR);
+        if (sel)
+            px_fill_rounded(px, g_win_w, g_win_h, rx - 3, ry - 3, 6, 6, 3, ACCENT);
+
+        // Partition name
+        const char* pname = st.parts[i].name[0] ? st.parts[i].name : "Unnamed";
+        px_text(px, g_win_w, g_win_h, item_x + 32, y + 6, pname, TEXT_COLOR);
+
+        // Info line: type + size
+        char info[64], sz[24];
+        format_disk_size(sz, sizeof(sz), st.parts[i].sectorCount, 512);
+        snprintf(info, sizeof(info), "%s  %s  (Disk %d)",
+                 sz, st.parts[i].typeName, st.parts[i].blockDev);
+        px_text(px, g_win_w, g_win_h, item_x + 32, y + 6 + fh + 2, info, DIM_TEXT, FONT_SM);
+
+        y += item_h + 4;
+    }
+
+    // Buttons
+    int btn_w = 120, btn_h = 34;
+    int btn_y = g_win_h - STATUS_H - btn_h - 12;
+    int next_x = g_win_w - btn_w - 16;
+
+    Color next_bg = (st.selected_part >= 0) ? ACCENT : DISABLED_BG;
+    px_button(px, g_win_w, g_win_h, next_x, btn_y, btn_w, btn_h,
+              "Next", next_bg, WHITE, TB_BTN_RAD);
+
+    int back_x = next_x - btn_w - 8;
+    px_button_outline(px, g_win_w, g_win_h, back_x, btn_y, btn_w, btn_h,
+              "Back", BORDER_COLOR, DIM_TEXT, TB_BTN_RAD);
+}
+
+// ============================================================================
+// Render: update confirmation step
+// ============================================================================
+
+static void render_update_confirm(uint32_t* px) {
+    auto& st = g_state;
+    int fh = font_h();
+    int y = CONTENT_TOP + 24;
+
+    const char* title = "Confirm Update";
+    px_text(px, g_win_w, g_win_h, (g_win_w - text_w(title)) / 2, y, title, TEXT_COLOR);
+    y += fh + 16;
+
+    const char* warn1 = "This will overwrite os/ and apps/ on:";
+    px_text(px, g_win_w, g_win_h, (g_win_w - text_w(warn1)) / 2, y, warn1, ACCENT);
+    y += fh + 8;
+
+    char desc[128], sz[24];
+    format_disk_size(sz, sizeof(sz), st.parts[st.selected_part].sectorCount, 512);
+    const char* pname = st.parts[st.selected_part].name[0]
+        ? st.parts[st.selected_part].name : "Unnamed";
+    snprintf(desc, sizeof(desc), "%s (%s, Disk %d)",
+             pname, sz, st.parts[st.selected_part].blockDev);
+    px_text(px, g_win_w, g_win_h, (g_win_w - text_w(desc)) / 2, y, desc, TEXT_COLOR);
+    y += fh + 16;
+
+    const char* info = "Existing user data will not be affected.";
+    px_text(px, g_win_w, g_win_h, (g_win_w - text_w(info, FONT_SM)) / 2, y, info, DIM_TEXT, FONT_SM);
+
+    // Buttons
+    int btn_w = 120, btn_h = 34;
+    int center_x = g_win_w / 2;
+    int btn_y = g_win_h - STATUS_H - btn_h - 12;
+    int gap = 16;
+
+    px_button(px, g_win_w, g_win_h, center_x - btn_w - gap / 2, btn_y, btn_w, btn_h,
+              "Update", ACCENT, WHITE, TB_BTN_RAD);
+    px_button_outline(px, g_win_w, g_win_h, center_x + gap / 2, btn_y, btn_w, btn_h,
+              "Back", BORDER_COLOR, DIM_TEXT, TB_BTN_RAD);
+}
+
+// ============================================================================
 // Render: installing / done / error steps
 // ============================================================================
 
@@ -311,14 +444,14 @@ static void render_progress(uint32_t* px) {
 
     const char* title;
     Color title_color;
-    if (st.step == STEP_INSTALLING) {
-        title = "Installing...";
+    if (st.step == STEP_INSTALLING || st.step == STEP_UPDATING) {
+        title = (st.mode == MODE_UPDATE) ? "Updating..." : "Installing...";
         title_color = TEXT_COLOR;
     } else if (st.step == STEP_DONE) {
-        title = "Installation Complete";
+        title = (st.mode == MODE_UPDATE) ? "Update Complete" : "Installation Complete";
         title_color = SUCCESS_COLOR;
     } else {
-        title = "Installation Failed";
+        title = (st.mode == MODE_UPDATE) ? "Update Failed" : "Installation Failed";
         title_color = DANGER;
     }
 
@@ -375,14 +508,29 @@ static void render_step_bar(uint32_t* px) {
             Color::from_rgb(0xFA, 0xFA, 0xFA));
     px_hline(px, g_win_w, g_win_h, 0, bar_y + STEP_BAR_H - 1, g_win_w, BORDER_COLOR);
 
-    static const char* step_labels[] = { "Disk", "Partition", "Confirm", "Install" };
-    static constexpr int STEP_COUNT = 4;
+    // No step bar for mode selection
+    if (g_state.step == STEP_MODE_SELECT) return;
 
-    // Map current state to step index (0-3)
+    static const char* install_labels[] = { "Disk", "Partition", "Confirm", "Install" };
+    static const char* update_labels[]  = { "Partition", "Confirm", "Update" };
+
+    const char** step_labels;
+    int STEP_COUNT;
     int cur = 0;
-    if (g_state.step == STEP_PARTITION_SCHEME) cur = 1;
-    else if (g_state.step == STEP_CONFIRM) cur = 2;
-    else if (g_state.step >= STEP_INSTALLING) cur = 3;
+
+    if (g_state.mode == MODE_UPDATE) {
+        step_labels = update_labels;
+        STEP_COUNT = 3;
+        if (g_state.step == STEP_UPDATE_CONFIRM) cur = 1;
+        else if (g_state.step >= STEP_UPDATING) cur = 2;
+        else if (g_state.step == STEP_DONE || g_state.step == STEP_ERROR) cur = 2;
+    } else {
+        step_labels = install_labels;
+        STEP_COUNT = 4;
+        if (g_state.step == STEP_PARTITION_SCHEME) cur = 1;
+        else if (g_state.step == STEP_CONFIRM) cur = 2;
+        else if (g_state.step >= STEP_INSTALLING) cur = 3;
+    }
 
     int fh = font_h();
 
@@ -423,10 +571,17 @@ static void render_status(uint32_t* px) {
     px_fill(px, g_win_w, g_win_h, 0, sy, g_win_w, STATUS_H, Color::from_rgb(0xF0, 0xF0, 0xF0));
     px_hline(px, g_win_w, g_win_h, 0, sy, g_win_w, BORDER_COLOR);
     if (st.status[0]) {
-        uint64_t age = montauk::get_milliseconds() - st.status_time;
-        Color sc = (age < 5000)
-            ? Color::from_rgb(0x33, 0x33, 0x33)
-            : Color::from_rgb(0xAA, 0xAA, 0xAA);
+        Color sc;
+        if (st.step == STEP_DONE)
+            sc = TEXT_COLOR;
+        else if (st.step == STEP_ERROR)
+            sc = DANGER;
+        else {
+            uint64_t age = montauk::get_milliseconds() - st.status_time;
+            sc = (age < 5000)
+                ? Color::from_rgb(0x33, 0x33, 0x33)
+                : Color::from_rgb(0xAA, 0xAA, 0xAA);
+        }
         px_text(px, g_win_w, g_win_h, 8, sy + (STATUS_H - fh) / 2, st.status, sc);
     }
 }
@@ -441,12 +596,16 @@ void render(uint32_t* pixels) {
     render_step_bar(pixels);
 
     switch (g_state.step) {
-        case STEP_SELECT_DISK:      render_select_disk(pixels); break;
-        case STEP_PARTITION_SCHEME: render_partition_scheme(pixels); break;
-        case STEP_CONFIRM:          render_confirm(pixels); break;
+        case STEP_MODE_SELECT:         render_mode_select(pixels); break;
+        case STEP_SELECT_DISK:         render_select_disk(pixels); break;
+        case STEP_PARTITION_SCHEME:    render_partition_scheme(pixels); break;
+        case STEP_CONFIRM:             render_confirm(pixels); break;
+        case STEP_UPDATE_SELECT_PART:  render_update_select_part(pixels); break;
+        case STEP_UPDATE_CONFIRM:      render_update_confirm(pixels); break;
         case STEP_INSTALLING:
+        case STEP_UPDATING:
         case STEP_DONE:
-        case STEP_ERROR:            render_progress(pixels); break;
+        case STEP_ERROR:               render_progress(pixels); break;
     }
 
     render_status(pixels);

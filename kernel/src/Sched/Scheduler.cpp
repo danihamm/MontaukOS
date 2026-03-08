@@ -149,7 +149,10 @@ namespace Sched {
                 return -1;
             }
             uint64_t physAddr = Memory::SubHHDM((uint64_t)page);
-            Memory::VMM::Paging::MapUserIn(pml4Phys, physAddr, userStackBase + i * 0x1000);
+            if (!Memory::VMM::Paging::MapUserIn(pml4Phys, physAddr, userStackBase + i * 0x1000)) {
+                Kt::KernelLogStream(Kt::ERROR, "Sched") << "Failed to map user stack page";
+                return -1;
+            }
             if (i == UserStackPages - 1) topStackPagePhys = physAddr;
         }
 
@@ -162,7 +165,10 @@ namespace Sched {
                 return -1;
             }
             uint64_t stubPhys = Memory::SubHHDM((uint64_t)stubPage);
-            Memory::VMM::Paging::MapUserIn(pml4Phys, stubPhys, ExitStubAddr);
+            if (!Memory::VMM::Paging::MapUserIn(pml4Phys, stubPhys, ExitStubAddr)) {
+                Kt::KernelLogStream(Kt::ERROR, "Sched") << "Failed to map exit stub";
+                return -1;
+            }
 
             // Write: xor edi, edi; xor eax, eax; syscall
             uint8_t* stub = (uint8_t*)stubPage;

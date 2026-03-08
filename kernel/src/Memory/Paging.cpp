@@ -49,11 +49,14 @@ namespace Memory::VMM {
         PageTableEntry* entry = (PageTableEntry*)Memory::HHDM(&table->entries[virtualAddress.GetIndex(level)]);
 
         if (!entry->Present) {
+            void* newPage = Memory::g_pfa->AllocateZeroed();
+            if (newPage == nullptr) {
+                Panic("OOM in Paging::HandleLevel (kernel page table allocation)", nullptr);
+            }
+            uint64_t downLevelAddr = Memory::SubHHDM((uint64_t)newPage);
+
             entry->Present = true;
             entry->Writable = true;
-
-            uint64_t downLevelAddr = Memory::SubHHDM((uint64_t)Memory::g_pfa->AllocateZeroed());
-
             entry->Address = downLevelAddr >> 12;
 
             return (PageTable*)downLevelAddr;
@@ -66,12 +69,15 @@ namespace Memory::VMM {
         PageTableEntry* entry = (PageTableEntry*)Memory::HHDM(&table->entries[virtualAddress.GetIndex(level)]);
 
         if (!entry->Present) {
+            void* newPage = Memory::g_pfa->AllocateZeroed();
+            if (newPage == nullptr) {
+                Panic("OOM in Paging::HandleLevelUser (page table allocation)", nullptr);
+            }
+            uint64_t downLevelAddr = Memory::SubHHDM((uint64_t)newPage);
+
             entry->Present = true;
             entry->Writable = true;
             entry->Supervisor = 1;  // User-accessible
-
-            uint64_t downLevelAddr = Memory::SubHHDM((uint64_t)Memory::g_pfa->AllocateZeroed());
-
             entry->Address = downLevelAddr >> 12;
 
             return (PageTable*)downLevelAddr;
@@ -177,21 +183,24 @@ namespace Memory::VMM {
         return newPml4Phys;
     }
 
-    void Paging::MapUserIn(std::uint64_t pml4Phys, std::uint64_t physicalAddress, std::uint64_t virtualAddress) {
+    bool Paging::MapUserIn(std::uint64_t pml4Phys, std::uint64_t physicalAddress, std::uint64_t virtualAddress) {
         if (virtualAddress % 0x1000 != 0 || physicalAddress % 0x1000 != 0) {
             Panic("Non-aligned address in Paging::MapUserIn!", nullptr);
         }
 
         VirtualAddress va(virtualAddress);
 
-        // Walk/create page tables from the given PML4, setting User bit at each level
+        // Walk/create page tables from the given PML4, setting User bit at each level.
+        // Returns nullptr on OOM.
         auto walkLevel = [](PageTable* table, uint64_t index) -> PageTable* {
             PageTableEntry* entry = (PageTableEntry*)Memory::HHDM(&table->entries[index]);
             if (!entry->Present) {
+                void* newPage = Memory::g_pfa->AllocateZeroed();
+                if (newPage == nullptr) return nullptr;
+                uint64_t newPhys = Memory::SubHHDM((uint64_t)newPage);
                 entry->Present = true;
                 entry->Writable = true;
                 entry->Supervisor = 1;  // User-accessible
-                uint64_t newPhys = Memory::SubHHDM((uint64_t)Memory::g_pfa->AllocateZeroed());
                 entry->Address = newPhys >> 12;
                 return (PageTable*)newPhys;
             } else {
@@ -202,17 +211,21 @@ namespace Memory::VMM {
 
         PageTable* pml4 = (PageTable*)pml4Phys;
         auto pml3 = walkLevel(pml4, va.GetL4Index());
+        if (!pml3) return false;
         auto pml2 = walkLevel(pml3, va.GetL3Index());
+        if (!pml2) return false;
         auto pml1 = walkLevel(pml2, va.GetL2Index());
+        if (!pml1) return false;
 
         PageTableEntry* pageEntry = (PageTableEntry*)Memory::HHDM(&pml1->entries[va.GetPageIndex()]);
         pageEntry->Present = true;
         pageEntry->Writable = true;
         pageEntry->Supervisor = 1;
         pageEntry->Address = physicalAddress >> 12;
+        return true;
     }
 
-    void Paging::MapUserInWC(std::uint64_t pml4Phys, std::uint64_t physicalAddress, std::uint64_t virtualAddress) {
+    bool Paging::MapUserInWC(std::uint64_t pml4Phys, std::uint64_t physicalAddress, std::uint64_t virtualAddress) {
         if (virtualAddress % 0x1000 != 0 || physicalAddress % 0x1000 != 0) {
             Panic("Non-aligned address in Paging::MapUserInWC!", nullptr);
         }
@@ -222,10 +235,12 @@ namespace Memory::VMM {
         auto walkLevel = [](PageTable* table, uint64_t index) -> PageTable* {
             PageTableEntry* entry = (PageTableEntry*)Memory::HHDM(&table->entries[index]);
             if (!entry->Present) {
+                void* newPage = Memory::g_pfa->AllocateZeroed();
+                if (newPage == nullptr) return nullptr;
+                uint64_t newPhys = Memory::SubHHDM((uint64_t)newPage);
                 entry->Present = true;
                 entry->Writable = true;
                 entry->Supervisor = 1;
-                uint64_t newPhys = Memory::SubHHDM((uint64_t)Memory::g_pfa->AllocateZeroed());
                 entry->Address = newPhys >> 12;
                 return (PageTable*)newPhys;
             } else {
@@ -236,8 +251,11 @@ namespace Memory::VMM {
 
         PageTable* pml4 = (PageTable*)pml4Phys;
         auto pml3 = walkLevel(pml4, va.GetL4Index());
+        if (!pml3) return false;
         auto pml2 = walkLevel(pml3, va.GetL3Index());
+        if (!pml2) return false;
         auto pml1 = walkLevel(pml2, va.GetL2Index());
+        if (!pml1) return false;
 
         PageTableEntry* pageEntry = (PageTableEntry*)Memory::HHDM(&pml1->entries[va.GetPageIndex()]);
         pageEntry->Present = true;
@@ -245,6 +263,7 @@ namespace Memory::VMM {
         pageEntry->Supervisor = 1;
         pageEntry->WriteThrough = true;   // PWT=1, PCD=0 → PAT entry 1 = WC
         pageEntry->Address = physicalAddress >> 12;
+        return true;
     }
 
     void Paging::UnmapUserIn(std::uint64_t pml4Phys, std::uint64_t virtualAddress) {

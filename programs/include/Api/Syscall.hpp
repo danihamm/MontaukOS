@@ -241,6 +241,7 @@ namespace Montauk {
 
     // Filesystem type IDs for SYS_FSFORMAT
     static constexpr int FS_TYPE_FAT32 = 1;
+    static constexpr int FS_TYPE_EXT2  = 2;
 
     struct FsFormatParams {
         int32_t  partIndex;       // global partition index

@@ -695,6 +695,8 @@ static void filemanager_on_mouse(Window* win, MouseEvent& ev) {
                                 montauk::spawn("0:/apps/pdfviewer/pdfviewer.elf", fullpath);
                             } else if (is_spreadsheet_file(fm->entry_names[clicked_idx])) {
                                 montauk::spawn("0:/apps/spreadsheet/spreadsheet.elf", fullpath);
+                            } else if (str_ends_with(fm->entry_names[clicked_idx], ".elf")) {
+                                montauk::spawn(fullpath);
                             } else if (fm->desktop) {
                                 open_texteditor_with_file(fm->desktop, fullpath);
                             }
@@ -751,6 +753,8 @@ static void filemanager_on_mouse(Window* win, MouseEvent& ev) {
                                 montauk::spawn("0:/apps/pdfviewer/pdfviewer.elf", fullpath);
                             } else if (is_spreadsheet_file(fm->entry_names[clicked_idx])) {
                                 montauk::spawn("0:/apps/spreadsheet/spreadsheet.elf", fullpath);
+                            } else if (str_ends_with(fm->entry_names[clicked_idx], ".elf")) {
+                                montauk::spawn(fullpath);
                             } else if (fm->desktop) {
                                 open_texteditor_with_file(fm->desktop, fullpath);
                             }

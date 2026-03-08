@@ -48,7 +48,7 @@ namespace Montauk {
             void* page = Memory::g_pfa->AllocateZeroed();
             if (page == nullptr) return 0;
             uint64_t physAddr = Memory::SubHHDM((uint64_t)page);
-            Memory::VMM::Paging::MapUserIn(proc->pml4Phys, physAddr, userVa + i * 0x1000);
+            if (!Memory::VMM::Paging::MapUserIn(proc->pml4Phys, physAddr, userVa + i * 0x1000)) return 0;
         }
 
         proc->heapNext += size;

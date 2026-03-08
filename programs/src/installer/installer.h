@@ -56,13 +56,23 @@ static constexpr Color DISABLED_BG    = Color::from_rgb(0xBB, 0xBB, 0xBB);
 // Install steps
 // ============================================================================
 
+enum InstallerMode {
+    MODE_INSTALL = 0,
+    MODE_UPDATE,
+};
+
 enum InstallStep {
+    STEP_MODE_SELECT,
     STEP_SELECT_DISK,
     STEP_PARTITION_SCHEME,
     STEP_CONFIRM,
     STEP_INSTALLING,
     STEP_DONE,
     STEP_ERROR,
+    // Update flow
+    STEP_UPDATE_SELECT_PART,
+    STEP_UPDATE_CONFIRM,
+    STEP_UPDATING,
 };
 
 // ============================================================================
@@ -70,15 +80,18 @@ enum InstallStep {
 // ============================================================================
 
 enum PartScheme {
-    SCHEME_SINGLE_FAT32 = 0,
+    SCHEME_EFI_EXT2 = 0,
+    SCHEME_SINGLE_FAT32,
     SCHEME_COUNT,
 };
 
 static const char* scheme_names[] = {
+    "EFI + ext2 (recommended)",
     "Single FAT32 partition (entire disk)",
 };
 
 static const char* scheme_descs[] = {
+    "EFI boot partition + ext2 root filesystem.",
     "One partition for boot, OS, and data. Simple and compatible.",
 };
 
@@ -90,10 +103,18 @@ static constexpr int LOG_LINES    = 16;
 static constexpr int LOG_LINE_LEN = 64;
 
 struct InstallerState {
+    int mode;  // InstallerMode
+
+    // Install flow
     Montauk::DiskInfo disks[MAX_DISKS];
     int disk_count;
     int selected_disk;
     int partition_scheme;
+
+    // Update flow
+    Montauk::PartInfo parts[MAX_PARTS];
+    int part_count;
+    int selected_part;
 
     InstallStep step;
     char log[LOG_LINES][LOG_LINE_LEN];
@@ -111,6 +132,7 @@ extern int g_win_w, g_win_h;
 extern InstallerState g_state;
 extern TrueTypeFont* g_font;
 extern uint32_t* g_pixels;
+extern uint32_t* g_backbuf;
 extern int g_win_id;
 
 // ============================================================================
@@ -134,4 +156,6 @@ void render(uint32_t* pixels);
 // ============================================================================
 
 void installer_refresh_disks();
+void installer_refresh_parts();
 void do_install();
+void do_update();

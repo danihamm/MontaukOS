@@ -124,7 +124,7 @@ static void log_err(const char* msg)  { log(LOG_ERR, msg); }
 
 // ---- Service runner ----
 
-static bool run_service(const char* path, const char* name) {
+static bool run_service(const char* path, const char* name, bool wait = true) {
     char msg[128];
 
     snprintf(msg, sizeof(msg), "Starting %s", name);
@@ -137,10 +137,14 @@ static bool run_service(const char* path, const char* name) {
         return false;
     }
 
-    montauk::waitpid(pid);
-
-    snprintf(msg, sizeof(msg), "%s finished (pid %d)", name, pid);
-    log_ok(msg);
+    if (wait) {
+        montauk::waitpid(pid);
+        snprintf(msg, sizeof(msg), "%s finished (pid %d)", name, pid);
+        log_ok(msg);
+    } else {
+        snprintf(msg, sizeof(msg), "%s spawned in background (pid %d)", name, pid);
+        log_ok(msg);
+    }
     return true;
 }
 
@@ -150,8 +154,8 @@ extern "C" void _start() {
 
     log_info("The Montauk Operating System");
 
-    // ---- Stage 1: Network configuration ----
-    run_service("0:/os/dhcp.elf", "dhcp");
+    // ---- Stage 1: Network configuration (non-blocking) ----
+    run_service("0:/os/dhcp.elf", "dhcp", false);
 
     // ---- Stage 2: Desktop environment (falls back to shell) ----
     if (!run_service("0:/os/desktop.elf", "desktop")) {

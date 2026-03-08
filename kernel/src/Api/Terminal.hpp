@@ -23,6 +23,8 @@ namespace Montauk {
                 return;
             }
         }
+        // Don't draw over the framebuffer once the GUI is active
+        if (Kt::g_suppressKernelLog) return;
         Kt::Print(text);
     }
 
@@ -35,6 +37,8 @@ namespace Montauk {
                 return;
             }
         }
+        // Don't draw over the framebuffer once the GUI is active
+        if (Kt::g_suppressKernelLog) return;
         Kt::Putchar(c);
     }
 };

@@ -34,6 +34,7 @@
 #include <Fs/Ramdisk.hpp>
 #include <Fs/Vfs.hpp>
 #include <Fs/Fat32.hpp>
+#include <Fs/Ext2.hpp>
 #include <Fs/FsProbe.hpp>
 #include <Sched/Scheduler.hpp>
 #include <Api/Syscall.hpp>
@@ -206,6 +207,7 @@ extern "C" void kmain() {
     // Register filesystem probes and auto-mount partitions.
     // When no ramdisk, disk partitions start at drive 0 so init.elf is found there.
     Fs::Fat32::RegisterProbe();
+    Fs::Ext2::RegisterProbe();
     Fs::FsProbe::MountPartitions(hasRamdisk ? 1 : 0);
 
     Hal::LoadTSS();

@@ -79,6 +79,11 @@ namespace Fs::Fat32 {
         uint8_t* clusterBuf;
         int      clusterBufPages;
 
+        // In-memory FAT cache (page-allocated)
+        uint32_t* fatCache;
+        int       fatCachePages;
+        uint32_t  fatCacheEntries;  // number of valid 4-byte entries
+
         // Open file handles
         Fat32File files[MaxFilesPerInstance];
 
@@ -127,6 +132,12 @@ namespace Fs::Fat32 {
     }
 
     static uint32_t GetNextCluster(const Fat32Instance& inst, uint32_t cluster) {
+        // Use in-memory FAT cache if available (avoids disk I/O per lookup)
+        if (inst.fatCache && cluster < inst.fatCacheEntries) {
+            return inst.fatCache[cluster] & 0x0FFFFFFF;
+        }
+
+        // Fallback: read from disk
         uint32_t fatOffset = cluster * 4;
         uint32_t fatSector = fatOffset / inst.bytesPerSector;
         uint32_t entryOffset = fatOffset % inst.bytesPerSector;
@@ -183,10 +194,30 @@ namespace Fs::Fat32 {
             if (!WritePartSectors(inst, fatStart + fatSector, 1, sectorBuf)) return false;
         }
 
+        // Keep in-memory FAT cache in sync
+        if (inst.fatCache && cluster < inst.fatCacheEntries) {
+            uint32_t existing = inst.fatCache[cluster];
+            inst.fatCache[cluster] = (existing & 0xF0000000) | (value & 0x0FFFFFFF);
+        }
+
         return true;
     }
 
     static uint32_t AllocateCluster(Fat32Instance& inst) {
+        // Fast path: scan the in-memory FAT cache
+        if (inst.fatCache) {
+            uint32_t limit = inst.clusterCount + 2;
+            if (limit > inst.fatCacheEntries) limit = inst.fatCacheEntries;
+            for (uint32_t cluster = 2; cluster < limit; cluster++) {
+                if ((inst.fatCache[cluster] & 0x0FFFFFFF) == CLUSTER_FREE) {
+                    if (!WriteFatEntry(inst, cluster, 0x0FFFFFFF)) return 0;
+                    return cluster;
+                }
+            }
+            return 0;
+        }
+
+        // Slow path: read FAT sectors from disk
         uint8_t sectorBuf[512];
         uint32_t entriesPerSector = inst.bytesPerSector / 4;
 
@@ -1573,6 +1604,31 @@ namespace Fs::Fat32 {
         } else {
             inst.clusterBuf = (uint8_t*)Memory::g_pfa->ReallocConsecutive(
                 nullptr, inst.clusterBufPages);
+        }
+
+        // Load entire FAT into memory for fast cluster chain lookups.
+        // fatSize32 is in sectors; each sector is bytesPerSector bytes.
+        uint64_t fatBytes = (uint64_t)fatSize32 * bytesPerSector;
+        inst.fatCachePages = (int)((fatBytes + 0xFFF) / 0x1000);
+        inst.fatCacheEntries = (uint32_t)(fatBytes / 4);
+        inst.fatCache = (uint32_t*)Memory::g_pfa->ReallocConsecutive(
+            nullptr, inst.fatCachePages);
+        if (inst.fatCache) {
+            uint8_t* dst = (uint8_t*)inst.fatCache;
+            uint64_t remaining = fatBytes;
+            uint64_t fatPartSector = reservedSectors;
+            while (remaining > 0) {
+                uint32_t chunk = (remaining > 4096) ? 4096 : (uint32_t)remaining;
+                uint32_t secs = (chunk + bytesPerSector - 1) / bytesPerSector;
+                if (!ReadPartSectors(inst, fatPartSector, secs, dst)) {
+                    // If read fails, disable cache and fall back to per-lookup reads
+                    inst.fatCache = nullptr;
+                    break;
+                }
+                dst += secs * bytesPerSector;
+                fatPartSector += secs;
+                remaining -= secs * bytesPerSector;
+            }
         }
 
         // Clear file handles

@@ -10,6 +10,7 @@
 #include <Drivers/Storage/Gpt.hpp>
 #include <Fs/FsProbe.hpp>
 #include <Fs/Fat32.hpp>
+#include <Fs/Ext2.hpp>
 
 #include "Syscall.hpp"
 
@@ -113,6 +114,10 @@ namespace Montauk {
         switch (params->fsType) {
         case FS_TYPE_FAT32:
             return (int64_t)Fs::Fat32::Format(
+                part->BlockDevIndex, part->StartLba, part->SectorCount,
+                params->label[0] ? params->label : nullptr);
+        case FS_TYPE_EXT2:
+            return (int64_t)Fs::Ext2::Format(
                 part->BlockDevIndex, part->StartLba, part->SectorCount,
                 params->label[0] ? params->label : nullptr);
         default:

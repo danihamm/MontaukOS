@@ -50,11 +50,13 @@ namespace Montauk {
         constexpr uint64_t userVa = 0x50000000ULL;
 
         for (uint64_t i = 0; i < numPages; i++) {
-            Memory::VMM::Paging::MapUserInWC(
+            if (!Memory::VMM::Paging::MapUserInWC(
                 proc->pml4Phys,
                 fbPhys + i * 0x1000,
                 userVa + i * 0x1000
-            );
+            )) {
+                return 0;
+            }
         }
 
         return userVa;

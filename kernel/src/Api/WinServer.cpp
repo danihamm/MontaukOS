@@ -67,7 +67,10 @@ namespace WinServer {
             }
             uint64_t physAddr = Memory::SubHHDM((uint64_t)page);
             slot.pixelPhysPages[i] = physAddr;
-            Memory::VMM::Paging::MapUserIn(ownerPml4, physAddr, userVa + (uint64_t)i * 0x1000);
+            if (!Memory::VMM::Paging::MapUserIn(ownerPml4, physAddr, userVa + (uint64_t)i * 0x1000)) {
+                slot.used = false;
+                return -1;
+            }
         }
 
         slot.ownerVa = userVa;
@@ -173,8 +176,10 @@ namespace WinServer {
         uint64_t userVa = heapNext;
 
         for (int i = 0; i < slot.pixelNumPages; i++) {
-            Memory::VMM::Paging::MapUserIn(callerPml4, slot.pixelPhysPages[i],
-                                           userVa + (uint64_t)i * 0x1000);
+            if (!Memory::VMM::Paging::MapUserIn(callerPml4, slot.pixelPhysPages[i],
+                                           userVa + (uint64_t)i * 0x1000)) {
+                return 0;
+            }
         }
 
         slot.desktopVa = userVa;
@@ -230,7 +235,9 @@ namespace WinServer {
             if (page == nullptr) return -1;
             uint64_t physAddr = Memory::SubHHDM((uint64_t)page);
             slot.pixelPhysPages[i] = physAddr;
-            Memory::VMM::Paging::MapUserIn(ownerPml4, physAddr, userVa + (uint64_t)i * 0x1000);
+            if (!Memory::VMM::Paging::MapUserIn(ownerPml4, physAddr, userVa + (uint64_t)i * 0x1000)) {
+                return -1;
+            }
         }
 
         slot.width = newW;

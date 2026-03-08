@@ -115,7 +115,11 @@ namespace Sched {
                 uint64_t virtAddr = segBase + p * 0x1000;
 
                 // Map into the process's PML4 with User bit set
-                Memory::VMM::Paging::MapUserIn(pml4Phys, physAddr, virtAddr);
+                if (!Memory::VMM::Paging::MapUserIn(pml4Phys, physAddr, virtAddr)) {
+                    Kt::KernelLogStream(Kt::ERROR, "ELF") << "Failed to map page";
+                    Memory::g_heap->Free(fileData);
+                    return 0;
+                }
 
                 // Copy file data that overlaps this page (via HHDM)
                 uint64_t pageStart = virtAddr;

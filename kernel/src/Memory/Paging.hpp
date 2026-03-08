@@ -104,10 +104,10 @@ public:
         static std::uint64_t CreateUserPML4();
 
         // Map a page into an arbitrary PML4 (specified by physical address) with User bit set.
-        static void MapUserIn(std::uint64_t pml4Phys, std::uint64_t physicalAddress, std::uint64_t virtualAddress);
+        static bool MapUserIn(std::uint64_t pml4Phys, std::uint64_t physicalAddress, std::uint64_t virtualAddress);
 
         // Map a page into an arbitrary PML4 with User + Write-Combining attributes.
-        static void MapUserInWC(std::uint64_t pml4Phys, std::uint64_t physicalAddress, std::uint64_t virtualAddress);
+        static bool MapUserInWC(std::uint64_t pml4Phys, std::uint64_t physicalAddress, std::uint64_t virtualAddress);
 
         // Unmap a single page from an arbitrary PML4 (clears PTE + invalidates TLB).
         static void UnmapUserIn(std::uint64_t pml4Phys, std::uint64_t virtualAddress);

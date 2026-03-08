@@ -7,6 +7,7 @@
 #include "FsProbe.hpp"
 #include <Drivers/Storage/Gpt.hpp>
 #include <Terminal/Terminal.hpp>
+#include <Libraries/Memory.hpp>
 
 namespace Fs::FsProbe {
 
@@ -19,15 +20,24 @@ namespace Fs::FsProbe {
         }
     }
 
+    static bool IsEfiPartition(const Drivers::Storage::Gpt::PartitionInfo* part) {
+        auto& a = part->TypeGuid;
+        auto& b = Drivers::Storage::Gpt::GUID_EFI_SYSTEM;
+        return a.Data1 == b.Data1 && a.Data2 == b.Data2 && a.Data3 == b.Data3 &&
+               memcmp(a.Data4, b.Data4, 8) == 0;
+    }
+
     void MountPartitions(int firstDrive) {
         int partCount = Drivers::Storage::Gpt::GetPartitionCount();
         if (partCount == 0 || g_probeCount == 0) return;
 
         int driveNum = firstDrive;
 
+        // First pass: mount non-EFI partitions so they get lower drive numbers
         for (int i = 0; i < partCount && driveNum < Vfs::MaxDrives; i++) {
             auto* part = Drivers::Storage::Gpt::GetPartition(i);
             if (!part) continue;
+            if (IsEfiPartition(part)) continue;
 
             for (int p = 0; p < g_probeCount; p++) {
                 Vfs::FsDriver* driver = g_probes[p](
@@ -36,6 +46,26 @@ namespace Fs::FsProbe {
                 if (driver) {
                     Vfs::RegisterDrive(driveNum, driver);
                     Kt::KernelLogStream(Kt::OK, "FsProbe") << "Mounted partition "
+                        << i << " as drive " << driveNum;
+                    driveNum++;
+                    break;
+                }
+            }
+        }
+
+        // Second pass: mount EFI system partitions after all others
+        for (int i = 0; i < partCount && driveNum < Vfs::MaxDrives; i++) {
+            auto* part = Drivers::Storage::Gpt::GetPartition(i);
+            if (!part) continue;
+            if (!IsEfiPartition(part)) continue;
+
+            for (int p = 0; p < g_probeCount; p++) {
+                Vfs::FsDriver* driver = g_probes[p](
+                    part->BlockDevIndex, part->StartLba, part->SectorCount);
+
+                if (driver) {
+                    Vfs::RegisterDrive(driveNum, driver);
+                    Kt::KernelLogStream(Kt::OK, "FsProbe") << "Mounted EFI partition "
                         << i << " as drive " << driveNum;
                     driveNum++;
                     break;
