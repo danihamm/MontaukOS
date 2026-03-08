@@ -1,0 +1,8 @@
+[app]
+name = "Installer"
+binary = "installer.elf"
+icon = "text-x-install.svg"
+
+[menu]
+category = "System"
+visible = true

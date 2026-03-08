@@ -68,14 +68,14 @@ OBJS := $(addprefix $(OBJDIR)/,$(SRCS:.cpp=.o))
 
 # ---- Target ----
 
-TARGET := $(BINDIR)/os/pdfviewer.elf
+TARGET := $(BINDIR)/apps/pdfviewer/pdfviewer.elf
 
 .PHONY: all clean
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS) $(LINK_LD) Makefile
-	mkdir -p $(BINDIR)/os
+	mkdir -p $(BINDIR)/apps/pdfviewer
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJS) $(LIBDIR)/libc/liblibc.a -o $@
 
 HEADERS := pdfviewer.h

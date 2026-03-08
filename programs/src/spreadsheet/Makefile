@@ -68,14 +68,14 @@ OBJS := $(addprefix $(OBJDIR)/,$(SRCS:.cpp=.o))
 
 # ---- Target ----
 
-TARGET := $(BINDIR)/os/spreadsheet.elf
+TARGET := $(BINDIR)/apps/spreadsheet/spreadsheet.elf
 
 .PHONY: all clean
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS) $(LINK_LD) Makefile
-	mkdir -p $(BINDIR)/os
+	mkdir -p $(BINDIR)/apps/spreadsheet
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJS) $(LIBDIR)/libc/liblibc.a -o $@
 
 $(OBJDIR)/%.o: %.cpp Makefile

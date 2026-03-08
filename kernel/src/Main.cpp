@@ -164,6 +164,7 @@ extern "C" void kmain() {
     Efi::Init(ST, efi_memmap_request.response);
 
     // Initialize ramdisk from Limine modules
+    bool hasRamdisk = false;
     if (module_request.response != nullptr && module_request.response->module_count > 0) {
         Kt::KernelLogStream(OK, "Modules") << "Found " << (uint64_t)module_request.response->module_count << " module(s)";
         for (uint64_t i = 0; i < module_request.response->module_count; i++) {
@@ -177,30 +178,35 @@ extern "C" void kmain() {
                 modString[6] == 'k' && modString[7] == '\0') {
                 Kt::KernelLogStream(OK, "Modules") << "Ramdisk module at " << kcp::hex << (uint64_t)mod->address << kcp::dec << ", size=" << mod->size;
                 Fs::Ramdisk::Initialize(mod->address, mod->size);
+                hasRamdisk = true;
             }
         }
     } else {
         Kt::KernelLogStream(WARNING, "Modules") << "No modules loaded (ramdisk unavailable)";
     }
 
-    // Initialize VFS and register ramdisk as drive 0
+    // Initialize VFS and register ramdisk as drive 0 only if present
     Fs::Vfs::Initialize();
 
-    static Fs::Vfs::FsDriver ramdiskDriver = {
-        Fs::Ramdisk::Open,
-        Fs::Ramdisk::Read,
-        Fs::Ramdisk::GetSize,
-        Fs::Ramdisk::Close,
-        Fs::Ramdisk::ReadDir,
-        Fs::Ramdisk::Write,
-        Fs::Ramdisk::Create,
-        nullptr
-    };
-    Fs::Vfs::RegisterDrive(0, &ramdiskDriver);
+    if (hasRamdisk) {
+        static Fs::Vfs::FsDriver ramdiskDriver = {
+            Fs::Ramdisk::Open,
+            Fs::Ramdisk::Read,
+            Fs::Ramdisk::GetSize,
+            Fs::Ramdisk::Close,
+            Fs::Ramdisk::ReadDir,
+            Fs::Ramdisk::Write,
+            Fs::Ramdisk::Create,
+            nullptr,
+            nullptr
+        };
+        Fs::Vfs::RegisterDrive(0, &ramdiskDriver);
+    }
 
-    // Register filesystem probes and auto-mount partitions
+    // Register filesystem probes and auto-mount partitions.
+    // When no ramdisk, disk partitions start at drive 0 so init.elf is found there.
     Fs::Fat32::RegisterProbe();
-    Fs::FsProbe::MountPartitions();
+    Fs::FsProbe::MountPartitions(hasRamdisk ? 1 : 0);
 
     Hal::LoadTSS();
     Montauk::InitializeSyscalls();

@@ -1,0 +1,8 @@
+[app]
+name = "Wikipedia"
+binary = "wikipedia.elf"
+icon = "web-browser.svg"
+
+[menu]
+category = "Internet"
+visible = true

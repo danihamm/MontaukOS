@@ -71,14 +71,14 @@ OBJS := $(addprefix $(OBJDIR)/,$(SRCS:.cpp=.o))
 
 # ---- Target ----
 
-TARGET := $(BINDIR)/os/fontpreview.elf
+TARGET := $(BINDIR)/apps/fontpreview/fontpreview.elf
 
 .PHONY: all clean
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS) $(LIBS) $(LINK_LD) Makefile
-	mkdir -p $(BINDIR)/os
+	mkdir -p $(BINDIR)/apps/fontpreview
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJS) $(LIBS) -o $@
 
 $(OBJDIR)/%.o: %.cpp Makefile

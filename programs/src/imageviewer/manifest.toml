@@ -1,0 +1,8 @@
+[app]
+name = "Image Viewer"
+binary = "imageviewer.elf"
+icon = "image-viewer.svg"
+
+[menu]
+category = "Applications"
+visible = false

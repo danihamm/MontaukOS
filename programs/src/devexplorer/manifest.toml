@@ -1,0 +1,8 @@
+[app]
+name = "Devices"
+binary = "devexplorer.elf"
+icon = "hardware.svg"
+
+[menu]
+category = "System"
+visible = true

@@ -202,7 +202,7 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
             // Walk visible rows to find which one was clicked
             int iy = menu_y + 5;
             int cur_cat = -1;
-            for (int i = 0; i < MENU_ROW_COUNT; i++) {
+            for (int i = 0; i < menu_row_count; i++) {
                 const MenuRow& row = menu_rows[i];
                 if (row.is_category) cur_cat++;
                 if (!menu_row_visible(i)) continue;
@@ -212,25 +212,25 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
                         // Toggle category expand/collapse
                         menu_cat_expanded[cur_cat] = !menu_cat_expanded[cur_cat];
                     } else if (!row.is_category) {
-                        switch (row.app_id) {
-                        case 0: open_terminal(ds); break;
-                        case 1: open_filemanager(ds); break;
-                        case 2: open_sysinfo(ds); break;
-                        case 3: open_calculator(ds); break;
-                        case 4: open_texteditor(ds); break;
-                        case 5: open_klog(ds); break;
-                        case 6: open_procmgr(ds); break;
-                        case 7: open_mandelbrot(ds); break;
-                        case 8: open_devexplorer(ds); break;
-                        case 9: open_wiki(ds); break;
-                        case 10: open_doom(ds); break;
-                        case 11: open_settings(ds); break;
-                        case 12: open_reboot_dialog(ds); break;
-                        case 13: open_weather(ds); break;
-                        case 14: open_shutdown_dialog(ds); break;
-                        case 15: open_wordprocessor(ds); break;
-                        case 16: open_spreadsheet(ds); break;
-                        case 17: open_disks(ds); break;
+                        if (row.external) {
+                            // Launch external app from manifest
+                            montauk::spawn(row.binary_path);
+                        } else {
+                            // Dispatch embedded app
+                            switch (row.app_id) {
+                            case 0:  open_terminal(ds); break;
+                            case 1:  open_filemanager(ds); break;
+                            case 2:  open_sysinfo(ds); break;
+                            case 3:  open_calculator(ds); break;
+                            case 4:  open_texteditor(ds); break;
+                            case 5:  open_klog(ds); break;
+                            case 6:  open_procmgr(ds); break;
+                            case 7:  open_mandelbrot(ds); break;
+                            case 11: open_settings(ds); break;
+                            case 12: open_reboot_dialog(ds); break;
+                            case 14: open_shutdown_dialog(ds); break;
+                            case 15: open_wordprocessor(ds); break;
+                            }
                         }
                         ds->app_menu_open = false;
                     }
@@ -532,10 +532,6 @@ void gui::desktop_handle_keyboard(DesktopState* ds, const Montauk::KeyEvent& key
         }
         if (key.ascii == 'k' || key.ascii == 'K') {
             open_klog(ds);
-            return;
-        }
-        if (key.ascii == 'd' || key.ascii == 'D') {
-            open_doom(ds);
             return;
         }
     }

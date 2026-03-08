@@ -74,14 +74,14 @@ OBJS := $(addprefix $(OBJDIR)/,$(SRCS:.cpp=.o))
 
 # ---- Target ----
 
-TARGET := $(BINDIR)/os/imageviewer.elf
+TARGET := $(BINDIR)/apps/imageviewer/imageviewer.elf
 
 .PHONY: all clean
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS) $(LIBS) $(LINK_LD) Makefile
-	mkdir -p $(BINDIR)/os
+	mkdir -p $(BINDIR)/apps/imageviewer
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJS) $(LIBS) -o $@
 
 $(OBJDIR)/%.o: %.cpp Makefile

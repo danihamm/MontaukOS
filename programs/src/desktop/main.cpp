@@ -7,6 +7,173 @@
 #include "desktop_internal.hpp"
 
 // ============================================================================
+// App Manifest Scanning
+// ============================================================================
+
+// Extract the basename from a readdir entry.
+// readdir returns full paths from drive root (e.g. "apps/doom/") —
+// strip the directory prefix and any trailing slash to get just "doom".
+static void extract_basename(char* out, int outSz, const char* entry) {
+    // Strip trailing slash
+    int len = montauk::slen(entry);
+    while (len > 0 && entry[len - 1] == '/') len--;
+
+    // Find last slash before that
+    int last_slash = -1;
+    for (int i = 0; i < len; i++) {
+        if (entry[i] == '/') last_slash = i;
+    }
+
+    const char* base = (last_slash >= 0) ? entry + last_slash + 1 : entry;
+    int base_len = len - (last_slash >= 0 ? last_slash + 1 : 0);
+    if (base_len >= outSz) base_len = outSz - 1;
+    montauk::memcpy(out, base, base_len);
+    out[base_len] = '\0';
+}
+
+void desktop_scan_apps(DesktopState* ds) {
+    ds->external_app_count = 0;
+
+    // Ensure the apps directory exists
+    montauk::fmkdir("0:/apps");
+
+    const char* entries[32];
+    int count = montauk::readdir("0:/apps", entries, 32);
+
+    for (int i = 0; i < count && ds->external_app_count < MAX_EXTERNAL_APPS; i++) {
+        // readdir returns paths like "apps/doom/" — extract just "doom"
+        char dirname[64];
+        extract_basename(dirname, sizeof(dirname), entries[i]);
+        if (dirname[0] == '\0') continue;
+
+        // Try to open the manifest in this app directory
+        char manifest_path[128];
+        snprintf(manifest_path, sizeof(manifest_path), "0:/apps/%s/manifest.toml", dirname);
+
+        int fh = montauk::open(manifest_path);
+        if (fh < 0) continue;
+
+        uint64_t sz = montauk::getsize(fh);
+        if (sz == 0 || sz > 4096) { montauk::close(fh); continue; }
+
+        char* text = (char*)montauk::malloc(sz + 1);
+        montauk::read(fh, (uint8_t*)text, 0, sz);
+        montauk::close(fh);
+        text[sz] = '\0';
+
+        auto doc = montauk::toml::parse(text);
+        montauk::mfree(text);
+
+        ExternalApp* app = &ds->external_apps[ds->external_app_count];
+
+        // Read manifest fields
+        const char* name = doc.get_string("app.name", "Unknown");
+        const char* binary = doc.get_string("app.binary", "");
+        const char* icon_file = doc.get_string("app.icon", "");
+        const char* category = doc.get_string("menu.category", "Applications");
+        bool visible = doc.get_bool("menu.visible", true);
+
+        montauk::strncpy(app->name, name, sizeof(app->name));
+        montauk::strncpy(app->category, category, sizeof(app->category));
+        app->menu_visible = visible;
+
+        // Build full binary path: 0:/apps/<dir>/<binary>
+        snprintf(app->binary_path, sizeof(app->binary_path),
+                 "0:/apps/%s/%s", dirname, binary);
+
+        // Load icon from app directory
+        app->icon = {};
+        if (icon_file[0]) {
+            char icon_path[128];
+            snprintf(icon_path, sizeof(icon_path),
+                     "0:/apps/%s/%s", dirname, icon_file);
+            Color defColor = colors::ICON_COLOR;
+            app->icon = svg_load(icon_path, 20, 20, defColor);
+        }
+
+        doc.destroy();
+        ds->external_app_count++;
+    }
+}
+
+// ============================================================================
+// Menu Builder
+// ============================================================================
+
+// Category definitions and their ordering
+static const char* CATEGORY_NAMES[] = { "Applications", "Internet", "System", "Games" };
+static constexpr int NUM_CATEGORIES = 4;
+
+// Embedded app definitions: { display_name, app_id, category_index }
+struct EmbeddedAppDef {
+    const char* name;
+    int app_id;
+    int category;   // index into CATEGORY_NAMES
+};
+
+static const EmbeddedAppDef embedded_apps[] = {
+    { "Terminal",        0,  0 },
+    { "Files",           1,  0 },
+    { "Text Editor",     4,  0 },
+    { "Word Processor", 15,  0 },
+    { "Calculator",      3,  0 },
+    { "System Info",     2,  2 },
+    { "Kernel Log",      5,  2 },
+    { "Processes",       6,  2 },
+    { "Mandelbrot",      7,  3 },
+};
+
+static constexpr int NUM_EMBEDDED = sizeof(embedded_apps) / sizeof(embedded_apps[0]);
+
+// Resolve embedded app_id to an icon pointer in DesktopState
+static SvgIcon* icon_for_embedded(DesktopState* ds, int app_id) {
+    switch (app_id) {
+    case 0:  return &ds->icon_terminal;
+    case 1:  return &ds->icon_filemanager;
+    case 2:  return &ds->icon_sysinfo;
+    case 3:  return &ds->icon_calculator;
+    case 4:  return &ds->icon_texteditor;
+    case 5:  return &ds->icon_terminal;    // Kernel Log uses terminal icon
+    case 6:  return &ds->icon_procmgr;
+    case 7:  return &ds->icon_mandelbrot;
+    case 15: return &ds->icon_texteditor;  // Word Processor uses text editor icon
+    default: return nullptr;
+    }
+}
+
+void desktop_build_menu(DesktopState* ds) {
+    menu_row_count = 0;
+
+    // Build each category
+    for (int cat = 0; cat < NUM_CATEGORIES; cat++) {
+        menu_add_category(CATEGORY_NAMES[cat]);
+
+        // Add embedded apps in this category
+        for (int e = 0; e < NUM_EMBEDDED; e++) {
+            if (embedded_apps[e].category == cat) {
+                menu_add_embedded(embedded_apps[e].name, embedded_apps[e].app_id,
+                                  icon_for_embedded(ds, embedded_apps[e].app_id));
+            }
+        }
+
+        // Add external apps in this category
+        for (int x = 0; x < ds->external_app_count; x++) {
+            ExternalApp* app = &ds->external_apps[x];
+            if (!app->menu_visible) continue;
+            if (montauk::streq(app->category, CATEGORY_NAMES[cat])) {
+                menu_add_external(app->name, app->binary_path, &app->icon);
+            }
+        }
+    }
+
+    // Divider + always-visible entries
+    menu_add_category("");  // divider (cat 4, always expanded)
+    menu_add_embedded("Settings", 11, &ds->icon_settings);
+    menu_add_embedded("Reboot",   12, &ds->icon_reboot);
+    menu_add_embedded("Shutdown", 14, &ds->icon_shutdown);
+}
+
+// ============================================================================
 // Initialization
 // ============================================================================
 
@@ -58,14 +225,12 @@ void gui::desktop_init(DesktopState* ds) {
     ds->icon_reboot   = svg_load("0:/icons/system-reboot.svg", 20, 20, defColor);
     ds->icon_shutdown = svg_load("0:/icons/system-shutdown.svg", 20, 20, defColor);
 
-    ds->icon_weather = svg_load("0:/icons/weather-widget.svg", 20, 20, defColor);
+    ds->icon_procmgr    = svg_load("0:/icons/system-monitor.svg",        20, 20, defColor);
+    ds->icon_mandelbrot = svg_load("0:/icons/applications-science.svg",  20, 20, defColor);
 
-    ds->icon_doom     = svg_load("0:/icons/doom.svg", 20, 20, defColor);
-    ds->icon_procmgr  = svg_load("0:/icons/system-monitor.svg", 20, 20, defColor);
-    ds->icon_mandelbrot = svg_load("0:/icons/applications-science.svg", 20, 20, defColor);
-    ds->icon_devexplorer = svg_load("0:/icons/hardware.svg", 20, 20, defColor);
-    ds->icon_disks      = svg_load("0:/icons/gparted.svg", 20, 20, defColor); // gparted icon, i.e. disk/partition management
-    ds->icon_spreadsheet = svg_load("0:/icons/spreadsheet.svg", 20, 20, defColor);
+    // Scan 0:/apps/ for external app manifests and build the menu
+    desktop_scan_apps(ds);
+    desktop_build_menu(ds);
 
     // Settings defaults
     ds->settings.bg_gradient = true;
@@ -235,6 +400,10 @@ void gui::desktop_run(DesktopState* ds) {
 
         // Handle mouse events
         desktop_handle_mouse(ds);
+
+        // Re-poll external windows so that any killed during mouse/key
+        // handling are removed before we touch their pixel buffers.
+        desktop_poll_external_windows(ds);
 
         // Compose and present
         desktop_compose(ds);

@@ -1,0 +1,8 @@
+[app]
+name = "Weather"
+binary = "weather.elf"
+icon = "weather-widget.svg"
+
+[menu]
+category = "Internet"
+visible = true

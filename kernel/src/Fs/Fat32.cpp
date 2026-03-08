@@ -50,6 +50,9 @@ namespace Fs::Fat32 {
         // Location of the 32-byte SFN directory entry on disk
         uint64_t sfnPartSector;   // partition-relative sector
         uint32_t sfnOffInSector;  // byte offset within that sector
+        // Cached position for sequential access (avoids O(n²) chain walks)
+        uint32_t cachedClusterIdx;  // cluster index in chain
+        uint32_t cachedCluster;     // cluster number at that index
     };
 
     struct Fat32Instance {
@@ -805,6 +808,8 @@ namespace Fs::Fat32 {
                 self.files[i].isDirectory = (entry.attributes & ATTR_DIRECTORY) != 0;
                 self.files[i].sfnPartSector = entry.sfnPartSector;
                 self.files[i].sfnOffInSector = entry.sfnOffInSector;
+                self.files[i].cachedClusterIdx = 0;
+                self.files[i].cachedCluster = entry.firstCluster;
                 return i;
             }
         }
@@ -831,15 +836,23 @@ namespace Fs::Fat32 {
         uint32_t startClusterIdx = (uint32_t)(offset / clusterSize);
         uint32_t clusterOff = (uint32_t)(offset % clusterSize);
 
-        // Walk cluster chain to starting cluster
-        uint32_t cluster = file.firstCluster;
-        for (uint32_t i = 0; i < startClusterIdx; i++) {
+        // Walk cluster chain to starting cluster (use cache if possible)
+        uint32_t cluster;
+        uint32_t startFrom = 0;
+        if (file.cachedCluster >= 2 && file.cachedClusterIdx <= startClusterIdx) {
+            cluster = file.cachedCluster;
+            startFrom = file.cachedClusterIdx;
+        } else {
+            cluster = file.firstCluster;
+        }
+        for (uint32_t i = startFrom; i < startClusterIdx; i++) {
             cluster = GetNextCluster(self, cluster);
             if (IsEndOfChain(cluster)) return 0;
         }
 
         // Read data cluster by cluster
         uint64_t bytesRead = 0;
+        uint32_t lastCluster = cluster;
         while (bytesRead < size && !IsEndOfChain(cluster)) {
             if (!ReadCluster(self, cluster)) break;
 
@@ -851,7 +864,15 @@ namespace Fs::Fat32 {
             bytesRead += toRead;
             clusterOff = 0; // subsequent clusters start from offset 0
 
+            lastCluster = cluster;
             cluster = GetNextCluster(self, cluster);
+        }
+
+        // Update cache
+        if (bytesRead > 0 && lastCluster >= 2) {
+            uint32_t endClusterIdx = (uint32_t)((offset + bytesRead - 1) / clusterSize);
+            file.cachedClusterIdx = endClusterIdx;
+            file.cachedCluster = lastCluster;
         }
 
         return (int)bytesRead;
@@ -928,9 +949,18 @@ namespace Fs::Fat32 {
         uint32_t clusterIdx = (uint32_t)(offset / clusterSize);
         uint32_t clusterOff = (uint32_t)(offset % clusterSize);
 
-        uint32_t cluster = file.firstCluster;
+        // Use cached position if we can skip ahead
+        uint32_t cluster;
         uint32_t prevCluster = 0;
-        for (uint32_t i = 0; i < clusterIdx; i++) {
+        uint32_t startIdx = 0;
+        if (file.cachedCluster >= 2 && file.cachedClusterIdx <= clusterIdx) {
+            cluster = file.cachedCluster;
+            startIdx = file.cachedClusterIdx;
+        } else {
+            cluster = file.firstCluster;
+        }
+
+        for (uint32_t i = startIdx; i < clusterIdx; i++) {
             prevCluster = cluster;
             uint32_t next = GetNextCluster(self, cluster);
             if (IsEndOfChain(next)) {
@@ -977,6 +1007,13 @@ namespace Fs::Fat32 {
         }
 
     done:
+        // Update cached position for sequential access
+        if (bytesWritten > 0 && prevCluster >= 2) {
+            uint32_t endClusterIdx = (uint32_t)((offset + bytesWritten - 1) / clusterSize);
+            file.cachedClusterIdx = endClusterIdx;
+            file.cachedCluster = prevCluster;
+        }
+
         // Update file size if we wrote past the end
         uint64_t endPos = offset + bytesWritten;
         if (endPos > file.fileSize) {
@@ -1038,6 +1075,8 @@ namespace Fs::Fat32 {
                     self.files[i].isDirectory = false;
                     self.files[i].sfnPartSector = existing.sfnPartSector;
                     self.files[i].sfnOffInSector = existing.sfnOffInSector;
+                    self.files[i].cachedClusterIdx = 0;
+                    self.files[i].cachedCluster = 0;
                     return i;
                 }
             }
@@ -1124,6 +1163,8 @@ namespace Fs::Fat32 {
                 self.files[i].isDirectory = false;
                 self.files[i].sfnPartSector = sfnSector;
                 self.files[i].sfnOffInSector = sfnOff;
+                self.files[i].cachedClusterIdx = 0;
+                self.files[i].cachedCluster = 0;
                 return i;
             }
         }
@@ -1259,6 +1300,136 @@ namespace Fs::Fat32 {
     }
 
     // =========================================================================
+    // Mkdir — create a directory
+    // =========================================================================
+
+    static int MkdirImpl(int inst, const char* path) {
+        if (inst < 0 || inst >= g_instanceCount || !g_instances[inst].active) return -1;
+        auto& self = g_instances[inst];
+
+        // Split path into parent directory and new dir name
+        char parentPath[MaxNameLen];
+        char dirName[MaxNameLen];
+        SplitPath(path, parentPath, MaxNameLen, dirName, MaxNameLen);
+
+        if (dirName[0] == '\0') return -1;
+
+        // Traverse to parent directory
+        ParsedEntry parentEntry;
+        if (!TraversePath(inst, parentPath, &parentEntry)) return -1;
+        if (!(parentEntry.attributes & ATTR_DIRECTORY)) return -1;
+
+        uint32_t parentCluster = parentEntry.firstCluster;
+
+        // If directory already exists, return success
+        ParsedEntry existing;
+        if (FindInDirectory(inst, parentCluster, dirName, &existing)) {
+            if (existing.attributes & ATTR_DIRECTORY) return 0;
+            return -1; // exists as a file
+        }
+
+        // Allocate a cluster for the new directory
+        uint32_t newCluster = AllocateCluster(self);
+        if (newCluster == 0) return -1;
+
+        // Initialize the new directory cluster with . and .. entries
+        memset(self.clusterBuf, 0, self.clusterSize);
+
+        // "." entry — points to itself
+        uint8_t* dot = self.clusterBuf;
+        memset(dot, ' ', 11);
+        dot[0] = '.';
+        dot[11] = ATTR_DIRECTORY;
+        uint16_t clHi = (uint16_t)(newCluster >> 16);
+        uint16_t clLo = (uint16_t)(newCluster & 0xFFFF);
+        memcpy(dot + 20, &clHi, 2);
+        memcpy(dot + 26, &clLo, 2);
+
+        // ".." entry — points to parent
+        uint8_t* dotdot = self.clusterBuf + 32;
+        memset(dotdot, ' ', 11);
+        dotdot[0] = '.'; dotdot[1] = '.';
+        dotdot[11] = ATTR_DIRECTORY;
+        uint32_t parentCl = (parentCluster == self.rootCluster) ? 0 : parentCluster;
+        clHi = (uint16_t)(parentCl >> 16);
+        clLo = (uint16_t)(parentCl & 0xFFFF);
+        memcpy(dotdot + 20, &clHi, 2);
+        memcpy(dotdot + 26, &clLo, 2);
+
+        if (!WriteClusterData(self, newCluster, self.clusterBuf)) return -1;
+
+        // Generate 8.3 short name for the directory
+        char shortName[11];
+        GenerateShortName(dirName, shortName);
+        MakeShortNameUnique(inst, parentCluster, shortName);
+
+        // Build LFN entries if needed
+        uint8_t lfnEntries[20 * 32];
+        int lfnCount = 0;
+        bool needsLfn = NeedsLfn(dirName, shortName);
+
+        if (needsLfn) {
+            uint8_t checksum = LfnChecksum(shortName);
+            lfnCount = BuildLfnEntries(dirName, checksum, lfnEntries);
+        }
+
+        int totalSlots = lfnCount + 1;
+
+        // Find free directory slots in parent
+        DirSlotPos pos = FindFreeDirSlots(inst, parentCluster, totalSlots);
+        if (!pos.found) return -1;
+
+        // Build all entries (LFN + SFN)
+        uint8_t allEntries[21 * 32];
+        if (lfnCount > 0) {
+            memcpy(allEntries, lfnEntries, lfnCount * 32);
+        }
+
+        // Build the SFN entry with ATTR_DIRECTORY
+        uint8_t* sfn = allEntries + lfnCount * 32;
+        memset(sfn, 0, 32);
+        memcpy(sfn, shortName, 11);
+        sfn[11] = ATTR_DIRECTORY;
+        clHi = (uint16_t)(newCluster >> 16);
+        clLo = (uint16_t)(newCluster & 0xFFFF);
+        memcpy(sfn + 20, &clHi, 2);
+        memcpy(sfn + 26, &clLo, 2);
+        // Directory size field is 0 per FAT spec
+
+        // Write entries to disk
+        uint64_t curSector = pos.partSector;
+        uint32_t curOff = pos.offsetInSec;
+
+        uint8_t sectorBuf[512];
+        if (!ReadPartSectors(self, curSector, 1, sectorBuf)) return -1;
+
+        int bytesTotal = totalSlots * 32;
+        int written = 0;
+
+        while (written < bytesTotal) {
+            int space = (int)self.bytesPerSector - (int)curOff;
+            int chunk = bytesTotal - written;
+            if (chunk > space) chunk = space;
+
+            memcpy(sectorBuf + curOff, allEntries + written, chunk);
+            written += chunk;
+
+            if (written < bytesTotal || chunk == space) {
+                if (!WritePartSectors(self, curSector, 1, sectorBuf)) return -1;
+                if (written < bytesTotal) {
+                    curSector++;
+                    curOff = 0;
+                    if (!ReadPartSectors(self, curSector, 1, sectorBuf)) return -1;
+                }
+            } else {
+                if (!WritePartSectors(self, curSector, 1, sectorBuf)) return -1;
+            }
+        }
+
+        return 0;
+    }
+
+    // =========================================================================
     // Template thunks — generate unique function pointers per instance
     // =========================================================================
 
@@ -1271,6 +1442,7 @@ namespace Fs::Fat32 {
         static int Write(int h, const uint8_t* b, uint64_t o, uint64_t s) { return WriteImpl(N, h, b, o, s); }
         static int Create(const char* p) { return CreateImpl(N, p); }
         static int Delete(const char* p) { return DeleteImpl(N, p); }
+        static int Mkdir(const char* p) { return MkdirImpl(N, p); }
     };
 
     template<int N>
@@ -1284,6 +1456,7 @@ namespace Fs::Fat32 {
             Thunks<N>::Write,
             Thunks<N>::Create,
             Thunks<N>::Delete,
+            Thunks<N>::Mkdir,
         };
     }
 

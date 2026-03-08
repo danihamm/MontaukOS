@@ -17,6 +17,16 @@ namespace gui {
 
 static constexpr int MAX_WINDOWS = 8;
 static constexpr int PANEL_HEIGHT = 32;
+static constexpr int MAX_EXTERNAL_APPS = 16;
+
+// External app discovered from 0:/apps/ manifest
+struct ExternalApp {
+    char name[48];
+    char binary_path[128];
+    char category[24];
+    SvgIcon icon;
+    bool menu_visible;
+};
 
 struct DesktopSettings {
     // Background
@@ -84,14 +94,12 @@ struct DesktopState {
     SvgIcon icon_reboot;
     SvgIcon icon_shutdown;
 
-    SvgIcon icon_weather;
-
-    SvgIcon icon_doom;
     SvgIcon icon_procmgr;
     SvgIcon icon_mandelbrot;
-    SvgIcon icon_devexplorer;
-    SvgIcon icon_spreadsheet;
-    SvgIcon icon_disks;
+
+    // External apps discovered from 0:/apps/ manifests
+    ExternalApp external_apps[MAX_EXTERNAL_APPS];
+    int external_app_count;
 
     bool ctx_menu_open;
     int ctx_menu_x, ctx_menu_y;

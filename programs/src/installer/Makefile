@@ -1,4 +1,4 @@
-# Makefile for devexplorer (standalone Device Explorer) on MontaukOS
+# Makefile for installer (standalone Installer app) on MontaukOS
 # Copyright (c) 2026 Daniel Hammer
 
 MAKEFLAGS += -rR
@@ -63,19 +63,19 @@ LDFLAGS := \
 
 # ---- Source files ----
 
-SRCS := main.cpp render.cpp diskdetail.cpp stb_truetype_impl.cpp
+SRCS := main.cpp render.cpp actions.cpp stb_truetype_impl.cpp
 OBJS := $(addprefix $(OBJDIR)/,$(SRCS:.cpp=.o))
 
 # ---- Target ----
 
-TARGET := $(BINDIR)/apps/devexplorer/devexplorer.elf
+TARGET := $(BINDIR)/apps/installer/installer.elf
 
 .PHONY: all clean
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS) $(LINK_LD) Makefile
-	mkdir -p $(BINDIR)/apps/devexplorer
+	mkdir -p $(BINDIR)/apps/installer
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJS) $(LIBDIR)/libc/liblibc.a -o $@
 
 $(OBJDIR)/%.o: %.cpp Makefile

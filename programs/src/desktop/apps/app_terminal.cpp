@@ -17,12 +17,7 @@ static constexpr int TERM_TAB_GAP   = 4;
 static constexpr int TERM_PLUS_W    = 28;
 static constexpr int TERM_PLUS_PAD  = 8;
 
-// Compute the x-offset for left-aligned tabs within bar_w
-static int term_tabs_origin(int bar_w, int tab_count) {
-    (void)bar_w;
-    (void)tab_count;
-    return 8;
-}
+static constexpr int TERM_TAB_PAD  = 8;
 
 struct TermTabState {
     TerminalState* tabs[TERM_MAX_TABS];
@@ -150,7 +145,7 @@ static void terminal_on_draw(Window* win, Framebuffer& fb) {
     c.fill_rect(0, 0, cr.w, TERM_TAB_BAR_H, bar_bg);
 
     int fh = system_font_height();
-    int tab_x = term_tabs_origin(cr.w, tts->tab_count);
+    int tab_x = TERM_TAB_PAD;
 
     for (int i = 0; i < tts->tab_count; i++) {
         bool active = (i == tts->active_tab);
@@ -241,7 +236,7 @@ static void terminal_on_mouse(Window* win, MouseEvent& ev) {
 
     if (ly >= TERM_TAB_BAR_H) return;  // click in terminal area, ignore
 
-    int tab_x = term_tabs_origin(cr.w, tts->tab_count);
+    int tab_x = TERM_TAB_PAD;
     for (int i = 0; i < tts->tab_count; i++) {
         if (lx >= tab_x && lx < tab_x + TERM_TAB_W) {
             // Check if click is on the close "x" (last 24px of tab)

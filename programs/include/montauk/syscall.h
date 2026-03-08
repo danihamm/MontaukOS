@@ -146,6 +146,12 @@ namespace montauk {
     inline int fdelete(const char* path) {
         return (int)syscall1(Montauk::SYS_FDELETE, (uint64_t)path);
     }
+    inline int fmkdir(const char* path) {
+        return (int)syscall1(Montauk::SYS_FMKDIR, (uint64_t)path);
+    }
+    inline int drivelist(int* outDrives, int max) {
+        return (int)syscall2(Montauk::SYS_DRIVELIST, (uint64_t)outDrives, (uint64_t)max);
+    }
 
     // Memory
     inline void* alloc(uint64_t size) { return (void*)syscall1(Montauk::SYS_ALLOC, size); }

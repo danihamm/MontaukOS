@@ -76,14 +76,14 @@ OBJS := $(addprefix $(OBJDIR)/,$(SRCS:.cpp=.o))
 
 # ---- Target ----
 
-TARGET := $(BINDIR)/os/weather.elf
+TARGET := $(BINDIR)/apps/weather/weather.elf
 
 .PHONY: all clean
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS) $(LIBS) $(LINK_LD) Makefile
-	mkdir -p $(BINDIR)/os
+	mkdir -p $(BINDIR)/apps/weather
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJS) $(LIBS) -o $@
 
 $(OBJDIR)/%.o: %.cpp Makefile

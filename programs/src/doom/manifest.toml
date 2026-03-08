@@ -1,0 +1,8 @@
+[app]
+name = "DOOM"
+binary = "doom.elf"
+icon = "doom.svg"
+
+[menu]
+category = "Games"
+visible = true

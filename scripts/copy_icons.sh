@@ -53,13 +53,9 @@ ICONS=(
     "categories/scalable/help-about.svg"
     "categories/scalable/system-reboot.svg"
     "categories/scalable/system-shutdown.svg"
-    "apps/scalable/doom.svg"
     "apps/scalable/system-monitor.svg"
     "apps/scalable/applications-science.svg"
-    "apps/scalable/hardware.svg"
     "apps/scalable/unsettings.svg" # settings icon; toolbox in flat remix
-    # Weather app icon (for desktop app menu launcher)
-    "apps/scalable/weather-widget.svg"
     # Weather condition icons (panel, colorful, used by weather.elf)
     "panel/weather-clear.svg"
     "panel/weather-clear-night.svg"
@@ -84,10 +80,8 @@ ICONS=(
     "panel/weather-none-available.svg"
     "apps/symbolic/utilities-system-monitor-symbolic.svg" # system monitor
     "apps/scalable/utilities-system-monitor.svg" # system monitor
-    "mimetypes/scalable/spreadsheet.svg"
     "apps/scalable/drive-harddisk.svg"
     "actions/16/trash-empty.svg"
-    "apps/scalable/gparted.svg"
 )
 
 copied=0

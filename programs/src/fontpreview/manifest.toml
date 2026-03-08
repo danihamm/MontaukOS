@@ -1,0 +1,8 @@
+[app]
+name = "Font Preview"
+binary = "fontpreview.elf"
+icon = "font-viewer.svg"
+
+[menu]
+category = "Applications"
+visible = false

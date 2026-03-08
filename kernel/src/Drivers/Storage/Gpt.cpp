@@ -483,6 +483,16 @@ namespace Drivers::Storage::Gpt {
         if (!dev) return -1;
         if (dev->SectorCount < 68) return -1; // minimum for GPT
 
+        // Remove stale in-memory partitions for this device
+        int dst = 0;
+        for (int src = 0; src < g_partitionCount; src++) {
+            if (g_partitions[src].BlockDevIndex != blockDevIndex) {
+                if (dst != src) g_partitions[dst] = g_partitions[src];
+                dst++;
+            }
+        }
+        g_partitionCount = dst;
+
         // Write protective MBR
         ProtectiveMbr mbr;
         memset(&mbr, 0, sizeof(mbr));

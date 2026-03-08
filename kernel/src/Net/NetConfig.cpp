@@ -8,11 +8,11 @@
 
 namespace Net {
 
-    // QEMU user-mode networking defaults
-    static uint32_t g_ipAddress  = Ipv4Addr(10, 0, 68, 99);
-    static uint32_t g_subnetMask = Ipv4Addr(255, 255, 255, 0);
-    static uint32_t g_gateway    = Ipv4Addr(10, 0, 68, 1);
-    static uint32_t g_dnsServer  = Ipv4Addr(10, 0, 68, 1);
+    // Unconfigured until usermode DHCP sets them
+    static uint32_t g_ipAddress  = 0;
+    static uint32_t g_subnetMask = 0;
+    static uint32_t g_gateway    = 0;
+    static uint32_t g_dnsServer  = 0;
 
     uint32_t GetIpAddress() { return g_ipAddress; }
     void SetIpAddress(uint32_t ip) { g_ipAddress = ip; }

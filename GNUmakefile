@@ -176,7 +176,14 @@ kernel: kernel-deps
 
 
 .PHONY: ramdisk
-ramdisk: programs
+ramdisk: limine/limine kernel programs
+	mkdir -p programs/bin/boot/limine
+	cp -v limine/BOOTX64.EFI programs/bin/boot/limine/
+	cp -v limine.conf programs/bin/boot/limine/
+	cp -v kernel/bin-$(ARCH)/kernel programs/bin/boot/
+	rm -f programs/bin/boot/ramdisk.tar
+	./scripts/mkramdisk.sh programs/bin ramdisk.tar
+	cp -v ramdisk.tar programs/bin/boot/
 	./scripts/mkramdisk.sh programs/bin ramdisk.tar
 
 $(IMAGE_NAME).iso: limine/limine kernel ramdisk

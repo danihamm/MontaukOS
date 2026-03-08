@@ -92,7 +92,12 @@ static void filemanager_read_drives(FileManagerState* fm) {
     fm->at_drives_root = true;
     fm->current_path[0] = '\0';
 
-    for (int d = 0; d < FM_MAX_DRIVES; d++) {
+    int drives[FM_MAX_DRIVES];
+    int driveCount = montauk::drivelist(drives, FM_MAX_DRIVES);
+
+    for (int di = 0; di < driveCount; di++) {
+        int d = drives[di];
+        int i = fm->entry_count;
         char probe[8];
         if (d < 10) {
             probe[0] = '0' + d;
@@ -106,21 +111,16 @@ static void filemanager_read_drives(FileManagerState* fm) {
             probe[3] = '/';
             probe[4] = '\0';
         }
-        const char* tmp[1];
-        int r = montauk::readdir(probe, tmp, 1);
-        if (r >= 0) {
-            int i = fm->entry_count;
-            char label[64];
-            montauk::strcpy(label, "Drive ");
-            str_append(label, probe, 64);
-            montauk::strncpy(fm->entry_names[i], label, 63);
-            fm->entry_types[i] = 3; // drive
-            fm->entry_sizes[i] = 0;
-            fm->is_dir[i] = true;
-            fm->drive_indices[i] = d;
-            fm->entry_count++;
-            if (fm->entry_count >= 64) break;
-        }
+        char label[64];
+        montauk::strcpy(label, "Drive ");
+        str_append(label, probe, 64);
+        montauk::strncpy(fm->entry_names[i], label, 63);
+        fm->entry_types[i] = 3; // drive
+        fm->entry_sizes[i] = 0;
+        fm->is_dir[i] = true;
+        fm->drive_indices[i] = d;
+        fm->entry_count++;
+        if (fm->entry_count >= 64) break;
     }
 
     fm->selected = -1;
@@ -688,13 +688,13 @@ static void filemanager_on_mouse(Window* win, MouseEvent& ev) {
                             }
                             str_append(fullpath, fm->entry_names[clicked_idx], 512);
                             if (is_image_file(fm->entry_names[clicked_idx])) {
-                                montauk::spawn("0:/os/imageviewer.elf", fullpath);
+                                montauk::spawn("0:/apps/imageviewer/imageviewer.elf", fullpath);
                             } else if (is_font_file(fm->entry_names[clicked_idx])) {
-                                montauk::spawn("0:/os/fontpreview.elf", fullpath);
+                                montauk::spawn("0:/apps/fontpreview/fontpreview.elf", fullpath);
                             } else if (is_pdf_file(fm->entry_names[clicked_idx])) {
-                                montauk::spawn("0:/os/pdfviewer.elf", fullpath);
+                                montauk::spawn("0:/apps/pdfviewer/pdfviewer.elf", fullpath);
                             } else if (is_spreadsheet_file(fm->entry_names[clicked_idx])) {
-                                montauk::spawn("0:/os/spreadsheet.elf", fullpath);
+                                montauk::spawn("0:/apps/spreadsheet/spreadsheet.elf", fullpath);
                             } else if (fm->desktop) {
                                 open_texteditor_with_file(fm->desktop, fullpath);
                             }
@@ -744,13 +744,13 @@ static void filemanager_on_mouse(Window* win, MouseEvent& ev) {
                             }
                             str_append(fullpath, fm->entry_names[clicked_idx], 512);
                             if (is_image_file(fm->entry_names[clicked_idx])) {
-                                montauk::spawn("0:/os/imageviewer.elf", fullpath);
+                                montauk::spawn("0:/apps/imageviewer/imageviewer.elf", fullpath);
                             } else if (is_font_file(fm->entry_names[clicked_idx])) {
-                                montauk::spawn("0:/os/fontpreview.elf", fullpath);
+                                montauk::spawn("0:/apps/fontpreview/fontpreview.elf", fullpath);
                             } else if (is_pdf_file(fm->entry_names[clicked_idx])) {
-                                montauk::spawn("0:/os/pdfviewer.elf", fullpath);
+                                montauk::spawn("0:/apps/pdfviewer/pdfviewer.elf", fullpath);
                             } else if (is_spreadsheet_file(fm->entry_names[clicked_idx])) {
-                                montauk::spawn("0:/os/spreadsheet.elf", fullpath);
+                                montauk::spawn("0:/apps/spreadsheet/spreadsheet.elf", fullpath);
                             } else if (fm->desktop) {
                                 open_texteditor_with_file(fm->desktop, fullpath);
                             }

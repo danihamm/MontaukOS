@@ -91,6 +91,8 @@ namespace Montauk {
     static constexpr uint64_t SYS_FWRITE          = 41;
     static constexpr uint64_t SYS_FCREATE         = 42;
     static constexpr uint64_t SYS_FDELETE         = 77;
+    static constexpr uint64_t SYS_FMKDIR          = 78;
+    static constexpr uint64_t SYS_DRIVELIST      = 79;
 
     /* Graphics.hpp */
     static constexpr uint64_t SYS_TERMSCALE       = 43;

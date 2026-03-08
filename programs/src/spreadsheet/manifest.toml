@@ -1,0 +1,8 @@
+[app]
+name = "Spreadsheet"
+binary = "spreadsheet.elf"
+icon = "spreadsheet.svg"
+
+[menu]
+category = "Applications"
+visible = true

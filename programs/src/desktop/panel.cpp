@@ -151,34 +151,12 @@ void desktop_draw_app_menu(DesktopState* ds) {
     fill_rounded_rect(fb, menu_x, menu_y, MENU_W, menu_h, 8, colors::MENU_BG);
     draw_rect(fb, menu_x, menu_y, MENU_W, menu_h, colors::BORDER);
 
-    // Icon lookup by app_id
-    SvgIcon* icons[18] = {
-        &ds->icon_terminal,     // 0
-        &ds->icon_filemanager,  // 1
-        &ds->icon_sysinfo,      // 2
-        &ds->icon_calculator,   // 3
-        &ds->icon_texteditor,   // 4
-        &ds->icon_terminal,     // 5 (Kernel Log)
-        &ds->icon_procmgr,      // 6
-        &ds->icon_mandelbrot,   // 7
-        &ds->icon_devexplorer,  // 8
-        &ds->icon_wikipedia,    // 9
-        &ds->icon_doom,         // 10
-        &ds->icon_settings,     // 11
-        &ds->icon_reboot,       // 12
-        &ds->icon_weather,      // 13
-        &ds->icon_shutdown,     // 14
-        &ds->icon_texteditor,   // 15
-        &ds->icon_spreadsheet,  // 16
-        &ds->icon_disks,        // 17 (Disks)
-    };
-
     int mx = ds->mouse.x;
     int my = ds->mouse.y;
     int iy = menu_y + 5;
     int cur_cat = -1;
 
-    for (int i = 0; i < MENU_ROW_COUNT; i++) {
+    for (int i = 0; i < menu_row_count; i++) {
         const MenuRow& row = menu_rows[i];
 
         if (row.is_category) cur_cat++;
@@ -239,11 +217,8 @@ void desktop_draw_app_menu(DesktopState* ds) {
             // Icon
             int icon_x = item_rect.x + 8;
             int icon_y = item_rect.y + (row_h - 20) / 2;
-            if (row.app_id >= 0 && row.app_id < 18) {
-                SvgIcon* icon = icons[row.app_id];
-                if (icon && icon->pixels) {
-                    fb.blit_alpha(icon_x, icon_y, icon->width, icon->height, icon->pixels);
-                }
+            if (row.icon && row.icon->pixels) {
+                fb.blit_alpha(icon_x, icon_y, row.icon->width, row.icon->height, row.icon->pixels);
             }
 
             // Label

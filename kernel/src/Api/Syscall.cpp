@@ -157,6 +157,10 @@ namespace Montauk {
                 return (int64_t)Sys_FCreate((const char*)frame->arg1);
             case SYS_FDELETE:
                 return (int64_t)Sys_FDelete((const char*)frame->arg1);
+            case SYS_FMKDIR:
+                return (int64_t)Sys_FMkdir((const char*)frame->arg1);
+            case SYS_DRIVELIST:
+                return (int64_t)Sys_DriveList((int*)frame->arg1, (int)frame->arg2);
             case SYS_TERMSCALE:
                 return Sys_TermScale(frame->arg1, frame->arg2);
             case SYS_RESOLVE:

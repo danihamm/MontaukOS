@@ -176,6 +176,27 @@ namespace Fs::Vfs {
         return driveTable[drive]->Delete(localPath);
     }
 
+    int VfsMkdir(const char* path) {
+        int drive;
+        const char* localPath;
+
+        if (!ParsePath(path, drive, localPath)) return -1;
+        if (drive < 0 || drive >= MaxDrives || driveTable[drive] == nullptr) return -1;
+        if (driveTable[drive]->Mkdir == nullptr) return -1;
+
+        return driveTable[drive]->Mkdir(localPath);
+    }
+
+    int VfsDriveList(int* outDrives, int maxEntries) {
+        int count = 0;
+        for (int i = 0; i < MaxDrives && count < maxEntries; i++) {
+            if (driveTable[i] != nullptr) {
+                outDrives[count++] = i;
+            }
+        }
+        return count;
+    }
+
     int VfsReadDir(const char* path, const char** outNames, int maxEntries) {
         int drive;
         const char* localPath;

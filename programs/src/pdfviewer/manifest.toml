@@ -1,0 +1,8 @@
+[app]
+name = "PDF Viewer"
+binary = "pdfviewer.elf"
+icon = "pdf-viewer.svg"
+
+[menu]
+category = "Applications"
+visible = false

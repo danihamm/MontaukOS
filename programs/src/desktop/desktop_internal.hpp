@@ -8,9 +8,10 @@
 
 #include "apps/apps_common.hpp"
 #include "wallpaper.hpp"
+#include <montauk/toml.h>
 
 // ============================================================================
-// App Menu Data
+// App Menu Data (dynamic — built at startup from embedded + external apps)
 // ============================================================================
 
 static constexpr int MENU_W = 220;
@@ -20,36 +21,16 @@ static constexpr int MENU_DIV_H = 10;
 
 struct MenuRow {
     bool is_category;
-    const char* label;    // "" for divider-only rows
-    int app_id;           // -1 for category headers / dividers
+    char label[48];
+    int  app_id;            // embedded dispatch ID, or -1 for categories/dividers
+    bool external;          // true = spawn binary_path
+    char binary_path[128];  // full VFS path for external apps
+    SvgIcon* icon;          // loaded menu icon (null for categories/dividers)
 };
 
-static constexpr int MENU_ROW_COUNT = 23;
-static const MenuRow menu_rows[MENU_ROW_COUNT] = {
-    { true,  "Applications", -1 },   // cat 0
-    { false, "Terminal",      0 },
-    { false, "Files",         1 },
-    { false, "Text Editor",   4 },
-    { false, "Word Processor", 15 },
-    { false, "Spreadsheet",  16 },
-    { false, "Calculator",    3 },
-    { true,  "Internet",     -1 },    // cat 1
-    { false, "Wikipedia",     9 },
-    { false, "Weather",      13 },
-    { true,  "System",       -1 },    // cat 2
-    { false, "System Info",   2 },
-    { false, "Kernel Log",    5 },
-    { false, "Processes",     6 },
-    { false, "Devices",       8 },
-    { false, "Disks",        17 },
-    { true,  "Games",        -1 },    // cat 3
-    { false, "Mandelbrot",    7 },
-    { false, "DOOM",         10 },
-    { true,  "",             -1 },    // divider (always visible)
-    { false, "Settings",     11 },
-    { false, "Reboot",       12 },
-    { false, "Shutdown",     14 },
-};
+static constexpr int MAX_MENU_ROWS = 48;
+inline MenuRow menu_rows[MAX_MENU_ROWS];
+inline int menu_row_count = 0;
 
 // Collapsible category state (categories 0-3 are toggleable; divider category always expanded)
 static constexpr int MENU_NUM_CATS = 5;
@@ -77,10 +58,50 @@ inline int menu_row_height(const MenuRow& row) {
 
 inline int menu_total_height() {
     int h = 10; // top + bottom padding
-    for (int i = 0; i < MENU_ROW_COUNT; i++)
+    for (int i = 0; i < menu_row_count; i++)
         if (menu_row_visible(i))
             h += menu_row_height(menu_rows[i]);
     return h;
+}
+
+// ============================================================================
+// Menu Builder Helpers
+// ============================================================================
+
+inline int menu_add_category(const char* label) {
+    if (menu_row_count >= MAX_MENU_ROWS) return -1;
+    MenuRow& r = menu_rows[menu_row_count++];
+    r.is_category = true;
+    montauk::strncpy(r.label, label, sizeof(r.label));
+    r.app_id = -1;
+    r.external = false;
+    r.binary_path[0] = '\0';
+    r.icon = nullptr;
+    return menu_row_count - 1;
+}
+
+inline int menu_add_embedded(const char* label, int app_id, SvgIcon* icon) {
+    if (menu_row_count >= MAX_MENU_ROWS) return -1;
+    MenuRow& r = menu_rows[menu_row_count++];
+    r.is_category = false;
+    montauk::strncpy(r.label, label, sizeof(r.label));
+    r.app_id = app_id;
+    r.external = false;
+    r.binary_path[0] = '\0';
+    r.icon = icon;
+    return menu_row_count - 1;
+}
+
+inline int menu_add_external(const char* label, const char* binary, SvgIcon* icon) {
+    if (menu_row_count >= MAX_MENU_ROWS) return -1;
+    MenuRow& r = menu_rows[menu_row_count++];
+    r.is_category = false;
+    montauk::strncpy(r.label, label, sizeof(r.label));
+    r.app_id = -1;
+    r.external = true;
+    montauk::strncpy(r.binary_path, binary, sizeof(r.binary_path));
+    r.icon = icon;
+    return menu_row_count - 1;
 }
 
 // ============================================================================
@@ -94,6 +115,10 @@ gui::CursorStyle cursor_for_edge(gui::ResizeEdge edge);
 // panel.cpp
 void desktop_draw_app_menu(gui::DesktopState* ds);
 void desktop_draw_net_popup(gui::DesktopState* ds);
+
+// main.cpp
+void desktop_scan_apps(gui::DesktopState* ds);
+void desktop_build_menu(gui::DesktopState* ds);
 
 // Month names (shared by panel clock)
 inline const char* month_names[] = {

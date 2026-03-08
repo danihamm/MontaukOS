@@ -22,6 +22,7 @@ namespace Fs::Vfs {
         int (*Write)(int handle, const uint8_t* buffer, uint64_t offset, uint64_t size);
         int (*Create)(const char* path);
         int (*Delete)(const char* path);
+        int (*Mkdir)(const char* path);
     };
 
     void Initialize();
@@ -35,5 +36,9 @@ namespace Fs::Vfs {
     uint64_t VfsGetSize(int handle);
     void VfsClose(int handle);
     int VfsReadDir(const char* path, const char** outNames, int maxEntries);
+    int VfsMkdir(const char* path);
+
+    // Returns number of registered drives, fills outDrives[] with their indices
+    int VfsDriveList(int* outDrives, int maxEntries);
 
 }

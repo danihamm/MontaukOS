@@ -59,14 +59,11 @@ BINDIR := bin
 PROGRAMS := $(notdir $(wildcard src/*))
 
 # Programs with custom Makefiles (built separately).
-CUSTOM_BUILDS := doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer desktop
+CUSTOM_BUILDS := doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer installer desktop
 SYSTEM_PROGRAMS := $(filter-out $(CUSTOM_BUILDS),$(PROGRAMS))
 
-# Build targets: system programs go to bin/os/, games are handled separately.
+# Build targets: system programs go to bin/os/, apps go to bin/apps/<name>/.
 TARGETS := $(addprefix $(BINDIR)/os/,$(addsuffix .elf,$(SYSTEM_PROGRAMS)))
-
-# Game data files to copy into bin/games/.
-GAME_DATA := $(BINDIR)/games/doom1.wad
 
 # Man pages source directory.
 MANDIR := man
@@ -84,9 +81,9 @@ CA_CERTS := $(BINDIR)/etc/ca-certificates.crt
 # Home directory placeholder.
 HOMEKEEP := $(BINDIR)/home/.keep
 
-.PHONY: all clean doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer desktop icons fonts bearssl libc tls libjpeg
+.PHONY: all clean doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer installer desktop icons fonts bearssl libc tls libjpeg install-apps
 
-all: bearssl libc libjpeg tls $(TARGETS) fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer doom desktop icons fonts $(GAME_DATA) $(MANDST) $(WWWDST) $(CA_CERTS) $(HOMEKEEP)
+all: bearssl libc libjpeg tls $(TARGETS) fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer installer doom desktop icons fonts install-apps $(MANDST) $(WWWDST) $(CA_CERTS) $(HOMEKEEP)
 
 # Build BearSSL static library (cross-compiled for freestanding x86_64).
 BEARSSL_INCLUDES := -isystem $(shell cd .. && pwd)/kernel/freestnd-c-hdrs/x86_64/include -isystem $(abspath include/libc)
@@ -151,6 +148,10 @@ disks: libc
 devexplorer: libc
 	$(MAKE) -C src/devexplorer
 
+# Build installer standalone GUI tool (depends on libc).
+installer: libc
+	$(MAKE) -C src/installer
+
 # Build desktop via its own Makefile (depends on libc and libjpeg for wallpaper).
 desktop: libc libjpeg
 	$(MAKE) -C src/desktop
@@ -167,10 +168,9 @@ fonts:
 doom:
 	$(MAKE) -C src/doom
 
-# Copy doom1.wad from data/games/ into bin/games/.
-$(BINDIR)/games/doom1.wad: data/games/doom1.wad
-	mkdir -p $(BINDIR)/games
-	cp $< $@
+# Install app bundles (manifests, icons, data files) into bin/apps/<name>/.
+install-apps: doom spreadsheet weather wikipedia imageviewer fontpreview pdfviewer disks devexplorer installer
+	../scripts/install_apps.sh
 
 # Copy man pages into bin/man/ so mkramdisk.sh picks them up.
 $(BINDIR)/man/%: $(MANDIR)/%
@@ -215,3 +215,4 @@ clean:
 	$(MAKE) -C src/pdfviewer clean
 	$(MAKE) -C src/disks clean
 	$(MAKE) -C src/devexplorer clean
+	$(MAKE) -C src/installer clean
