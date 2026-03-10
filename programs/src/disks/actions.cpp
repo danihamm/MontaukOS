@@ -29,20 +29,70 @@ void disktool_refresh() {
 }
 
 // ============================================================================
-// Create partition
+// Create partition — confirmation dialog
 // ============================================================================
 
-void do_create_partition() {
+void open_newpart_dialog() {
     auto& dt = g_state;
     if (dt.selected_disk < 0 || dt.selected_disk >= dt.disk_count) return;
+    if (dt.np_dlg.open) return;
 
     int part_indices[MAX_PARTS];
     int nparts = get_disk_parts(part_indices, MAX_PARTS);
 
-    if (nparts == 0) {
+    auto& dlg = dt.np_dlg;
+    dlg.will_init_gpt = (nparts == 0);
+    dlg.hover_confirm = false;
+    dlg.hover_cancel = false;
+
+    Montauk::DiskInfo& disk = dt.disks[dt.selected_disk];
+    char sz[24];
+    format_disk_size(sz, sizeof(sz), disk.sectorCount, disk.sectorSizeLog);
+    snprintf(dlg.disk_desc, sizeof(dlg.disk_desc), "Disk %d: %s (%s)",
+             dt.selected_disk, disk.model, sz);
+
+    if (dlg.will_init_gpt) {
+        snprintf(dlg.warn_line1, sizeof(dlg.warn_line1),
+                 "This will initialize a new GPT on this disk.");
+        snprintf(dlg.warn_line2, sizeof(dlg.warn_line2),
+                 "ALL existing partitions will be destroyed!");
+    } else {
+        snprintf(dlg.warn_line1, sizeof(dlg.warn_line1),
+                 "This will add a new partition in the largest");
+        snprintf(dlg.warn_line2, sizeof(dlg.warn_line2),
+                 "free region on this disk.");
+    }
+
+    Montauk::WinCreateResult wres;
+    const char* title = dlg.will_init_gpt ? "Initialize Disk" : "New Partition";
+    if (montauk::win_create(title, NP_DLG_W, NP_DLG_H, &wres) < 0 || wres.id < 0) {
+        set_status("Failed to open dialog");
+        return;
+    }
+    dlg.win_id = wres.id;
+    dlg.pixels = (uint32_t*)(uintptr_t)wres.pixelVa;
+    dlg.open = true;
+
+    render_newpart_window();
+    montauk::win_present(dlg.win_id);
+}
+
+void close_newpart_dialog() {
+    auto& dlg = g_state.np_dlg;
+    if (!dlg.open) return;
+    montauk::win_destroy(dlg.win_id);
+    dlg.open = false;
+}
+
+void newpart_dialog_confirm() {
+    auto& dt = g_state;
+    auto& dlg = dt.np_dlg;
+
+    if (dlg.will_init_gpt) {
         int r = montauk::gpt_init(dt.selected_disk);
         if (r < 0) {
             set_status("Failed to initialize GPT on disk");
+            close_newpart_dialog();
             return;
         }
         set_status("Initialized GPT");
@@ -69,11 +119,16 @@ void do_create_partition() {
     int r = montauk::gpt_add(&params);
     if (r < 0) {
         set_status("Failed to create partition");
-        return;
+    } else {
+        set_status("Partition created successfully");
     }
 
-    set_status("Partition created successfully");
+    close_newpart_dialog();
     disktool_refresh();
+}
+
+void do_create_partition() {
+    open_newpart_dialog();
 }
 
 // ============================================================================

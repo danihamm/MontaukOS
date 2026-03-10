@@ -138,6 +138,8 @@ namespace Drivers::USB::Xhci {
     constexpr uint32_t TRB_CONFIGURE_ENDPOINT  = 12;
     constexpr uint32_t TRB_EVALUATE_CONTEXT    = 13;
     constexpr uint32_t TRB_RESET_ENDPOINT      = 14;
+    constexpr uint32_t TRB_STOP_ENDPOINT       = 15;
+    constexpr uint32_t TRB_SET_TR_DEQUEUE      = 16;
     constexpr uint32_t TRB_NOOP_CMD            = 23;
     constexpr uint32_t TRB_TRANSFER_EVENT      = 32;
     constexpr uint32_t TRB_COMMAND_COMPLETION  = 33;
@@ -235,6 +237,7 @@ namespace Drivers::USB::Xhci {
         uint8_t  InterfaceClass;
         uint8_t  InterfaceSubClass;
         uint8_t  InterfaceProtocol;
+        uint8_t  DeviceClass;         // bDeviceClass from device descriptor
 
         // Interrupt IN endpoint
         uint8_t  InterruptEpNum;      // Endpoint number (1-15)
@@ -247,6 +250,22 @@ namespace Drivers::USB::Xhci {
         uint32_t InterruptRingEnqueue;
         bool     InterruptRingCCS;    // Current Cycle State
 
+        // Bulk IN endpoint
+        uint8_t  BulkInEpNum;
+        uint16_t BulkInMaxPacket;
+        TRB*     BulkInRing;
+        uint64_t BulkInRingPhys;
+        uint32_t BulkInRingEnqueue;
+        bool     BulkInRingCCS;
+
+        // Bulk OUT endpoint
+        uint8_t  BulkOutEpNum;
+        uint16_t BulkOutMaxPacket;
+        TRB*     BulkOutRing;
+        uint64_t BulkOutRingPhys;
+        uint32_t BulkOutRingEnqueue;
+        bool     BulkOutRingCCS;
+
         // EP0 transfer ring
         TRB*     EP0Ring;
         uint64_t EP0RingPhys;
@@ -257,6 +276,14 @@ namespace Drivers::USB::Xhci {
         DeviceContext* OutputContext;
         uint64_t       OutputContextPhys;
     };
+
+    // ---------------------------------------------------------------------------
+    // Transfer callback for non-HID class drivers (Bluetooth, etc.)
+    // ---------------------------------------------------------------------------
+
+    using TransferCallback = void (*)(uint8_t slotId, uint8_t epDci,
+                                      const uint8_t* data, uint32_t length,
+                                      uint32_t completionCode);
 
     // ---------------------------------------------------------------------------
     // Public API
@@ -284,6 +311,13 @@ namespace Drivers::USB::Xhci {
 
     // Queue an interrupt IN transfer on a device's interrupt endpoint
     void QueueInterruptTransfer(uint8_t slotId);
+
+    // Queue a bulk transfer on a device's bulk IN or OUT endpoint
+    void QueueBulkInTransfer(uint8_t slotId, uint8_t* data, uint64_t dataPhys, uint32_t length);
+    void QueueBulkOutTransfer(uint8_t slotId, uint8_t* data, uint64_t dataPhys, uint32_t length);
+
+    // Register a transfer callback for a specific slot (used by non-HID class drivers)
+    void RegisterTransferCallback(uint8_t slotId, TransferCallback cb);
 
     // Ring a doorbell
     void RingDoorbell(uint8_t slotId, uint8_t target);

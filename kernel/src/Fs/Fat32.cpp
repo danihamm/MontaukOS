@@ -940,9 +940,13 @@ namespace Fs::Fat32 {
         self.dirNameCount = count;
         for (int i = 0; i < count; i++) {
             int j = 0;
-            while (entries[i].name[j] && j < MaxNameLen - 1) {
+            while (entries[i].name[j] && j < MaxNameLen - 2) {
                 self.dirNames[i][j] = entries[i].name[j];
                 j++;
+            }
+            // Append trailing '/' for directories so userspace can distinguish them
+            if ((entries[i].attributes & ATTR_DIRECTORY) && j < MaxNameLen - 1) {
+                self.dirNames[i][j++] = '/';
             }
             self.dirNames[i][j] = '\0';
             outNames[i] = self.dirNames[i];
@@ -1221,10 +1225,15 @@ namespace Fs::Fat32 {
 
         uint32_t parentCluster = parentEntry.firstCluster;
 
-        // Find the file
+        // Find the entry
         ParsedEntry existing;
         if (!FindInDirectory(inst, parentCluster, fileName, &existing)) return -1;
-        if (existing.attributes & ATTR_DIRECTORY) return -1; // don't delete directories
+        if (existing.attributes & ATTR_DIRECTORY) {
+            // Only allow deleting empty directories
+            ParsedEntry children[1];
+            int childCount = ReadDirectory(inst, existing.firstCluster, children, 1);
+            if (childCount > 0) return -1;
+        }
 
         // Free the cluster chain
         uint32_t cl = existing.firstCluster;

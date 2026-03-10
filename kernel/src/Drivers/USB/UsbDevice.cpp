@@ -8,6 +8,7 @@
 #include "Xhci.hpp"
 #include "HidKeyboard.hpp"
 #include "HidMouse.hpp"
+#include "Bluetooth/Bluetooth.hpp"
 #include <Terminal/Terminal.hpp>
 #include <CppLib/Stream.hpp>
 #include <Memory/HHDM.hpp>
@@ -300,8 +301,9 @@ namespace Drivers::USB::UsbDevice {
             return 0;
         }
 
-        dev->VendorId  = devDesc.idVendor;
-        dev->ProductId = devDesc.idProduct;
+        dev->VendorId    = devDesc.idVendor;
+        dev->ProductId   = devDesc.idProduct;
+        dev->DeviceClass = devDesc.bDeviceClass;
 
         KernelLogStream(INFO, "USB") << "Slot " << (uint64_t)slotId
             << ": VID:PID = " << base::hex << (uint64_t)devDesc.idVendor
@@ -338,7 +340,10 @@ namespace Drivers::USB::UsbDevice {
         // -----------------------------------------------------------------
         uint16_t offset = 0;
         bool foundHid = false;
+        bool foundBt = false;
         bool foundEp = false;
+        bool foundBulkIn = false;
+        bool foundBulkOut = false;
         uint16_t hidReportDescLen = 0;
 
         while (offset + 2 <= totalLen) {
@@ -348,9 +353,10 @@ namespace Drivers::USB::UsbDevice {
 
             if (type == DESC_INTERFACE && offset + sizeof(InterfaceDescriptor) <= totalLen) {
                 auto* iface = (InterfaceDescriptor*)&cfgBuf[offset];
-                // Reset foundHid at each new interface boundary so we don't
-                // accidentally pick up endpoints from a different interface.
+                // Reset at each new interface boundary
                 foundHid = false;
+                foundBt = false;
+
                 if (!foundEp &&
                     iface->bInterfaceClass == CLASS_HID &&
                     iface->bInterfaceSubClass == SUBCLASS_BOOT) {
@@ -358,6 +364,18 @@ namespace Drivers::USB::UsbDevice {
                     dev->InterfaceSubClass = iface->bInterfaceSubClass;
                     dev->InterfaceProtocol = iface->bInterfaceProtocol;
                     foundHid = true;
+                }
+
+                // Bluetooth HCI interface (class 0xE0, subclass 0x01, protocol 0x01)
+                if (iface->bInterfaceClass == CLASS_WIRELESS &&
+                    iface->bInterfaceSubClass == SUBCLASS_RF &&
+                    iface->bInterfaceProtocol == PROTOCOL_BLUETOOTH) {
+                    if (dev->InterfaceClass == 0 || dev->InterfaceClass == CLASS_WIRELESS) {
+                        dev->InterfaceClass    = iface->bInterfaceClass;
+                        dev->InterfaceSubClass = iface->bInterfaceSubClass;
+                        dev->InterfaceProtocol = iface->bInterfaceProtocol;
+                    }
+                    foundBt = true;
                 }
             }
 
@@ -367,19 +385,53 @@ namespace Drivers::USB::UsbDevice {
                                  | ((uint16_t)cfgBuf[offset + 8] << 8);
             }
 
-            if (type == DESC_ENDPOINT && foundHid && !foundEp &&
-                offset + sizeof(EndpointDescriptor) <= totalLen) {
+            if (type == DESC_ENDPOINT && offset + sizeof(EndpointDescriptor) <= totalLen) {
                 auto* ep = (EndpointDescriptor*)&cfgBuf[offset];
-                if ((ep->bEndpointAddress & EP_DIR_IN) &&
-                    (ep->bmAttributes & EP_XFER_TYPE_MASK) == EP_XFER_INTERRUPT) {
+                uint8_t xferType = ep->bmAttributes & EP_XFER_TYPE_MASK;
+                bool isIn = (ep->bEndpointAddress & EP_DIR_IN) != 0;
+
+                // HID interrupt IN endpoint
+                if (foundHid && !foundEp && isIn && xferType == EP_XFER_INTERRUPT) {
                     dev->InterruptEpNum     = ep->bEndpointAddress & 0x0F;
                     dev->InterruptMaxPacket = ep->wMaxPacketSize & 0x7FF;
                     dev->InterruptInterval  = ep->bInterval;
                     foundEp = true;
                 }
+
+                // Bluetooth endpoints
+                if (foundBt) {
+                    if (isIn && xferType == EP_XFER_INTERRUPT && !foundEp) {
+                        // HCI event pipe (interrupt IN)
+                        dev->InterruptEpNum     = ep->bEndpointAddress & 0x0F;
+                        dev->InterruptMaxPacket = ep->wMaxPacketSize & 0x7FF;
+                        dev->InterruptInterval  = ep->bInterval;
+                        foundEp = true;
+                    } else if (isIn && xferType == EP_XFER_BULK && !foundBulkIn) {
+                        // ACL data IN pipe (bulk IN)
+                        dev->BulkInEpNum     = ep->bEndpointAddress & 0x0F;
+                        dev->BulkInMaxPacket = ep->wMaxPacketSize & 0x7FF;
+                        foundBulkIn = true;
+                    } else if (!isIn && xferType == EP_XFER_BULK && !foundBulkOut) {
+                        // ACL data OUT pipe (bulk OUT)
+                        dev->BulkOutEpNum     = ep->bEndpointAddress & 0x0F;
+                        dev->BulkOutMaxPacket = ep->wMaxPacketSize & 0x7FF;
+                        foundBulkOut = true;
+                    }
+                }
             }
 
             offset += len;
+        }
+
+        // For Bluetooth devices, also check device class for correct identification
+        // Some BT adapters use bDeviceClass=0xE0 at device level
+        if (!foundBt && devDesc.bDeviceClass == CLASS_WIRELESS &&
+            devDesc.bDeviceSubClass == SUBCLASS_RF &&
+            devDesc.bDeviceProtocol == PROTOCOL_BLUETOOTH) {
+            dev->InterfaceClass    = CLASS_WIRELESS;
+            dev->InterfaceSubClass = SUBCLASS_RF;
+            dev->InterfaceProtocol = PROTOCOL_BLUETOOTH;
+            foundBt = true;
         }
 
         // -----------------------------------------------------------------
@@ -394,57 +446,106 @@ namespace Drivers::USB::UsbDevice {
         }
 
         // -----------------------------------------------------------------
-        // Step 9: Configure Endpoint (if HID interrupt endpoint was found)
+        // Step 9: Configure Endpoints
         // -----------------------------------------------------------------
-        if (foundEp) {
-            // Device Context Index for an IN endpoint:  DCI = EpNum * 2 + 1
-            uint8_t dci = dev->InterruptEpNum * 2 + 1;
-
+        if (foundEp || foundBulkIn || foundBulkOut) {
             auto* inputCtx2 = (Xhci::InputContext*)Memory::g_pfa->AllocateZeroed();
 
-            // ICC: Add slot context (bit 0) and the interrupt endpoint (bit dci)
-            inputCtx2->ICC.AddFlags = (1 << 0) | (1 << dci);
+            // Start with slot context
+            inputCtx2->ICC.AddFlags = (1 << 0);
 
             // Copy the current slot context from the output context
             inputCtx2->Slot = dev->OutputContext->Slot;
 
-            // Update Context Entries in slot context to at least cover this DCI
-            uint32_t newCtxEntries = dci;
+            // Track the highest DCI to set Context Entries
+            uint32_t maxDci = 0;
+
+            // --- Configure Interrupt IN endpoint ---
+            if (foundEp) {
+                uint8_t dci = dev->InterruptEpNum * 2 + 1;
+                inputCtx2->ICC.AddFlags |= (1 << dci);
+                if (dci > maxDci) maxDci = dci;
+
+                // Allocate interrupt transfer ring
+                auto* intRing = (Xhci::TRB*)Memory::g_pfa->AllocateZeroed();
+                dev->InterruptRing        = intRing;
+                dev->InterruptRingPhys    = Memory::SubHHDM(intRing);
+                dev->InterruptRingEnqueue = 0;
+                dev->InterruptRingCCS     = true;
+
+                Xhci::TRB& intLink = intRing[Xhci::XFER_RING_SIZE - 1];
+                intLink.Parameter0 = (uint32_t)(dev->InterruptRingPhys & 0xFFFFFFFF);
+                intLink.Parameter1 = (uint32_t)(dev->InterruptRingPhys >> 32);
+                intLink.Status = 0;
+                intLink.Control = (Xhci::TRB_LINK << Xhci::TRB_TYPE_SHIFT) | Xhci::TRB_ENT;
+
+                auto& epCtx = inputCtx2->EP[dci - 1];
+                uint32_t xhciInterval = ConvertInterval(speed, dev->InterruptInterval);
+                epCtx.Field0 = (xhciInterval << 16);
+                epCtx.Field1 = (3 << 1)
+                             | (Xhci::EP_TYPE_INTERRUPT_IN << 3)
+                             | ((uint32_t)dev->InterruptMaxPacket << 16);
+                epCtx.TRDequeuePtr = dev->InterruptRingPhys | 1;
+                epCtx.Field2 = dev->InterruptMaxPacket;
+            }
+
+            // --- Configure Bulk IN endpoint ---
+            if (foundBulkIn) {
+                uint8_t dci = dev->BulkInEpNum * 2 + 1;
+                inputCtx2->ICC.AddFlags |= (1 << dci);
+                if (dci > maxDci) maxDci = dci;
+
+                auto* bulkInRing = (Xhci::TRB*)Memory::g_pfa->AllocateZeroed();
+                dev->BulkInRing        = bulkInRing;
+                dev->BulkInRingPhys    = Memory::SubHHDM(bulkInRing);
+                dev->BulkInRingEnqueue = 0;
+                dev->BulkInRingCCS     = true;
+
+                Xhci::TRB& biLink = bulkInRing[Xhci::XFER_RING_SIZE - 1];
+                biLink.Parameter0 = (uint32_t)(dev->BulkInRingPhys & 0xFFFFFFFF);
+                biLink.Parameter1 = (uint32_t)(dev->BulkInRingPhys >> 32);
+                biLink.Status = 0;
+                biLink.Control = (Xhci::TRB_LINK << Xhci::TRB_TYPE_SHIFT) | Xhci::TRB_ENT;
+
+                auto& epCtx = inputCtx2->EP[dci - 1];
+                epCtx.Field0 = 0;
+                epCtx.Field1 = (3 << 1)
+                             | (Xhci::EP_TYPE_BULK_IN << 3)
+                             | ((uint32_t)dev->BulkInMaxPacket << 16);
+                epCtx.TRDequeuePtr = dev->BulkInRingPhys | 1;
+                epCtx.Field2 = dev->BulkInMaxPacket;
+            }
+
+            // --- Configure Bulk OUT endpoint ---
+            if (foundBulkOut) {
+                uint8_t dci = dev->BulkOutEpNum * 2;
+                inputCtx2->ICC.AddFlags |= (1 << dci);
+                if (dci > maxDci) maxDci = dci;
+
+                auto* bulkOutRing = (Xhci::TRB*)Memory::g_pfa->AllocateZeroed();
+                dev->BulkOutRing        = bulkOutRing;
+                dev->BulkOutRingPhys    = Memory::SubHHDM(bulkOutRing);
+                dev->BulkOutRingEnqueue = 0;
+                dev->BulkOutRingCCS     = true;
+
+                Xhci::TRB& boLink = bulkOutRing[Xhci::XFER_RING_SIZE - 1];
+                boLink.Parameter0 = (uint32_t)(dev->BulkOutRingPhys & 0xFFFFFFFF);
+                boLink.Parameter1 = (uint32_t)(dev->BulkOutRingPhys >> 32);
+                boLink.Status = 0;
+                boLink.Control = (Xhci::TRB_LINK << Xhci::TRB_TYPE_SHIFT) | Xhci::TRB_ENT;
+
+                auto& epCtx = inputCtx2->EP[dci - 1];
+                epCtx.Field0 = 0;
+                epCtx.Field1 = (3 << 1)
+                             | (Xhci::EP_TYPE_BULK_OUT << 3)
+                             | ((uint32_t)dev->BulkOutMaxPacket << 16);
+                epCtx.TRDequeuePtr = dev->BulkOutRingPhys | 1;
+                epCtx.Field2 = dev->BulkOutMaxPacket;
+            }
+
+            // Update Context Entries to cover the highest DCI
             inputCtx2->Slot.Field0 = (inputCtx2->Slot.Field0 & ~(0x1Fu << 27))
-                                   | (newCtxEntries << 27);
-
-            // Allocate interrupt transfer ring
-            auto* intRing = (Xhci::TRB*)Memory::g_pfa->AllocateZeroed();
-            dev->InterruptRing        = intRing;
-            dev->InterruptRingPhys    = Memory::SubHHDM(intRing);
-            dev->InterruptRingEnqueue = 0;
-            dev->InterruptRingCCS     = true;
-
-            // Set up Link TRB at last position
-            Xhci::TRB& intLink = intRing[Xhci::XFER_RING_SIZE - 1];
-            intLink.Parameter0 = (uint32_t)(dev->InterruptRingPhys & 0xFFFFFFFF);
-            intLink.Parameter1 = (uint32_t)(dev->InterruptRingPhys >> 32);
-            intLink.Status = 0;
-            intLink.Control = (Xhci::TRB_LINK << Xhci::TRB_TYPE_SHIFT) | Xhci::TRB_ENT;
-
-            // Endpoint Context for the interrupt IN endpoint
-            auto& epCtx = inputCtx2->EP[dci - 1];  // EP array is 0-indexed, DCI 1 = EP[0]
-
-            // Field0: Interval (bits 23:16) — convert bInterval to xHCI encoding
-            uint32_t xhciInterval = ConvertInterval(speed, dev->InterruptInterval);
-            epCtx.Field0 = (xhciInterval << 16);
-
-            // Field1: CErr=3 (bits 2:1), EP Type=Interrupt IN=7 (bits 5:3),
-            //         Max Packet Size (bits 31:16)
-            epCtx.Field1 = (3 << 1)
-                         | (Xhci::EP_TYPE_INTERRUPT_IN << 3)
-                         | ((uint32_t)dev->InterruptMaxPacket << 16);
-
-            // TR Dequeue Pointer with DCS=1
-            epCtx.TRDequeuePtr = dev->InterruptRingPhys | 1;
-
-            // Average TRB Length
-            epCtx.Field2 = dev->InterruptMaxPacket;
+                                   | (maxDci << 27);
 
             // Send Configure Endpoint command
             Xhci::TRB cfgTrb = {};
@@ -462,9 +563,18 @@ namespace Drivers::USB::UsbDevice {
                 return 0;
             }
 
-            KernelLogStream(INFO, "USB") << "Slot " << (uint64_t)slotId
-                << ": Interrupt EP " << (uint64_t)dev->InterruptEpNum
-                << " configured (DCI " << (uint64_t)dci << ")";
+            if (foundEp) {
+                KernelLogStream(INFO, "USB") << "Slot " << (uint64_t)slotId
+                    << ": Interrupt EP " << (uint64_t)dev->InterruptEpNum << " configured";
+            }
+            if (foundBulkIn) {
+                KernelLogStream(INFO, "USB") << "Slot " << (uint64_t)slotId
+                    << ": Bulk IN EP " << (uint64_t)dev->BulkInEpNum << " configured";
+            }
+            if (foundBulkOut) {
+                KernelLogStream(INFO, "USB") << "Slot " << (uint64_t)slotId
+                    << ": Bulk OUT EP " << (uint64_t)dev->BulkOutEpNum << " configured";
+            }
         }
 
         // -----------------------------------------------------------------
@@ -473,7 +583,7 @@ namespace Drivers::USB::UsbDevice {
         // Set Boot Protocol for keyboards only.
         // Mice stay in Report Protocol (the default) for scroll wheel support;
         // HidMouse parses the HID Report Descriptor to handle variable formats.
-        if (foundEp && dev->InterfaceProtocol == PROTOCOL_KEYBOARD) {
+        if (foundEp && dev->InterfaceClass == CLASS_HID && dev->InterfaceProtocol == PROTOCOL_KEYBOARD) {
             cc = Xhci::ControlTransfer(slotId, REQTYPE_CLASS_IFACE, REQ_SET_PROTOCOL,
                                        0, 0, 0, nullptr, false);
             if (cc != Xhci::CC_SUCCESS) {
@@ -503,7 +613,7 @@ namespace Drivers::USB::UsbDevice {
         // -----------------------------------------------------------------
         // Step 11: SET_IDLE(0) -- only report on changes (no idle reports)
         // -----------------------------------------------------------------
-        if (foundEp && dev->InterfaceProtocol == PROTOCOL_KEYBOARD) {
+        if (foundEp && dev->InterfaceClass == CLASS_HID && dev->InterfaceProtocol == PROTOCOL_KEYBOARD) {
             // wValue upper byte = duration (0 = indefinite), lower byte = report ID
             cc = Xhci::ControlTransfer(slotId, REQTYPE_CLASS_IFACE, REQ_SET_IDLE,
                                        (0 << 8), 0, 0, nullptr, false);
@@ -514,24 +624,33 @@ namespace Drivers::USB::UsbDevice {
         }
 
         // -----------------------------------------------------------------
-        // Step 12: Queue first interrupt transfer
+        // Step 12: Queue first interrupt transfer (HID only)
+        // Bluetooth manages its own interrupt/bulk transfers via StartEventPipe()
         // -----------------------------------------------------------------
-        if (foundEp) {
+        if (foundEp && !foundBt) {
             Xhci::QueueInterruptTransfer(slotId);
         }
 
         // -----------------------------------------------------------------
-        // Step 13: Register with the appropriate HID driver
+        // Step 13: Register with the appropriate class driver
         // -----------------------------------------------------------------
-        if (dev->InterfaceProtocol == PROTOCOL_KEYBOARD) {
+        if (dev->InterfaceClass == CLASS_HID && dev->InterfaceProtocol == PROTOCOL_KEYBOARD) {
             HidKeyboard::RegisterDevice(slotId);
             KernelLogStream(OK, "USB") << "Slot " << (uint64_t)slotId << ": HID Boot Keyboard";
-        } else if (dev->InterfaceProtocol == PROTOCOL_MOUSE) {
+        } else if (dev->InterfaceClass == CLASS_HID && dev->InterfaceProtocol == PROTOCOL_MOUSE) {
             HidMouse::RegisterDevice(slotId);
             KernelLogStream(OK, "USB") << "Slot " << (uint64_t)slotId << ": HID Boot Mouse";
+        } else if (dev->InterfaceClass == CLASS_WIRELESS &&
+                   dev->InterfaceSubClass == SUBCLASS_RF &&
+                   dev->InterfaceProtocol == PROTOCOL_BLUETOOTH) {
+            Bluetooth::RegisterAdapter(slotId);
+            KernelLogStream(OK, "USB") << "Slot " << (uint64_t)slotId << ": Bluetooth Adapter"
+                << " VID:" << base::hex << (uint64_t)dev->VendorId
+                << " PID:" << (uint64_t)dev->ProductId << base::dec;
         } else if (foundEp) {
             KernelLogStream(INFO, "USB") << "Slot " << (uint64_t)slotId
-                << ": HID device, protocol=" << (uint64_t)dev->InterfaceProtocol;
+                << ": USB device, class=" << (uint64_t)dev->InterfaceClass
+                << " protocol=" << (uint64_t)dev->InterfaceProtocol;
         } else {
             KernelLogStream(INFO, "USB") << "Slot " << (uint64_t)slotId
                 << ": Non-HID device, class=" << (uint64_t)devDesc.bDeviceClass;

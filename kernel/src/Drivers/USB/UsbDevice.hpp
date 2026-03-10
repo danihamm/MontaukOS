@@ -80,6 +80,11 @@ namespace Drivers::USB::UsbDevice {
     constexpr uint8_t PROTOCOL_KEYBOARD  = 0x01;
     constexpr uint8_t PROTOCOL_MOUSE     = 0x02;
 
+    // Wireless Controller class (Bluetooth)
+    constexpr uint8_t CLASS_WIRELESS     = 0xE0;
+    constexpr uint8_t SUBCLASS_RF        = 0x01;
+    constexpr uint8_t PROTOCOL_BLUETOOTH = 0x01;
+
     // USB standard requests (bRequest)
     constexpr uint8_t REQ_GET_DESCRIPTOR    = 0x06;
     constexpr uint8_t REQ_SET_CONFIGURATION = 0x09;
@@ -100,6 +105,9 @@ namespace Drivers::USB::UsbDevice {
 
     // Endpoint transfer type mask
     constexpr uint8_t EP_XFER_TYPE_MASK  = 0x03;
+    constexpr uint8_t EP_XFER_CONTROL    = 0x00;
+    constexpr uint8_t EP_XFER_ISOCH      = 0x01;
+    constexpr uint8_t EP_XFER_BULK       = 0x02;
     constexpr uint8_t EP_XFER_INTERRUPT  = 0x03;
 
     // ---------------------------------------------------------------------------

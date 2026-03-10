@@ -25,6 +25,10 @@ APPS=(
     "disks|apps/scalable/gparted.svg"
     "devexplorer|apps/scalable/hardware.svg"
     "installer|mimetypes/scalable/text-x-install.svg"
+    "volume|apps/scalable/pavucontrol.svg"
+    "music|apps/scalable/audio-player.svg"
+    "video|apps/scalable/multimedia-video-player.svg"
+    "bluetooth|apps/scalable/bluetooth.svg"
 )
 
 installed=0

@@ -82,6 +82,14 @@ ICONS=(
     "apps/scalable/utilities-system-monitor.svg" # system monitor
     "apps/scalable/drive-harddisk.svg"
     "actions/16/trash-empty.svg"
+    "apps/scalable/pavucontrol.svg" # for volume control app
+    "actions/16/media-pause.svg"
+    "actions/16/media-play.svg"
+    "actions/16/media-stop.svg"
+    "actions/16/media-forward.svg"
+    "actions/16/media-rewind.svg"
+    "apps/scalable/multimedia-video-player.svg"
+    "apps/scalable/bluetooth.svg"
 )
 
 copied=0

@@ -262,6 +262,8 @@ void gui::desktop_init(DesktopState* ds) {
     ds->net_cfg_last_poll = montauk::get_milliseconds();
     ds->net_icon_rect = {0, 0, 0, 0};
 
+    ds->closing_ext_count = 0;
+
 }
 
 // ============================================================================
@@ -302,6 +304,16 @@ void desktop_poll_external_windows(DesktopState* ds) {
         }
 
         if (!found && ds->window_count < MAX_WINDOWS) {
+            // Skip windows we've already sent a close event to — the owning
+            // process hasn't destroyed them yet, so they still appear in
+            // win_enumerate.  Re-creating them would place them at the
+            // default position instead of where the user dragged them.
+            bool closing = false;
+            for (int c = 0; c < ds->closing_ext_count; c++) {
+                if (ds->closing_ext_ids[c] == extId) { closing = true; break; }
+            }
+            if (closing) continue;
+
             // Map the pixel buffer into our address space
             uint64_t va = montauk::win_map(extId);
             if (va == 0) continue;
@@ -365,6 +377,17 @@ void desktop_poll_external_windows(DesktopState* ds) {
             // Window gone — remove without freeing content (shared memory)
             ds->windows[i].content = nullptr; // prevent free
             gui::desktop_close_window(ds, i);
+        }
+    }
+
+    // Purge closing IDs that the kernel no longer reports (fully destroyed)
+    for (int c = ds->closing_ext_count - 1; c >= 0; c--) {
+        bool alive = false;
+        for (int e = 0; e < extCount; e++) {
+            if (extWins[e].id == ds->closing_ext_ids[c]) { alive = true; break; }
+        }
+        if (!alive) {
+            ds->closing_ext_ids[c] = ds->closing_ext_ids[--ds->closing_ext_count];
         }
     }
 }

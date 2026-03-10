@@ -135,6 +135,16 @@ int memcmp(const void *s1, const void *s2, size_t n) {
     return 0;
 }
 
+void *memchr(const void *s, int c, size_t n) {
+    const unsigned char *p = (const unsigned char *)s;
+    unsigned char uc = (unsigned char)c;
+    for (size_t i = 0; i < n; i++) {
+        if (p[i] == uc)
+            return (void *)(p + i);
+    }
+    return (void *)0;
+}
+
 size_t strlen(const char *s) {
     size_t len = 0;
     while (s[len]) len++;

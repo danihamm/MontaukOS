@@ -100,6 +100,28 @@ namespace Montauk {
     static constexpr uint64_t SYS_FSMOUNT     = 75;
     static constexpr uint64_t SYS_FSFORMAT    = 76;
 
+    // Audio syscalls
+    static constexpr uint64_t SYS_AUDIOOPEN  = 80;
+    static constexpr uint64_t SYS_AUDIOCLOSE = 81;
+    static constexpr uint64_t SYS_AUDIOWRITE = 82;
+    static constexpr uint64_t SYS_AUDIOCTL   = 83;
+
+    // Bluetooth syscalls
+    static constexpr uint64_t SYS_BTSCAN       = 84;
+    static constexpr uint64_t SYS_BTCONNECT    = 85;
+    static constexpr uint64_t SYS_BTDISCONNECT = 86;
+    static constexpr uint64_t SYS_BTLIST       = 87;
+    static constexpr uint64_t SYS_BTINFO       = 88;
+
+    // Audio control commands (for SYS_AUDIOCTL)
+    static constexpr int AUDIO_CTL_SET_VOLUME = 0;
+    static constexpr int AUDIO_CTL_GET_VOLUME = 1;
+    static constexpr int AUDIO_CTL_GET_POS    = 2;
+    static constexpr int AUDIO_CTL_PAUSE      = 3;
+    static constexpr int AUDIO_CTL_GET_OUTPUT  = 4;   // 0=HDA, 1=Bluetooth
+    static constexpr int AUDIO_CTL_SET_OUTPUT  = 5;   // Switch audio output
+    static constexpr int AUDIO_CTL_BT_STATUS   = 6;   // Get Bluetooth connection status
+
     static constexpr int SOCK_TCP = 1;
     static constexpr int SOCK_UDP = 2;
 
@@ -188,8 +210,8 @@ namespace Montauk {
     };
 
     struct DiskInfo {
-        uint8_t  port;              // AHCI port index
-        uint8_t  type;              // 0=none, 1=SATA, 2=SATAPI
+        uint8_t  port;              // block device index
+        uint8_t  type;              // 0=none, 1=SATA, 2=SATAPI, 3=NVMe
         uint8_t  sataGen;           // SATA gen (1/2/3)
         uint8_t  _pad0;
         uint64_t sectorCount;       // Total user-addressable sectors
@@ -247,6 +269,34 @@ namespace Montauk {
         int32_t  partIndex;       // global partition index
         int32_t  fsType;          // FS_TYPE_FAT32, etc.
         char     label[32];       // volume label
+    };
+
+    // Bluetooth scan result (returned by SYS_BTSCAN)
+    struct BtScanResult {
+        uint8_t  bdAddr[6];
+        uint8_t  _pad[2];
+        uint32_t classOfDevice;
+        int8_t   rssi;
+        uint8_t  _pad2[3];
+        char     name[64];
+    };
+
+    // Bluetooth connected device info (returned by SYS_BTLIST)
+    struct BtDevInfo {
+        uint8_t  bdAddr[6];
+        uint8_t  connected;
+        uint8_t  encrypted;
+        uint16_t handle;
+        uint8_t  linkType;
+        uint8_t  _pad;
+    };
+
+    // Bluetooth adapter info (returned by SYS_BTINFO)
+    struct BtAdapterInfo {
+        uint8_t  bdAddr[6];
+        uint8_t  initialized;
+        uint8_t  scanning;
+        char     name[64];
     };
 
     struct ProcInfo {

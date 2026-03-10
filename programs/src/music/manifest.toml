@@ -1,0 +1,8 @@
+[app]
+name = "Music"
+binary = "music.elf"
+icon = "audio-player.svg"
+
+[menu]
+category = "Applications"
+visible = true

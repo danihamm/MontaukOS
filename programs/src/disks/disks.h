@@ -72,6 +72,8 @@ static constexpr int NUM_FS_TYPES = 1;
 
 static constexpr int FMT_DLG_W = 280;
 static constexpr int FMT_DLG_H = 220;
+static constexpr int NP_DLG_W  = 340;
+static constexpr int NP_DLG_H  = 200;
 
 struct FormatDialog {
     bool open;
@@ -80,6 +82,18 @@ struct FormatDialog {
     bool hover_format;
     bool hover_cancel;
     char part_desc[80];
+    int  win_id;
+    uint32_t* pixels;
+};
+
+struct NewPartDialog {
+    bool open;
+    bool will_init_gpt;     // true if GPT init is needed (most destructive)
+    bool hover_confirm;
+    bool hover_cancel;
+    char disk_desc[80];
+    char warn_line1[96];
+    char warn_line2[96];
     int  win_id;
     uint32_t* pixels;
 };
@@ -95,6 +109,7 @@ struct DiskToolState {
     char status[80];
     uint64_t status_time;
     FormatDialog fmt_dlg;
+    NewPartDialog np_dlg;
 };
 
 // ============================================================================
@@ -125,6 +140,7 @@ void format_disk_size(char* buf, int bufsize, uint64_t sectors, uint16_t sectorS
 
 void render(uint32_t* pixels);
 void render_format_window();
+void render_newpart_window();
 
 // ============================================================================
 // Function declarations — actions.cpp
@@ -136,3 +152,6 @@ void do_mount_partition();
 void open_format_dialog();
 void close_format_dialog();
 void format_dialog_do_format();
+void open_newpart_dialog();
+void close_newpart_dialog();
+void newpart_dialog_confirm();

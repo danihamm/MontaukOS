@@ -346,6 +346,61 @@ void render_format_window() {
 }
 
 // ============================================================================
+// Render: new partition confirmation dialog
+// ============================================================================
+
+void render_newpart_window() {
+    auto& dlg = g_state.np_dlg;
+    if (!dlg.open) return;
+
+    uint32_t* px = dlg.pixels;
+    int dw = NP_DLG_W, dh = NP_DLG_H;
+    int fh = font_h();
+
+    px_fill(px, dw, dh, 0, 0, dw, dh, BG_COLOR);
+
+    // Title
+    const char* title = dlg.will_init_gpt ? "Initialize Disk" : "New Partition";
+    int tw = text_w(title);
+    px_text(px, dw, dh, (dw - tw) / 2, 12, title, TEXT_COLOR);
+
+    // Disk description
+    int ddw = text_w(dlg.disk_desc);
+    px_text(px, dw, dh, (dw - ddw) / 2, 12 + fh + 6, dlg.disk_desc, DIM_TEXT);
+
+    // Warning lines
+    Color warn_color = dlg.will_init_gpt
+        ? Color::from_rgb(0xCC, 0x22, 0x22)
+        : TEXT_COLOR;
+
+    int wy = 12 + fh * 2 + 20;
+    int w1w = text_w(dlg.warn_line1);
+    px_text(px, dw, dh, (dw - w1w) / 2, wy, dlg.warn_line1, warn_color);
+    int w2w = text_w(dlg.warn_line2);
+    px_text(px, dw, dh, (dw - w2w) / 2, wy + fh + 4, dlg.warn_line2, warn_color);
+
+    // Buttons
+    int btn_w = 90, btn_h = 30;
+    int btn_y = dh - btn_h - 16;
+    int gap = 16;
+    int total_w = btn_w * 2 + gap;
+    int bx = (dw - total_w) / 2;
+
+    Color confirm_bg = dlg.will_init_gpt
+        ? (dlg.hover_confirm ? Color::from_rgb(0xDD, 0x44, 0x44)
+                             : Color::from_rgb(0xCC, 0x33, 0x33))
+        : (dlg.hover_confirm ? Color::from_rgb(0x4A, 0x88, 0xC8)
+                             : Color::from_rgb(0x42, 0x7A, 0xB5));
+    const char* confirm_label = dlg.will_init_gpt ? "Initialize" : "Create";
+    px_button(px, dw, dh, bx, btn_y, btn_w, btn_h, confirm_label, confirm_bg, WHITE, 6);
+
+    Color can_bg = dlg.hover_cancel
+        ? Color::from_rgb(0x99, 0x99, 0x99)
+        : Color::from_rgb(0x88, 0x88, 0x88);
+    px_button(px, dw, dh, bx + btn_w + gap, btn_y, btn_w, btn_h, "Cancel", can_bg, WHITE, 6);
+}
+
+// ============================================================================
 // Top-level render
 // ============================================================================
 

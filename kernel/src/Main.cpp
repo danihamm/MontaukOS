@@ -158,6 +158,7 @@ extern "C" void kmain() {
         Drivers::ProbeNormal();
         Drivers::InitializeNetwork();
         Drivers::InitializeStorage();
+        Drivers::InitializeAudio();
     }
 #endif
 

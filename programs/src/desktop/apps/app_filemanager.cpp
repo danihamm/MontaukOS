@@ -77,6 +77,14 @@ static bool is_spreadsheet_file(const char* name) {
     return str_ends_with(name, ".mss");
 }
 
+static bool is_video_file(const char* name) {
+    return str_ends_with(name, ".mp4") || str_ends_with(name, ".m4v");
+}
+
+static bool is_audio_file(const char* name) {
+    return str_ends_with(name, ".mp3") || str_ends_with(name, ".wav");
+}
+
 static int detect_file_type(const char* name, bool is_dir) {
     if (is_dir) return 1;
     if (str_ends_with(name, ".elf")) return 2;
@@ -174,11 +182,7 @@ static void filemanager_read_dir(FileManagerState* fm) {
             fm->is_dir[i] = true;
             fm->entry_names[i][len - 1] = '\0';
         } else {
-            bool has_dot = false;
-            for (int j = 0; j < len; j++) {
-                if (fm->entry_names[i][j] == '.') { has_dot = true; break; }
-            }
-            fm->is_dir[i] = !has_dot;
+            fm->is_dir[i] = false;
         }
 
         fm->entry_types[i] = detect_file_type(fm->entry_names[i], fm->is_dir[i]);
@@ -238,6 +242,66 @@ static void filemanager_read_dir(FileManagerState* fm) {
     fm->scrollbar.scroll_offset = 0;
     fm->last_click_item = -1;
     fm->last_click_time = 0;
+}
+
+// ============================================================================
+// Recursive directory deletion
+// ============================================================================
+
+static bool filemanager_delete_recursive(const char* path) {
+    // Try deleting as a file (or empty directory) first
+    if (montauk::fdelete(path) == 0) return true;
+
+    // If that failed, it may be a non-empty directory — enumerate and delete children
+    const char* names[64];
+    int count = montauk::readdir(path, names, 64);
+    if (count < 0) return false;
+
+    // Compute the prefix to strip (readdir returns paths relative to drive root)
+    const char* after_drive = path;
+    for (int k = 0; after_drive[k]; k++) {
+        if (after_drive[k] == ':' && after_drive[k + 1] == '/') {
+            after_drive += k + 2;
+            break;
+        }
+    }
+    char prefix[256] = {0};
+    int prefix_len = 0;
+    if (after_drive[0] != '\0') {
+        montauk::strcpy(prefix, after_drive);
+        prefix_len = montauk::slen(prefix);
+        if (prefix_len > 0 && prefix[prefix_len - 1] != '/') {
+            prefix[prefix_len++] = '/';
+            prefix[prefix_len] = '\0';
+        }
+    }
+
+    for (int i = 0; i < count; i++) {
+        const char* raw = names[i];
+        if (prefix_len > 0) {
+            bool match = true;
+            for (int k = 0; k < prefix_len; k++) {
+                if (raw[k] != prefix[k]) { match = false; break; }
+            }
+            if (match) raw += prefix_len;
+        }
+
+        char child[512];
+        montauk::strcpy(child, path);
+        int plen = montauk::slen(child);
+        if (plen > 0 && child[plen - 1] != '/')
+            str_append(child, "/", 512);
+        str_append(child, raw, 512);
+
+        // Strip trailing slash if present (directory marker)
+        int clen = montauk::slen(child);
+        if (clen > 0 && child[clen - 1] == '/') child[clen - 1] = '\0';
+
+        filemanager_delete_recursive(child);
+    }
+
+    // Now the directory should be empty — delete it
+    return montauk::fdelete(path) == 0;
 }
 
 // ============================================================================
@@ -373,11 +437,12 @@ static void filemanager_draw_header(Canvas& c, FileManagerState* fm,
         }
     }
 
-    // Delete button (6th toolbar button) — only active when a file is selected
+    // Delete button (6th toolbar button) — active when a file or directory is selected
     {
         int bx = 148, by = 4;
         bool has_sel = fm->selected >= 0 && fm->selected < fm->entry_count
-                       && !fm->at_drives_root && !fm->is_dir[fm->selected];
+                       && !fm->at_drives_root
+                       && fm->entry_types[fm->selected] != 3;
         Color del_bg = has_sel ? btn_bg : Color::from_rgb(0xF0, 0xF0, 0xF0);
         c.fill_rect(bx, by, 24, 24, del_bg);
         if (ds && ds->icon_delete.pixels) {
@@ -634,16 +699,19 @@ static void filemanager_on_mouse(Window* win, MouseEvent& ev) {
                 fm->scrollbar.scroll_offset = 0;
             }
             else if (local_x >= 148 && local_x < 172) {
-                // Delete selected file
+                // Delete selected file or directory
                 if (fm->selected >= 0 && fm->selected < fm->entry_count
-                    && !fm->at_drives_root && !fm->is_dir[fm->selected]) {
+                    && !fm->at_drives_root && fm->entry_types[fm->selected] != 3) {
                     char fullpath[512];
                     montauk::strcpy(fullpath, fm->current_path);
                     int plen = montauk::slen(fullpath);
                     if (plen > 0 && fullpath[plen - 1] != '/')
                         str_append(fullpath, "/", 512);
                     str_append(fullpath, fm->entry_names[fm->selected], 512);
-                    montauk::fdelete(fullpath);
+                    if (fm->is_dir[fm->selected])
+                        filemanager_delete_recursive(fullpath);
+                    else
+                        montauk::fdelete(fullpath);
                     filemanager_read_dir(fm);
                 }
             }
@@ -695,6 +763,10 @@ static void filemanager_on_mouse(Window* win, MouseEvent& ev) {
                                 montauk::spawn("0:/apps/pdfviewer/pdfviewer.elf", fullpath);
                             } else if (is_spreadsheet_file(fm->entry_names[clicked_idx])) {
                                 montauk::spawn("0:/apps/spreadsheet/spreadsheet.elf", fullpath);
+                            } else if (is_video_file(fm->entry_names[clicked_idx])) {
+                                montauk::spawn("0:/apps/video/video.elf", fullpath);
+                            } else if (is_audio_file(fm->entry_names[clicked_idx])) {
+                                montauk::spawn("0:/apps/music/music.elf", fullpath);
                             } else if (str_ends_with(fm->entry_names[clicked_idx], ".elf")) {
                                 montauk::spawn(fullpath);
                             } else if (fm->desktop) {
@@ -753,6 +825,10 @@ static void filemanager_on_mouse(Window* win, MouseEvent& ev) {
                                 montauk::spawn("0:/apps/pdfviewer/pdfviewer.elf", fullpath);
                             } else if (is_spreadsheet_file(fm->entry_names[clicked_idx])) {
                                 montauk::spawn("0:/apps/spreadsheet/spreadsheet.elf", fullpath);
+                            } else if (is_video_file(fm->entry_names[clicked_idx])) {
+                                montauk::spawn("0:/apps/video/video.elf", fullpath);
+                            } else if (is_audio_file(fm->entry_names[clicked_idx])) {
+                                montauk::spawn("0:/apps/music/music.elf", fullpath);
                             } else if (str_ends_with(fm->entry_names[clicked_idx], ".elf")) {
                                 montauk::spawn(fullpath);
                             } else if (fm->desktop) {
@@ -842,14 +918,17 @@ static void filemanager_on_key(Window* win, const Montauk::KeyEvent& key) {
     } else if (key.scancode == 0x53) {
         // Delete key
         if (fm->selected >= 0 && fm->selected < fm->entry_count
-            && !fm->at_drives_root && !fm->is_dir[fm->selected]) {
+            && !fm->at_drives_root && fm->entry_types[fm->selected] != 3) {
             char fullpath[512];
             montauk::strcpy(fullpath, fm->current_path);
             int plen = montauk::slen(fullpath);
             if (plen > 0 && fullpath[plen - 1] != '/')
                 str_append(fullpath, "/", 512);
             str_append(fullpath, fm->entry_names[fm->selected], 512);
-            montauk::fdelete(fullpath);
+            if (fm->is_dir[fm->selected])
+                filemanager_delete_recursive(fullpath);
+            else
+                montauk::fdelete(fullpath);
             filemanager_read_dir(fm);
         }
     } else if (key.alt && key.scancode == 0x4B) {

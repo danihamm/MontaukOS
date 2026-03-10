@@ -98,6 +98,13 @@ namespace Drivers::USB::Xhci {
     static uint8_t* g_interruptDataBuf[MAX_SLOTS + 1] = {};
     static uint64_t g_interruptDataBufPhys[MAX_SLOTS + 1] = {};
 
+    // Bulk IN transfer data buffers (per slot)
+    static uint8_t* g_bulkInDataBuf[MAX_SLOTS + 1] = {};
+    static uint64_t g_bulkInDataBufPhys[MAX_SLOTS + 1] = {};
+
+    // Transfer callbacks for non-HID class drivers (per slot)
+    static TransferCallback g_transferCallbacks[MAX_SLOTS + 1] = {};
+
     // Scratchpad buffer array
     static uint64_t* g_scratchpadBufs = nullptr;
 
@@ -171,6 +178,36 @@ namespace Drivers::USB::Xhci {
             }
             dev.InterruptRingCCS = !dev.InterruptRingCCS;
             dev.InterruptRingEnqueue = 0;
+        }
+    }
+
+    // Advance bulk IN ring enqueue pointer, activating Link TRB when reached
+    static void AdvanceBulkInRing(UsbDeviceInfo& dev) {
+        dev.BulkInRingEnqueue++;
+        if (dev.BulkInRingEnqueue >= XFER_RING_SIZE - 1) {
+            TRB& link = dev.BulkInRing[XFER_RING_SIZE - 1];
+            if (dev.BulkInRingCCS) {
+                link.Control |= TRB_CYCLE_BIT;
+            } else {
+                link.Control &= ~TRB_CYCLE_BIT;
+            }
+            dev.BulkInRingCCS = !dev.BulkInRingCCS;
+            dev.BulkInRingEnqueue = 0;
+        }
+    }
+
+    // Advance bulk OUT ring enqueue pointer, activating Link TRB when reached
+    static void AdvanceBulkOutRing(UsbDeviceInfo& dev) {
+        dev.BulkOutRingEnqueue++;
+        if (dev.BulkOutRingEnqueue >= XFER_RING_SIZE - 1) {
+            TRB& link = dev.BulkOutRing[XFER_RING_SIZE - 1];
+            if (dev.BulkOutRingCCS) {
+                link.Control |= TRB_CYCLE_BIT;
+            } else {
+                link.Control &= ~TRB_CYCLE_BIT;
+            }
+            dev.BulkOutRingCCS = !dev.BulkOutRingCCS;
+            dev.BulkOutRingEnqueue = 0;
         }
     }
 
@@ -279,37 +316,62 @@ namespace Drivers::USB::Xhci {
                         g_xferCompletionCode = completionCode;
                         g_xferCompleted = true;
                     } else if (slotId > 0 && slotId <= MAX_SLOTS && g_devices[slotId].Active) {
-                        // Interrupt IN endpoint completion
                         UsbDeviceInfo& dev = g_devices[slotId];
 
                         if (completionCode == CC_SUCCESS || completionCode == CC_SHORT_PACKET) {
-                            uint16_t len = dev.InterruptMaxPacket;
-
-                            // Residual byte count: bits 23:0 of Status gives residual
+                            // Compute actual transfer length from residual
                             uint32_t residual = evt.Status & 0x00FFFFFF;
-                            if (residual < len) {
-                                len = dev.InterruptMaxPacket - (uint16_t)residual;
-                            }
 
-                            // Dispatch to HID driver based on interface protocol
-                            if (dev.InterfaceClass == UsbDevice::CLASS_HID) {
-                                if (dev.InterfaceProtocol == UsbDevice::PROTOCOL_KEYBOARD) {
-                                    HidKeyboard::ProcessReport(g_interruptDataBuf[slotId], len);
-                                } else if (dev.InterfaceProtocol == UsbDevice::PROTOCOL_MOUSE) {
-                                    HidMouse::ProcessReport(g_interruptDataBuf[slotId], len);
+                            // Check if this is a bulk IN endpoint completion
+                            uint8_t bulkInDci = dev.BulkInEpNum ? (dev.BulkInEpNum * 2 + 1) : 0;
+                            uint8_t bulkOutDci = dev.BulkOutEpNum ? (dev.BulkOutEpNum * 2) : 0;
+                            uint8_t intDci = dev.InterruptEpNum ? (dev.InterruptEpNum * 2 + 1) : 0;
+
+                            if (epDci == bulkInDci && g_transferCallbacks[slotId]) {
+                                // Bulk IN — dispatch via registered callback
+                                uint16_t len = dev.BulkInMaxPacket;
+                                if (residual < len) len = dev.BulkInMaxPacket - (uint16_t)residual;
+                                g_transferCallbacks[slotId](slotId, epDci,
+                                    g_bulkInDataBuf[slotId], len, completionCode);
+                            } else if (epDci == bulkOutDci && g_transferCallbacks[slotId]) {
+                                // Bulk OUT completion — notify callback
+                                g_transferCallbacks[slotId](slotId, epDci,
+                                    nullptr, 0, completionCode);
+                            } else if (epDci == intDci) {
+                                // Interrupt IN — HID or callback dispatch
+                                uint16_t len = dev.InterruptMaxPacket;
+                                if (residual < len) len = dev.InterruptMaxPacket - (uint16_t)residual;
+
+                                if (dev.InterfaceClass == UsbDevice::CLASS_HID) {
+                                    if (dev.InterfaceProtocol == UsbDevice::PROTOCOL_KEYBOARD) {
+                                        HidKeyboard::ProcessReport(g_interruptDataBuf[slotId], len);
+                                    } else if (dev.InterfaceProtocol == UsbDevice::PROTOCOL_MOUSE) {
+                                        HidMouse::ProcessReport(g_interruptDataBuf[slotId], len);
+                                    }
+                                    // Re-queue for next HID report
+                                    QueueInterruptTransfer(slotId);
+                                } else if (g_transferCallbacks[slotId]) {
+                                    // Callback is responsible for re-queuing
+                                    g_transferCallbacks[slotId](slotId, epDci,
+                                        g_interruptDataBuf[slotId], len, completionCode);
                                 }
+                            } else if (g_transferCallbacks[slotId]) {
+                                // Unknown endpoint — try callback
+                                g_transferCallbacks[slotId](slotId, epDci,
+                                    nullptr, 0, completionCode);
                             }
                         } else {
                             KernelLogStream(WARNING, "xHCI") << "Transfer error on slot "
                                 << base::dec << (uint64_t)slotId << " ep " << (uint64_t)epDci
                                 << " cc=" << (uint64_t)completionCode;
+
+                            // Notify callback of errors too
+                            if (g_transferCallbacks[slotId]) {
+                                g_transferCallbacks[slotId](slotId, epDci,
+                                    nullptr, 0, completionCode);
+                            }
                         }
 
-                        // Always re-queue the next interrupt transfer so the
-                        // device can continue delivering reports. Transient
-                        // errors (stall, babble, etc.) must not permanently
-                        // kill the transfer chain.
-                        QueueInterruptTransfer(slotId);
                     }
                     break;
                 }
@@ -495,6 +557,31 @@ namespace Drivers::USB::Xhci {
         }
 
         KernelLogStream(WARNING, "xHCI") << "Control transfer timeout on slot " << base::dec << (uint64_t)slotId;
+
+        // Recover EP0 ring: Stop Endpoint, then Set TR Dequeue Pointer
+        // so that subsequent control transfers on this slot still work.
+        TRB stopTrb = {};
+        stopTrb.Control = (TRB_STOP_ENDPOINT << TRB_TYPE_SHIFT)
+                        | ((uint32_t)slotId << 24)
+                        | (1 << 16);  // DCI=1 (EP0) in bits 20:16
+        SendCommand(stopTrb);
+
+        // Reset the enqueue pointer to the start and set the dequeue pointer
+        // to match so the ring is back in sync.
+        uint64_t newDeq = dev.EP0RingPhys
+                        + (uint64_t)dev.EP0RingEnqueue * sizeof(TRB);
+        if (dev.EP0RingCCS) {
+            newDeq |= 1; // DCS bit
+        }
+
+        TRB deqTrb = {};
+        deqTrb.Parameter0 = (uint32_t)(newDeq & 0xFFFFFFFF);
+        deqTrb.Parameter1 = (uint32_t)(newDeq >> 32);
+        deqTrb.Control    = (TRB_SET_TR_DEQUEUE << TRB_TYPE_SHIFT)
+                          | ((uint32_t)slotId << 24)
+                          | (1 << 16);  // DCI=1 (EP0)
+        SendCommand(deqTrb);
+
         return 0xFF;
     }
 
@@ -532,6 +619,81 @@ namespace Drivers::USB::Xhci {
         // Ring doorbell: target = (InterruptEpNum * 2 + 1) for IN endpoint DCI
         uint8_t target = dev.InterruptEpNum * 2 + 1;
         WriteDoorbell(slotId, target);
+    }
+
+    // -------------------------------------------------------------------------
+    // QueueBulkInTransfer
+    // -------------------------------------------------------------------------
+
+    void QueueBulkInTransfer(uint8_t slotId, uint8_t* data, uint64_t dataPhys, uint32_t length) {
+        if (slotId == 0 || slotId > MAX_SLOTS || !g_devices[slotId].Active) return;
+
+        UsbDeviceInfo& dev = g_devices[slotId];
+        if (!dev.BulkInRing || dev.BulkInEpNum == 0) return;
+
+        // If caller provides nullptr, use the per-slot bulk IN DMA buffer
+        if (data == nullptr) {
+            if (g_bulkInDataBuf[slotId] == nullptr) {
+                g_bulkInDataBuf[slotId] = AllocateDmaBuffer(g_bulkInDataBufPhys[slotId]);
+            }
+            data = g_bulkInDataBuf[slotId];
+            dataPhys = g_bulkInDataBufPhys[slotId];
+        }
+
+        TRB& trb = dev.BulkInRing[dev.BulkInRingEnqueue];
+        trb.Parameter0 = (uint32_t)(dataPhys & 0xFFFFFFFF);
+        trb.Parameter1 = (uint32_t)(dataPhys >> 32);
+        trb.Status = length;
+
+        uint32_t control = (TRB_NORMAL << TRB_TYPE_SHIFT) | TRB_IOC | TRB_ISP;
+        if (dev.BulkInRingCCS) {
+            control |= TRB_CYCLE_BIT;
+        }
+        trb.Control = control;
+
+        AdvanceBulkInRing(dev);
+
+        // Ring doorbell: DCI for bulk IN = EpNum * 2 + 1
+        uint8_t target = dev.BulkInEpNum * 2 + 1;
+        WriteDoorbell(slotId, target);
+    }
+
+    // -------------------------------------------------------------------------
+    // QueueBulkOutTransfer
+    // -------------------------------------------------------------------------
+
+    void QueueBulkOutTransfer(uint8_t slotId, uint8_t* data, uint64_t dataPhys, uint32_t length) {
+        if (slotId == 0 || slotId > MAX_SLOTS || !g_devices[slotId].Active) return;
+
+        UsbDeviceInfo& dev = g_devices[slotId];
+        if (!dev.BulkOutRing || dev.BulkOutEpNum == 0) return;
+
+        TRB& trb = dev.BulkOutRing[dev.BulkOutRingEnqueue];
+        trb.Parameter0 = (uint32_t)(dataPhys & 0xFFFFFFFF);
+        trb.Parameter1 = (uint32_t)(dataPhys >> 32);
+        trb.Status = length;
+
+        uint32_t control = (TRB_NORMAL << TRB_TYPE_SHIFT) | TRB_IOC;
+        if (dev.BulkOutRingCCS) {
+            control |= TRB_CYCLE_BIT;
+        }
+        trb.Control = control;
+
+        AdvanceBulkOutRing(dev);
+
+        // Ring doorbell: DCI for bulk OUT = EpNum * 2
+        uint8_t target = dev.BulkOutEpNum * 2;
+        WriteDoorbell(slotId, target);
+    }
+
+    // -------------------------------------------------------------------------
+    // RegisterTransferCallback
+    // -------------------------------------------------------------------------
+
+    void RegisterTransferCallback(uint8_t slotId, TransferCallback cb) {
+        if (slotId > 0 && slotId <= MAX_SLOTS) {
+            g_transferCallbacks[slotId] = cb;
+        }
     }
 
     // -------------------------------------------------------------------------

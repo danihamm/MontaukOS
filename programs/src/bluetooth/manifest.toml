@@ -1,0 +1,8 @@
+[app]
+name = "Bluetooth"
+binary = "bluetooth.elf"
+icon = "bluetooth.svg"
+
+[menu]
+category = "System"
+visible = true

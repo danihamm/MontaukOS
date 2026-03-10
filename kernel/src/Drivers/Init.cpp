@@ -11,7 +11,9 @@
 #include <Drivers/Net/E1000E.hpp>
 #include <Drivers/USB/Xhci.hpp>
 #include <Drivers/Storage/Ahci.hpp>
+#include <Drivers/Storage/Nvme.hpp>
 #include <Drivers/Storage/Gpt.hpp>
+#include <Drivers/Audio/IntelHda.hpp>
 #include <Graphics/Cursor.hpp>
 #include <Net/Net.hpp>
 #include <Terminal/Terminal.hpp>
@@ -63,6 +65,14 @@ namespace Drivers {
 
     static bool ProbeAhci(const Pci::PciDevice& dev) {
         return Storage::Ahci::Probe(dev);
+    }
+
+    static bool ProbeNvme(const Pci::PciDevice& dev) {
+        return Storage::Nvme::Probe(dev);
+    }
+
+    static bool ProbeIntelHda(const Pci::PciDevice& dev) {
+        return Audio::IntelHda::Probe(dev);
     }
 
     // -------------------------------------------------------------------------
@@ -126,6 +136,32 @@ namespace Drivers {
             Pci::ProbePhase::Normal,
             ProbeAhci,
         },
+        // Order 6: NVMe — Normal phase, match class=0x01/0x08/0x02 (NVM Express)
+        {
+            "NVMe",
+            0,                              // VendorId (any)
+            0x01,                           // ClassCode (Mass Storage)
+            0x08,                           // SubClass (Non-Volatile Memory)
+            0x02,                           // ProgIf (NVM Express)
+            nullptr,
+            0,
+            Pci::ProbePhase::Normal,
+            ProbeNvme,
+        },
+        // Order 7: Intel HDA — Normal phase, match vendor=0x8086 + class=0x04 (Multimedia)
+        //          SubClass 0x01 = "Multimedia audio controller" (most Intel HDA)
+        //          SubClass 0x03 = "Audio device" (HDA-compatible)
+        {
+            "IntelHDA",
+            0x8086,                         // VendorId (Intel)
+            0x04,                           // ClassCode (Multimedia)
+            0xFF,                           // SubClass (any — covers both 0x01 and 0x03)
+            0xFF,                           // ProgIf (any)
+            nullptr,
+            0,
+            Pci::ProbePhase::Normal,
+            ProbeIntelHda,
+        },
     };
 
     static constexpr uint16_t g_driverTableCount = sizeof(g_driverTable) / sizeof(g_driverTable[0]);
@@ -161,6 +197,12 @@ namespace Drivers {
         // AHCI driver registered SATA devices as block devices during
         // ProbeNormal(). Now probe all block devices for GPT partitions.
         Storage::Gpt::ProbeAll();
+    }
+
+    void InitializeAudio() {
+        // HDA driver initializes during ProbeNormal().
+        // Bluetooth audio (A2DP) initializes automatically during USB enumeration
+        // when a Bluetooth adapter is detected by the xHCI driver.
     }
 
 }

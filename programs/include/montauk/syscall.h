@@ -336,6 +336,61 @@ namespace montauk {
         return (int)syscall1(Montauk::SYS_FSFORMAT, (uint64_t)params);
     }
 
+    // Audio
+    inline int audio_open(uint32_t sampleRate, uint8_t channels, uint8_t bitsPerSample) {
+        return (int)syscall3(Montauk::SYS_AUDIOOPEN, (uint64_t)sampleRate,
+                             (uint64_t)channels, (uint64_t)bitsPerSample);
+    }
+    inline void audio_close(int handle) {
+        syscall1(Montauk::SYS_AUDIOCLOSE, (uint64_t)handle);
+    }
+    inline int audio_write(int handle, const void* data, uint32_t size) {
+        return (int)syscall3(Montauk::SYS_AUDIOWRITE, (uint64_t)handle,
+                             (uint64_t)data, (uint64_t)size);
+    }
+    inline int audio_ctl(int handle, int cmd, int value) {
+        return (int)syscall3(Montauk::SYS_AUDIOCTL, (uint64_t)handle,
+                             (uint64_t)cmd, (uint64_t)value);
+    }
+    inline int audio_set_volume(int handle, int percent) {
+        return audio_ctl(handle, Montauk::AUDIO_CTL_SET_VOLUME, percent);
+    }
+    inline int audio_get_volume(int handle) {
+        return audio_ctl(handle, Montauk::AUDIO_CTL_GET_VOLUME, 0);
+    }
+    inline int audio_get_pos(int handle) {
+        return audio_ctl(handle, Montauk::AUDIO_CTL_GET_POS, 0);
+    }
+    inline int audio_pause(int handle) {
+        return audio_ctl(handle, Montauk::AUDIO_CTL_PAUSE, 1);
+    }
+    inline int audio_resume(int handle) {
+        return audio_ctl(handle, Montauk::AUDIO_CTL_PAUSE, 0);
+    }
+    inline int audio_get_output(int handle) {
+        return audio_ctl(handle, Montauk::AUDIO_CTL_GET_OUTPUT, 0);
+    }
+    inline int audio_bt_status(int handle) {
+        return audio_ctl(handle, Montauk::AUDIO_CTL_BT_STATUS, 0);
+    }
+
+    // Bluetooth
+    inline int bt_scan(Montauk::BtScanResult* buf, int maxCount, uint32_t timeoutMs) {
+        return (int)syscall3(Montauk::SYS_BTSCAN, (uint64_t)buf, (uint64_t)maxCount, (uint64_t)timeoutMs);
+    }
+    inline int bt_connect(const uint8_t* bdAddr) {
+        return (int)syscall1(Montauk::SYS_BTCONNECT, (uint64_t)bdAddr);
+    }
+    inline int bt_disconnect(const uint8_t* bdAddr) {
+        return (int)syscall1(Montauk::SYS_BTDISCONNECT, (uint64_t)bdAddr);
+    }
+    inline int bt_list(Montauk::BtDevInfo* buf, int maxCount) {
+        return (int)syscall2(Montauk::SYS_BTLIST, (uint64_t)buf, (uint64_t)maxCount);
+    }
+    inline int bt_info(Montauk::BtAdapterInfo* buf) {
+        return (int)syscall1(Montauk::SYS_BTINFO, (uint64_t)buf);
+    }
+
     // Kernel introspection
     inline void memstats(Montauk::MemStats* out) { syscall1(Montauk::SYS_MEMSTATS, (uint64_t)out); }
 

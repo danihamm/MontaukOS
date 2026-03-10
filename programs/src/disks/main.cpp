@@ -181,6 +181,40 @@ static bool handle_content_click(int mx, int my) {
 }
 
 // ============================================================================
+// New partition dialog mouse handling
+// ============================================================================
+
+static bool handle_newpart_dialog_click(int mx, int my, bool clicked) {
+    auto& dlg = g_state.np_dlg;
+    if (!dlg.open) return false;
+
+    int dw = NP_DLG_W, dh = NP_DLG_H;
+
+    int btn_w = 90, btn_h = 30;
+    int btn_y = dh - btn_h - 16;
+    int gap = 16;
+    int total_w = btn_w * 2 + gap;
+    int bx = (dw - total_w) / 2;
+
+    dlg.hover_confirm = (mx >= bx && mx < bx + btn_w && my >= btn_y && my < btn_y + btn_h);
+    dlg.hover_cancel = (mx >= bx + btn_w + gap && mx < bx + btn_w * 2 + gap && my >= btn_y && my < btn_y + btn_h);
+
+    if (!clicked) return true;
+
+    if (dlg.hover_confirm) {
+        newpart_dialog_confirm();
+        return true;
+    }
+
+    if (dlg.hover_cancel) {
+        close_newpart_dialog();
+        return true;
+    }
+
+    return true;
+}
+
+// ============================================================================
 // Format dialog mouse handling
 // ============================================================================
 
@@ -235,6 +269,16 @@ static bool handle_key(const Montauk::KeyEvent& key) {
     if (!key.pressed) return false;
 
     auto& dt = g_state;
+
+    // New partition dialog keys
+    if (dt.np_dlg.open) {
+        if (key.scancode == 0x01) { // Escape
+            close_newpart_dialog();
+        } else if (key.ascii == '\n' || key.ascii == '\r') {
+            newpart_dialog_confirm();
+        }
+        return true;
+    }
 
     // Format dialog keys
     if (dt.fmt_dlg.open) {
@@ -313,6 +357,28 @@ extern "C" void _start() {
         bool redraw_main = false;
         bool redraw_dlg = false;
 
+        bool redraw_np = false;
+
+        // Poll new partition dialog window
+        if (g_state.np_dlg.open) {
+            int dr = montauk::win_poll(g_state.np_dlg.win_id, &ev);
+            if (dr > 0) {
+                if (ev.type == 3) { // close
+                    close_newpart_dialog();
+                    redraw_main = true;
+                } else if (ev.type == 0 && ev.key.pressed) {
+                    handle_key(ev.key);
+                    redraw_np = g_state.np_dlg.open;
+                    redraw_main = true;
+                } else if (ev.type == 1) {
+                    bool clicked = (ev.mouse.buttons & 1) && !(ev.mouse.prev_buttons & 1);
+                    handle_newpart_dialog_click(ev.mouse.x, ev.mouse.y, clicked);
+                    redraw_np = g_state.np_dlg.open;
+                    redraw_main = true;
+                }
+            }
+        }
+
         // Poll format dialog window
         if (g_state.fmt_dlg.open) {
             int dr = montauk::win_poll(g_state.fmt_dlg.win_id, &ev);
@@ -341,7 +407,8 @@ extern "C" void _start() {
             // Even with no main event, dialog may have triggered redraws
             if (redraw_main) { render(pixels); montauk::win_present(win_id); }
             if (redraw_dlg) { render_format_window(); montauk::win_present(g_state.fmt_dlg.win_id); }
-            if (!redraw_main && !redraw_dlg) montauk::sleep_ms(16);
+            if (redraw_np) { render_newpart_window(); montauk::win_present(g_state.np_dlg.win_id); }
+            if (!redraw_main && !redraw_dlg && !redraw_np) montauk::sleep_ms(16);
             continue;
         }
 
@@ -383,8 +450,10 @@ extern "C" void _start() {
 
         if (redraw_main) { render(pixels); montauk::win_present(win_id); }
         if (redraw_dlg) { render_format_window(); montauk::win_present(g_state.fmt_dlg.win_id); }
+        if (redraw_np) { render_newpart_window(); montauk::win_present(g_state.np_dlg.win_id); }
     }
 
+    close_newpart_dialog();
     close_format_dialog();
     montauk::win_destroy(win_id);
     montauk::exit(0);

@@ -55,8 +55,13 @@ void gui::desktop_close_window(DesktopState* ds, int idx) {
 
     Window* win = &ds->windows[idx];
 
-    // For external windows, send a close event instead of freeing the buffer
+    // For external windows, send a close event instead of freeing the buffer.
+    // Track the ID so the poll loop won't re-create it at the default position
+    // before the owning process has finished destroying it.
     if (win->external) {
+        if (ds->closing_ext_count < DesktopState::MAX_CLOSING) {
+            ds->closing_ext_ids[ds->closing_ext_count++] = win->ext_win_id;
+        }
         Montauk::WinEvent ev;
         montauk::memset(&ev, 0, sizeof(ev));
         ev.type = 3; // close

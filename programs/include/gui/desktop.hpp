@@ -111,6 +111,13 @@ struct DesktopState {
 
     int screen_w, screen_h;
 
+    // IDs of external windows we've sent a close event to but that haven't
+    // been destroyed yet by their owning process.  Prevents the poll loop
+    // from re-creating them at the default position (visible flicker).
+    static constexpr int MAX_CLOSING = 8;
+    int closing_ext_ids[MAX_CLOSING];
+    int closing_ext_count;
+
     DesktopSettings settings;
 };
 

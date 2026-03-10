@@ -1103,9 +1103,13 @@ namespace Fs::Ext2 {
         self.dirNameCount = count;
         for (int i = 0; i < count; i++) {
             int j = 0;
-            while (entries[i].name[j] && j < MaxNameLen - 1) {
+            while (entries[i].name[j] && j < MaxNameLen - 2) {
                 self.dirNames[i][j] = entries[i].name[j];
                 j++;
+            }
+            // Append trailing '/' for directories so userspace can distinguish them
+            if (entries[i].fileType == EXT2_FT_DIR && j < MaxNameLen - 1) {
+                self.dirNames[i][j++] = '/';
             }
             self.dirNames[i][j] = '\0';
             outNames[i] = self.dirNames[i];
@@ -1279,15 +1283,27 @@ namespace Fs::Ext2 {
         Inode targetInode;
         if (!ReadInode(self, existing.inodeNum, &targetInode)) return -1;
 
-        // Don't delete directories through this call
-        if ((targetInode.i_mode & IMODE_TYPE_MASK) == IMODE_DIR) return -1;
+        bool isDir = (targetInode.i_mode & IMODE_TYPE_MASK) == IMODE_DIR;
+        if (isDir) {
+            // Only allow deleting empty directories
+            ParsedEntry children[1];
+            int childCount = ReadDirectoryEntries(self, targetInode, children, 1);
+            if (childCount > 0) return -1;
+        }
 
         // Remove directory entry
         if (!RemoveDirEntry(self, parentInode, fileName)) return -1;
 
+        // If we deleted a subdirectory, decrement parent's link count (for "..")
+        if (isDir) {
+            parentInode.i_links_count--;
+            WriteInode(self, parentInodeNum, &parentInode);
+        }
+
         // Decrement link count
         targetInode.i_links_count--;
-        if (targetInode.i_links_count == 0) {
+        if (isDir) targetInode.i_links_count--; // account for "." self-link
+        if (targetInode.i_links_count <= 0) {
             // Free all blocks and the inode
             FreeInodeBlocks(self, targetInode);
             targetInode.i_mode = 0;

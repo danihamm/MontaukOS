@@ -59,7 +59,7 @@ BINDIR := bin
 PROGRAMS := $(notdir $(wildcard src/*))
 
 # Programs with custom Makefiles (built separately).
-CUSTOM_BUILDS := doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer installer desktop
+CUSTOM_BUILDS := doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer installer volume music bluetooth desktop
 SYSTEM_PROGRAMS := $(filter-out $(CUSTOM_BUILDS),$(PROGRAMS))
 
 # Build targets: system programs go to bin/os/, apps go to bin/apps/<name>/.
@@ -81,9 +81,9 @@ CA_CERTS := $(BINDIR)/etc/ca-certificates.crt
 # Home directory placeholder.
 HOMEKEEP := $(BINDIR)/home/.keep
 
-.PHONY: all clean doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer installer desktop icons fonts bearssl libc tls libjpeg install-apps
+.PHONY: all clean doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer installer volume music bluetooth desktop icons fonts bearssl libc tls libjpeg install-apps
 
-all: bearssl libc libjpeg tls $(TARGETS) fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer installer doom desktop icons fonts install-apps $(MANDST) $(WWWDST) $(CA_CERTS) $(HOMEKEEP)
+all: bearssl libc libjpeg tls $(TARGETS) fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer installer volume music bluetooth doom desktop icons fonts install-apps $(MANDST) $(WWWDST) $(CA_CERTS) $(HOMEKEEP)
 
 # Build BearSSL static library (cross-compiled for freestanding x86_64).
 BEARSSL_INCLUDES := -isystem $(shell cd .. && pwd)/kernel/freestnd-c-hdrs/x86_64/include -isystem $(abspath include/libc)
@@ -152,6 +152,18 @@ devexplorer: libc
 installer: libc
 	$(MAKE) -C src/installer
 
+# Build volume control standalone GUI tool (depends on libc).
+volume: libc
+	$(MAKE) -C src/volume
+
+# Build music player standalone GUI tool (depends on libc).
+music: libc
+	$(MAKE) -C src/music
+
+# Build bluetooth manager standalone GUI tool (depends on libc).
+bluetooth: libc
+	$(MAKE) -C src/bluetooth
+
 # Build desktop via its own Makefile (depends on libc and libjpeg for wallpaper).
 desktop: libc libjpeg
 	$(MAKE) -C src/desktop
@@ -169,7 +181,7 @@ doom:
 	$(MAKE) -C src/doom
 
 # Install app bundles (manifests, icons, data files) into bin/apps/<name>/.
-install-apps: doom spreadsheet weather wikipedia imageviewer fontpreview pdfviewer disks devexplorer installer
+install-apps: doom spreadsheet weather wikipedia imageviewer fontpreview pdfviewer disks devexplorer installer volume music bluetooth
 	../scripts/install_apps.sh
 
 # Copy man pages into bin/man/ so mkramdisk.sh picks them up.
@@ -216,3 +228,6 @@ clean:
 	$(MAKE) -C src/disks clean
 	$(MAKE) -C src/devexplorer clean
 	$(MAKE) -C src/installer clean
+	$(MAKE) -C src/volume clean
+	$(MAKE) -C src/music clean
+	$(MAKE) -C src/bluetooth clean

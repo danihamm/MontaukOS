@@ -30,6 +30,8 @@
 #include "Device.hpp"     // SYS_DEVLIST, SYS_DISKINFO
 #include "Storage.hpp"    // SYS_PARTLIST, SYS_DISKREAD, SYS_DISKWRITE
 #include "Window.hpp"     // SYS_WINCREATE, SYS_WINDESTROY, SYS_WINPRESENT, SYS_WINPOLL, SYS_WINENUM, SYS_WINMAP, SYS_WINSENDEVENT, SYS_WINRESIZE, SYS_WINSETSCALE, SYS_WINGETSCALE
+#include "Audio.hpp"      // SYS_AUDIOOPEN, SYS_AUDIOCLOSE, SYS_AUDIOWRITE, SYS_AUDIOCTL
+#include "BluetoothSyscall.hpp" // SYS_BTSCAN, SYS_BTCONNECT, SYS_BTDISCONNECT, SYS_BTLIST, SYS_BTINFO
 
 // Assembly entry point
 extern "C" void SyscallEntry();
@@ -243,6 +245,24 @@ namespace Montauk {
                 return (int64_t)Sys_FsMount((int)frame->arg1, (int)frame->arg2);
             case SYS_FSFORMAT:
                 return (int64_t)Sys_FsFormat((const FsFormatParams*)frame->arg1);
+            case SYS_AUDIOOPEN:
+                return Sys_AudioOpen((uint32_t)frame->arg1, (uint8_t)frame->arg2, (uint8_t)frame->arg3);
+            case SYS_AUDIOCLOSE:
+                return Sys_AudioClose((int)frame->arg1);
+            case SYS_AUDIOWRITE:
+                return Sys_AudioWrite((int)frame->arg1, (const uint8_t*)frame->arg2, (uint32_t)frame->arg3);
+            case SYS_AUDIOCTL:
+                return Sys_AudioCtl((int)frame->arg1, (int)frame->arg2, (int)frame->arg3);
+            case SYS_BTSCAN:
+                return Sys_BtScan((BtScanResult*)frame->arg1, (int)frame->arg2, (uint32_t)frame->arg3);
+            case SYS_BTCONNECT:
+                return Sys_BtConnect((const uint8_t*)frame->arg1);
+            case SYS_BTDISCONNECT:
+                return Sys_BtDisconnect((const uint8_t*)frame->arg1);
+            case SYS_BTLIST:
+                return Sys_BtList((BtDevInfo*)frame->arg1, (int)frame->arg2);
+            case SYS_BTINFO:
+                return Sys_BtInfo((BtAdapterInfo*)frame->arg1);
             default:
                 return -1;
         }
