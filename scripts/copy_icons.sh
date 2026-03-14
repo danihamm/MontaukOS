@@ -90,6 +90,10 @@ ICONS=(
     "actions/16/media-rewind.svg"
     "apps/scalable/multimedia-video-player.svg"
     "apps/scalable/bluetooth.svg"
+    "panel/volume-level-high.svg"
+    "status/symbolic/audio-volume-high-symbolic.svg"
+    "apps/scalable/gnome-logout.svg"
+    "apps/scalable/lock.svg"
 )
 
 copied=0

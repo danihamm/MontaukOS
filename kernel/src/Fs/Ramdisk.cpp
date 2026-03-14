@@ -338,6 +338,73 @@ namespace Fs::Ramdisk {
         return fileCount++;
     }
 
+    int Delete(const char* path) {
+        if (path == nullptr) return -1;
+        if (path[0] == '/') path++;
+
+        for (int i = 0; i < fileCount; i++) {
+            if (StrEqual(fileTable[i].name, path)) {
+                // Free heap-allocated data
+                if (fileTable[i].heapAllocated && fileTable[i].data) {
+                    Memory::g_heap->Free(fileTable[i].data);
+                }
+
+                // Shift remaining entries down
+                for (int j = i; j < fileCount - 1; j++) {
+                    fileTable[j] = fileTable[j + 1];
+                }
+                fileCount--;
+                return 0;
+            }
+        }
+        return -1;  // not found
+    }
+
+    int Mkdir(const char* path) {
+        if (path == nullptr) return -1;
+        if (fileCount >= MaxFiles) return -1;
+        if (path[0] == '/') path++;
+
+        // Check if directory already exists
+        for (int i = 0; i < fileCount; i++) {
+            if (StrEqual(fileTable[i].name, path) && fileTable[i].isDirectory) {
+                return 0;  // already exists
+            }
+            // Also check with trailing slash
+            int pathLen = StrLen(path);
+            int entryLen = StrLen(fileTable[i].name);
+            if (entryLen == pathLen + 1 && fileTable[i].name[entryLen - 1] == '/' &&
+                fileTable[i].isDirectory) {
+                bool match = true;
+                for (int j = 0; j < pathLen; j++) {
+                    if (path[j] != fileTable[i].name[j]) { match = false; break; }
+                }
+                if (match) return 0;
+            }
+        }
+
+        // Create directory entry (stored with trailing slash for tar convention)
+        FileEntry& entry = fileTable[fileCount];
+
+        int nameLen = 0;
+        while (nameLen < MaxNameLen - 2 && path[nameLen] != '\0') {
+            entry.name[nameLen] = path[nameLen];
+            nameLen++;
+        }
+        // Add trailing slash
+        entry.name[nameLen++] = '/';
+        entry.name[nameLen] = '\0';
+
+        entry.data = nullptr;
+        entry.size = 0;
+        entry.capacity = 0;
+        entry.isDirectory = true;
+        entry.heapAllocated = false;
+
+        fileCount++;
+        return 0;
+    }
+
     int GetFileCount() {
         return fileCount;
     }

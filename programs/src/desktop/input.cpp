@@ -5,8 +5,133 @@
 */
 
 #include "desktop_internal.hpp"
+#include <montauk/user.h>
+
+// ============================================================================
+// Lock Screen Input
+// ============================================================================
+
+static void lock_screen(DesktopState* ds) {
+    ds->screen_locked = true;
+    ds->lock_password[0] = '\0';
+    ds->lock_password_len = 0;
+    ds->lock_error[0] = '\0';
+    ds->lock_show_error = false;
+    ds->app_menu_open = false;
+    ds->ctx_menu_open = false;
+    ds->net_popup_open = false;
+    ds->vol_popup_open = false;
+
+    // Cache display name for lock screen rendering
+    montauk::strncpy(ds->lock_display_name, ds->current_user, sizeof(ds->lock_display_name));
+    montauk::user::UserInfo users[16];
+    int count = montauk::user::load_users(users, 16);
+    for (int i = 0; i < count; i++) {
+        if (montauk::streq(users[i].username, ds->current_user)) {
+            if (users[i].display_name[0])
+                montauk::strncpy(ds->lock_display_name, users[i].display_name, sizeof(ds->lock_display_name));
+            break;
+        }
+    }
+}
+
+static bool try_unlock(DesktopState* ds) {
+    ds->lock_show_error = false;
+
+    if (montauk::user::authenticate(ds->current_user, ds->lock_password)) {
+        ds->screen_locked = false;
+        ds->lock_password[0] = '\0';
+        ds->lock_password_len = 0;
+        return true;
+    }
+
+    montauk::strcpy(ds->lock_error, "Incorrect password");
+    ds->lock_show_error = true;
+    ds->lock_password[0] = '\0';
+    ds->lock_password_len = 0;
+    return false;
+}
+
+static void handle_lock_mouse(DesktopState* ds) {
+    int mx = ds->mouse.x;
+    int my = ds->mouse.y;
+    uint8_t buttons = ds->mouse.buttons;
+    uint8_t prev = ds->prev_buttons;
+    bool left_pressed = (buttons & 0x01) && !(prev & 0x01);
+
+    if (!left_pressed) return;
+
+    int sfh = system_font_height();
+    int card_w = 360;
+    int content_w = card_w - 48;
+    int field_h = 36;
+    int btn_h = 40;
+
+    // Calculate card layout to find button position
+    int error_h = ds->lock_show_error ? sfh + 8 : 0;
+    int card_h = 20 + sfh + 16 + sfh + 12 + sfh + 4 + field_h + 16 + btn_h + error_h + 20;
+    int card_x = (ds->screen_w - card_w) / 2;
+    int card_y = (ds->screen_h - card_h) / 2;
+    int x = card_x + 24;
+
+    // Walk through the layout to find the Unlock button y position
+    int y = card_y + 20;
+    y += sfh + 16;  // title
+    y += sfh + 12;  // username
+    y += sfh + 4;   // "Password" label
+    y += field_h + 16; // field + gap
+
+    // Check Unlock button
+    if (mx >= x && mx < x + content_w && my >= y && my < y + btn_h) {
+        try_unlock(ds);
+        return;
+    }
+
+    // Check password field click (just keep focus, nothing else to switch to)
+    int field_y = y - field_h - 16;
+    if (mx >= x && mx < x + content_w && my >= field_y && my < field_y + field_h) {
+        ds->lock_show_error = false;
+    }
+}
+
+static void handle_lock_keyboard(DesktopState* ds, const Montauk::KeyEvent& key) {
+    if (!key.pressed) return;
+
+    // Enter submits
+    if (key.ascii == '\n' || key.ascii == '\r') {
+        try_unlock(ds);
+        return;
+    }
+
+    // Backspace
+    if (key.ascii == '\b' || key.scancode == 0x0E) {
+        if (ds->lock_password_len > 0) {
+            ds->lock_password_len--;
+            ds->lock_password[ds->lock_password_len] = '\0';
+        }
+        return;
+    }
+
+    // Printable characters
+    if (key.ascii >= 0x20 && key.ascii < 0x7F) {
+        if (ds->lock_password_len < 63) {
+            ds->lock_password[ds->lock_password_len] = key.ascii;
+            ds->lock_password_len++;
+            ds->lock_password[ds->lock_password_len] = '\0';
+        }
+    }
+}
+
+// ============================================================================
+// Desktop Mouse Handling
+// ============================================================================
 
 void gui::desktop_handle_mouse(DesktopState* ds) {
+    if (ds->screen_locked) {
+        handle_lock_mouse(ds);
+        return;
+    }
+
     int mx = ds->mouse.x;
     int my = ds->mouse.y;
     uint8_t buttons = ds->mouse.buttons;
@@ -213,8 +338,8 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
                         menu_cat_expanded[cur_cat] = !menu_cat_expanded[cur_cat];
                     } else if (!row.is_category) {
                         if (row.external) {
-                            // Launch external app from manifest
-                            montauk::spawn(row.binary_path);
+                            // Launch external app with user's home dir
+                            montauk::spawn(row.binary_path, ds->home_dir);
                         } else {
                             // Dispatch embedded app
                             switch (row.app_id) {
@@ -230,6 +355,8 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
                             case 12: open_reboot_dialog(ds); break;
                             case 14: open_shutdown_dialog(ds); break;
                             case 15: open_wordprocessor(ds); break;
+                            case 16: montauk::exit(0); break;  // Log Out
+                            case 17: lock_screen(ds); break;   // Lock Screen
                             }
                         }
                         ds->app_menu_open = false;
@@ -244,10 +371,104 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
         }
     }
 
+    // Handle volume popup interaction
+    if (ds->vol_popup_open) {
+        int popup_x = ds->vol_icon_rect.x + ds->vol_icon_rect.w - 200;
+        int popup_y = PANEL_HEIGHT + 2;
+        if (popup_x < 4) popup_x = 4;
+        Rect vol_rect = {popup_x, popup_y, 200, 120};
+
+        // Handle drag continuity
+        if (ds->vol_dragging) {
+            if (left_held) {
+                int slider_abs_x = popup_x + 16;
+                int v = ((mx - slider_abs_x) * 100) / (200 - 32);
+                if (v < 0) v = 0;
+                if (v > 100) v = 100;
+                ds->vol_muted = false;
+                ds->vol_level = v;
+                montauk::audio_set_volume(0, v);
+                return;
+            }
+            if (left_released) {
+                ds->vol_dragging = false;
+            }
+        }
+
+        if (left_pressed) {
+            if (vol_rect.contains(mx, my)) {
+                // Slider area (y = popup_y + 56, height = 8, with generous hit zone)
+                int slider_abs_x = popup_x + 16;
+                int slider_abs_y = popup_y + 56;
+                int slider_w = 200 - 32;
+                if (my >= slider_abs_y - 10 && my <= slider_abs_y + 8 + 10 &&
+                    mx >= slider_abs_x - 8 && mx <= slider_abs_x + slider_w + 8) {
+                    int v = ((mx - slider_abs_x) * 100) / slider_w;
+                    if (v < 0) v = 0;
+                    if (v > 100) v = 100;
+                    ds->vol_muted = false;
+                    ds->vol_level = v;
+                    montauk::audio_set_volume(0, v);
+                    ds->vol_dragging = true;
+                    return;
+                }
+
+                // Buttons (y = popup_y + 78, h = 24)
+                int btn_h = 24;
+                int btn_y = popup_y + 78;
+                int minus_w = 36, plus_w = 36, mute_w = 50, gap = 8;
+                int total_w = minus_w + plus_w + mute_w + gap * 2;
+                int bx = popup_x + (200 - total_w) / 2;
+
+                if (my >= btn_y && my < btn_y + btn_h) {
+                    // [-]
+                    if (mx >= bx && mx < bx + minus_w) {
+                        ds->vol_muted = false;
+                        int v = ds->vol_level - 5;
+                        if (v < 0) v = 0;
+                        ds->vol_level = v;
+                        montauk::audio_set_volume(0, v);
+                        return;
+                    }
+                    bx += minus_w + gap;
+                    // [+]
+                    if (mx >= bx && mx < bx + plus_w) {
+                        ds->vol_muted = false;
+                        int v = ds->vol_level + 5;
+                        if (v > 100) v = 100;
+                        ds->vol_level = v;
+                        montauk::audio_set_volume(0, v);
+                        return;
+                    }
+                    bx += plus_w + gap;
+                    // [Mute]
+                    if (mx >= bx && mx < bx + mute_w) {
+                        if (ds->vol_muted) {
+                            ds->vol_muted = false;
+                            montauk::audio_set_volume(0, ds->vol_pre_mute);
+                            ds->vol_level = ds->vol_pre_mute;
+                        } else {
+                            ds->vol_pre_mute = ds->vol_level;
+                            ds->vol_muted = true;
+                            montauk::audio_set_volume(0, 0);
+                        }
+                        return;
+                    }
+                }
+                return; // click inside popup but not on any control
+            } else if (!ds->vol_icon_rect.contains(mx, my)) {
+                ds->vol_popup_open = false;
+                ds->vol_dragging = false;
+            }
+        }
+    }
+
     // Handle net popup clicks
     if (ds->net_popup_open && left_pressed) {
         int popup_w = 220;
-        int popup_h = 130;
+        int fh_net = system_font_height();
+        int row_h_net = fh_net + 8;
+        int popup_h = (row_h_net + 8) + row_h_net * 5 + 12;
         int popup_x = ds->net_icon_rect.x + ds->net_icon_rect.w - popup_w;
         int popup_y = PANEL_HEIGHT + 2;
         if (popup_x < 4) popup_x = 4;
@@ -266,6 +487,17 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
         if (mx < 36) {
             ds->app_menu_open = !ds->app_menu_open;
             ds->net_popup_open = false;
+            ds->vol_popup_open = false;
+            ds->ctx_menu_open = false;
+            return;
+        }
+
+        // Volume icon
+        if (ds->vol_icon_rect.w > 0 && ds->vol_icon_rect.contains(mx, my)) {
+            ds->vol_popup_open = !ds->vol_popup_open;
+            ds->vol_dragging = false;
+            ds->app_menu_open = false;
+            ds->net_popup_open = false;
             ds->ctx_menu_open = false;
             return;
         }
@@ -274,6 +506,7 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
         if (ds->net_icon_rect.w > 0 && ds->net_icon_rect.contains(mx, my)) {
             ds->net_popup_open = !ds->net_popup_open;
             ds->app_menu_open = false;
+            ds->vol_popup_open = false;
             ds->ctx_menu_open = false;
             return;
         }
@@ -369,11 +602,6 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
             if (win->state != WIN_MAXIMIZED) {
                 ResizeEdge edge = hit_test_resize_edge(win->frame, mx, my);
                 if (edge != RESIZE_NONE) {
-                    win->resizing = true;
-                    win->resize_edge = edge;
-                    win->resize_start_frame = win->frame;
-                    win->resize_start_mx = mx;
-                    win->resize_start_my = my;
                     desktop_raise_window(ds, i);
                     int new_idx = ds->window_count - 1;
                     ds->windows[new_idx].resizing = true;
@@ -388,9 +616,6 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
             // Check titlebar (start drag)
             Rect tb = win->titlebar_rect();
             if (tb.contains(mx, my)) {
-                win->dragging = true;
-                win->drag_offset_x = mx - win->frame.x;
-                win->drag_offset_y = my - win->frame.y;
                 desktop_raise_window(ds, i);
                 int new_idx = ds->window_count - 1;
                 ds->windows[new_idx].dragging = true;
@@ -433,6 +658,7 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
 
         ds->app_menu_open = false;
         ds->ctx_menu_open = false;
+        ds->vol_popup_open = false;
     }
 
     // Forward continuous mouse events to focused window (hover, drag, release)
@@ -499,13 +725,23 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
             ds->ctx_menu_y = my;
             ds->app_menu_open = false;
             ds->net_popup_open = false;
+            ds->vol_popup_open = false;
         }
     }
 }
 
 void gui::desktop_handle_keyboard(DesktopState* ds, const Montauk::KeyEvent& key) {
+    if (ds->screen_locked) {
+        handle_lock_keyboard(ds, key);
+        return;
+    }
+
     // Global shortcuts (only on key press)
     if (key.pressed && key.ctrl && key.alt) {
+        if (key.ascii == 'l' || key.ascii == 'L') {
+            lock_screen(ds);
+            return;
+        }
         if (key.ascii == 't' || key.ascii == 'T') {
             open_terminal(ds);
             return;

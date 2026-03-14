@@ -121,7 +121,7 @@ namespace Net::Ipv4 {
         }
 
         uint16_t totalLen = Ntohs(hdr->TotalLength);
-        if (totalLen > length) {
+        if (totalLen < ihl || totalLen > length) {
             return;
         }
 

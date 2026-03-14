@@ -267,7 +267,26 @@ static int generate_index_page(char* buf, int bufSize) {
         (unsigned)hours, (unsigned)mins, (unsigned)secs);
 }
 
+// HTML-escape a string to prevent XSS (escapes <, >, &, ", ')
+static int html_escape(const char* in, char* out, int outMax) {
+    int j = 0;
+    for (int i = 0; in[i] && j < outMax - 6; i++) {
+        switch (in[i]) {
+        case '<':  out[j++]='&'; out[j++]='l'; out[j++]='t'; out[j++]=';'; break;
+        case '>':  out[j++]='&'; out[j++]='g'; out[j++]='t'; out[j++]=';'; break;
+        case '&':  out[j++]='&'; out[j++]='a'; out[j++]='m'; out[j++]='p'; out[j++]=';'; break;
+        case '"':  out[j++]='&'; out[j++]='q'; out[j++]='u'; out[j++]='o'; out[j++]='t'; out[j++]=';'; break;
+        case '\'': out[j++]='&'; out[j++]='#'; out[j++]='3'; out[j++]='9'; out[j++]=';'; break;
+        default:   out[j++] = in[i]; break;
+        }
+    }
+    out[j] = '\0';
+    return j;
+}
+
 static int generate_404_page(char* buf, int bufSize, const char* path) {
+    char escaped[512];
+    html_escape(path, escaped, sizeof(escaped));
     return snprintf(buf, bufSize,
         "<!DOCTYPE html>\n"
         "<html>\n"
@@ -278,7 +297,7 @@ static int generate_404_page(char* buf, int bufSize, const char* path) {
         "<p><a href=\"/\">Back to home</a></p>\n"
         "</body>\n"
         "</html>\n",
-        path);
+        escaped);
 }
 
 static int generate_dir_listing(char* buf, int bufSize, const char* urlPath, const char* vfsDir) {
@@ -322,10 +341,12 @@ static int generate_dir_listing(char* buf, int bufSize, const char* urlPath, con
         }
         if (*name == '\0') continue;
 
-        // Build the URL for this entry
+        // Build the URL for this entry (HTML-escape the name)
+        char esc_name[256];
+        html_escape(name, esc_name, sizeof(esc_name));
         pos += snprintf(buf + pos, bufSize - pos,
             "<li><a href=\"%s%s\">%s</a></li>\n",
-            urlPath, name, name);
+            urlPath, name, esc_name);
     }
 
     pos += snprintf(buf + pos, bufSize - pos,
@@ -414,6 +435,29 @@ static void handle_client(int clientFd) {
     } else if (starts_with(path, "/files/")) {
         // Serve file or directory from VFS
         const char* relPath = path + 7; // skip "/files/"
+
+        // Reject path traversal attempts
+        if (starts_with(relPath, "..") || starts_with(relPath, "/")) {
+            static char body[] = "<!DOCTYPE html><html><body><h1>403 Forbidden</h1></body></html>";
+            send_response(clientFd, 403, "Forbidden", "text/html", body, slen(body));
+            log_request("GET", path, 403, slen(body));
+            montauk::closesocket(clientFd);
+            return;
+        }
+        // Check for /../ or trailing /.. anywhere in the path
+        for (int ci = 0; relPath[ci]; ci++) {
+            if (relPath[ci] == '.' && relPath[ci+1] == '.') {
+                if (ci == 0 || relPath[ci-1] == '/') {
+                    if (relPath[ci+2] == '\0' || relPath[ci+2] == '/') {
+                        static char body[] = "<!DOCTYPE html><html><body><h1>403 Forbidden</h1></body></html>";
+                        send_response(clientFd, 403, "Forbidden", "text/html", body, slen(body));
+                        log_request("GET", path, 403, slen(body));
+                        montauk::closesocket(clientFd);
+                        return;
+                    }
+                }
+            }
+        }
 
         // Build VFS path: "0:/<relPath>"
         char vfsPath[256];

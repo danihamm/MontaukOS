@@ -120,6 +120,9 @@ namespace Sched {
         // Load ELF into the process's address space
         uint64_t entry = ElfLoad(vfsPath, pml4Phys);
         if (entry == 0) {
+            // Free the PML4 and any pages allocated during ELF load
+            Memory::VMM::Paging::FreeUserHalf(pml4Phys);
+            Memory::g_pfa->Free((void*)Memory::HHDM(pml4Phys));
             return -1;
         }
 
@@ -127,17 +130,28 @@ namespace Sched {
         void* firstPage = Memory::g_pfa->AllocateZeroed();
         if (firstPage == nullptr) {
             Kt::KernelLogStream(Kt::ERROR, "Sched") << "Out of memory for kernel stack";
+            Memory::VMM::Paging::FreeUserHalf(pml4Phys);
+            Memory::g_pfa->Free((void*)Memory::HHDM(pml4Phys));
             return -1;
         }
         void* stackMem = Memory::g_pfa->ReallocConsecutive(firstPage, StackPages);
         if (stackMem == nullptr) {
             Kt::KernelLogStream(Kt::ERROR, "Sched") << "Failed to allocate contiguous kernel stack";
             Memory::g_pfa->Free(firstPage);
+            Memory::VMM::Paging::FreeUserHalf(pml4Phys);
+            Memory::g_pfa->Free((void*)Memory::HHDM(pml4Phys));
             return -1;
         }
 
         uint8_t* kernelStackBase = (uint8_t*)stackMem;
         uint64_t kernelStackTop = (uint64_t)kernelStackBase + StackSize;
+
+        // Helper to clean up all resources allocated so far on failure
+        auto cleanupOnFail = [&]() {
+            Memory::VMM::Paging::FreeUserHalf(pml4Phys);
+            Memory::g_pfa->Free((void*)Memory::HHDM(pml4Phys));
+            Memory::g_pfa->Free(stackMem, StackPages);
+        };
 
         // Allocate user stack pages and map them in the process PML4
         uint64_t userStackBase = UserStackTop - UserStackSize;
@@ -146,11 +160,14 @@ namespace Sched {
             void* page = Memory::g_pfa->AllocateZeroed();
             if (page == nullptr) {
                 Kt::KernelLogStream(Kt::ERROR, "Sched") << "Out of memory for user stack";
+                cleanupOnFail();
                 return -1;
             }
             uint64_t physAddr = Memory::SubHHDM((uint64_t)page);
             if (!Memory::VMM::Paging::MapUserIn(pml4Phys, physAddr, userStackBase + i * 0x1000)) {
                 Kt::KernelLogStream(Kt::ERROR, "Sched") << "Failed to map user stack page";
+                Memory::g_pfa->Free(page);
+                cleanupOnFail();
                 return -1;
             }
             if (i == UserStackPages - 1) topStackPagePhys = physAddr;
@@ -162,11 +179,14 @@ namespace Sched {
             void* stubPage = Memory::g_pfa->AllocateZeroed();
             if (stubPage == nullptr) {
                 Kt::KernelLogStream(Kt::ERROR, "Sched") << "Out of memory for exit stub";
+                cleanupOnFail();
                 return -1;
             }
             uint64_t stubPhys = Memory::SubHHDM((uint64_t)stubPage);
             if (!Memory::VMM::Paging::MapUserIn(pml4Phys, stubPhys, ExitStubAddr)) {
                 Kt::KernelLogStream(Kt::ERROR, "Sched") << "Failed to map exit stub";
+                Memory::g_pfa->Free(stubPage);
+                cleanupOnFail();
                 return -1;
             }
 
@@ -291,11 +311,16 @@ namespace Sched {
             oldRspPtr = &idleSavedRsp;
         }
 
+        int oldPid = currentPid;
         currentPid = next;
         processTable[next].state = ProcessState::Running;
         processTable[next].sliceRemaining = TimeSliceMs;
 
         uint64_t newCR3 = processTable[next].pml4Phys;
+
+        // Disable interrupts while updating global kernel RSP and TSS,
+        // preventing an interrupt from using stale values mid-update.
+        asm volatile("cli");
 
         // Update kernel RSP for SYSCALL entry
         g_kernelRsp = processTable[next].kernelStackTop;
@@ -303,7 +328,9 @@ namespace Sched {
         // Update TSS RSP0 for hardware interrupts from ring 3
         Hal::g_tss.rsp0 = processTable[next].kernelStackTop;
 
-        uint8_t* oldFpu = (currentPid >= 0) ? processTable[currentPid].fpuState : nullptr;
+        asm volatile("sti");
+
+        uint8_t* oldFpu = (oldPid >= 0) ? processTable[oldPid].fpuState : nullptr;
         uint8_t* newFpu = processTable[next].fpuState;
         SchedContextSwitch(oldRspPtr, processTable[next].savedRsp, newCR3, oldFpu, newFpu);
     }

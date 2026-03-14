@@ -171,7 +171,9 @@ namespace Net::Dns {
                 // Compression pointer
                 if (offset + 1 >= packetLen) return -1;
                 if (!jumped) returnOffset = offset + 2;
-                offset = ((len & 0x3F) << 8) | packet[offset + 1];
+                int target = ((len & 0x3F) << 8) | packet[offset + 1];
+                if (target >= packetLen) return -1;  // Pointer beyond packet bounds
+                offset = target;
                 jumped = true;
                 maxJumps--;
                 continue;

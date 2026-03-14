@@ -1,0 +1,318 @@
+/*
+    * Syscall.hpp
+    * MontaukOS syscall definitions for userspace programs
+    * Copyright (c) 2025 Daniel Hammer
+*/
+
+#pragma once
+#include <cstdint>
+#include <cstddef>
+
+namespace Montauk {
+
+    // Syscall numbers
+    static constexpr uint64_t SYS_EXIT            = 0;
+    static constexpr uint64_t SYS_YIELD           = 1;
+    static constexpr uint64_t SYS_SLEEP_MS        = 2;
+    static constexpr uint64_t SYS_GETPID          = 3;
+    static constexpr uint64_t SYS_PRINT           = 4;
+    static constexpr uint64_t SYS_PUTCHAR          = 5;
+    static constexpr uint64_t SYS_OPEN            = 6;
+    static constexpr uint64_t SYS_READ            = 7;
+    static constexpr uint64_t SYS_GETSIZE         = 8;
+    static constexpr uint64_t SYS_CLOSE           = 9;
+    static constexpr uint64_t SYS_READDIR         = 10;
+    static constexpr uint64_t SYS_ALLOC           = 11;
+    static constexpr uint64_t SYS_FREE            = 12;
+    static constexpr uint64_t SYS_GETTICKS        = 13;
+    static constexpr uint64_t SYS_GETMILLISECONDS = 14;
+    static constexpr uint64_t SYS_GETINFO         = 15;
+    static constexpr uint64_t SYS_ISKEYAVAILABLE  = 16;
+    static constexpr uint64_t SYS_GETKEY          = 17;
+    static constexpr uint64_t SYS_GETCHAR         = 18;
+    static constexpr uint64_t SYS_PING            = 19;
+    static constexpr uint64_t SYS_SPAWN           = 20;
+    static constexpr uint64_t SYS_FBINFO          = 21;
+    static constexpr uint64_t SYS_FBMAP           = 22;
+    static constexpr uint64_t SYS_WAITPID         = 23;
+    static constexpr uint64_t SYS_TERMSIZE        = 24;
+    static constexpr uint64_t SYS_GETARGS         = 25;
+    static constexpr uint64_t SYS_RESET           = 26;
+    static constexpr uint64_t SYS_SHUTDOWN        = 27;
+    static constexpr uint64_t SYS_GETTIME         = 28;
+    static constexpr uint64_t SYS_SOCKET          = 29;
+    static constexpr uint64_t SYS_CONNECT         = 30;
+    static constexpr uint64_t SYS_BIND            = 31;
+    static constexpr uint64_t SYS_LISTEN          = 32;
+    static constexpr uint64_t SYS_ACCEPT          = 33;
+    static constexpr uint64_t SYS_SEND            = 34;
+    static constexpr uint64_t SYS_RECV            = 35;
+    static constexpr uint64_t SYS_CLOSESOCK       = 36;
+    static constexpr uint64_t SYS_GETNETCFG      = 37;
+    static constexpr uint64_t SYS_SETNETCFG      = 38;
+    static constexpr uint64_t SYS_SENDTO         = 39;
+    static constexpr uint64_t SYS_RECVFROM       = 40;
+    static constexpr uint64_t SYS_FWRITE         = 41;
+    static constexpr uint64_t SYS_FCREATE        = 42;
+    static constexpr uint64_t SYS_FDELETE        = 77;
+    static constexpr uint64_t SYS_FMKDIR         = 78;
+    static constexpr uint64_t SYS_DRIVELIST     = 79;
+    static constexpr uint64_t SYS_TERMSCALE     = 43;
+    static constexpr uint64_t SYS_RESOLVE        = 44;
+    static constexpr uint64_t SYS_GETRANDOM     = 45;
+    static constexpr uint64_t SYS_KLOG           = 46;
+    static constexpr uint64_t SYS_MOUSESTATE     = 47;
+    static constexpr uint64_t SYS_SETMOUSEBOUNDS = 48;
+    static constexpr uint64_t SYS_SPAWN_REDIR    = 49;
+    static constexpr uint64_t SYS_CHILDIO_READ   = 50;
+    static constexpr uint64_t SYS_CHILDIO_WRITE  = 51;
+    static constexpr uint64_t SYS_CHILDIO_WRITEKEY = 52;
+    static constexpr uint64_t SYS_CHILDIO_SETTERMSZ = 53;
+
+    // Window server syscalls
+    static constexpr uint64_t SYS_WINCREATE    = 54;
+    static constexpr uint64_t SYS_WINDESTROY   = 55;
+    static constexpr uint64_t SYS_WINPRESENT   = 56;
+    static constexpr uint64_t SYS_WINPOLL      = 57;
+    static constexpr uint64_t SYS_WINENUM      = 58;
+    static constexpr uint64_t SYS_WINMAP       = 59;
+    static constexpr uint64_t SYS_WINSENDEVENT = 60;
+    static constexpr uint64_t SYS_WINRESIZE   = 64;
+    static constexpr uint64_t SYS_WINSETSCALE = 65;
+    static constexpr uint64_t SYS_WINGETSCALE = 66;
+    static constexpr uint64_t SYS_WINSETCURSOR = 68;
+
+    // Process management syscalls
+    static constexpr uint64_t SYS_PROCLIST    = 61;
+    static constexpr uint64_t SYS_KILL        = 62;
+    static constexpr uint64_t SYS_DEVLIST     = 63;
+    static constexpr uint64_t SYS_DISKINFO    = 69;
+
+    // Kernel introspection syscalls
+    static constexpr uint64_t SYS_MEMSTATS    = 67;
+
+    // Storage / partition syscalls
+    static constexpr uint64_t SYS_PARTLIST    = 70;
+    static constexpr uint64_t SYS_DISKREAD    = 71;
+    static constexpr uint64_t SYS_DISKWRITE   = 72;
+    static constexpr uint64_t SYS_GPTINIT     = 73;
+    static constexpr uint64_t SYS_GPTADD      = 74;
+    static constexpr uint64_t SYS_FSMOUNT     = 75;
+    static constexpr uint64_t SYS_FSFORMAT    = 76;
+
+    // Audio syscalls
+    static constexpr uint64_t SYS_AUDIOOPEN  = 80;
+    static constexpr uint64_t SYS_AUDIOCLOSE = 81;
+    static constexpr uint64_t SYS_AUDIOWRITE = 82;
+    static constexpr uint64_t SYS_AUDIOCTL   = 83;
+
+    // Bluetooth syscalls
+    static constexpr uint64_t SYS_BTSCAN       = 84;
+    static constexpr uint64_t SYS_BTCONNECT    = 85;
+    static constexpr uint64_t SYS_BTDISCONNECT = 86;
+    static constexpr uint64_t SYS_BTLIST       = 87;
+    static constexpr uint64_t SYS_BTINFO       = 88;
+
+    // Audio control commands (for SYS_AUDIOCTL)
+    static constexpr int AUDIO_CTL_SET_VOLUME = 0;
+    static constexpr int AUDIO_CTL_GET_VOLUME = 1;
+    static constexpr int AUDIO_CTL_GET_POS    = 2;
+    static constexpr int AUDIO_CTL_PAUSE      = 3;
+    static constexpr int AUDIO_CTL_GET_OUTPUT  = 4;   // 0=HDA, 1=Bluetooth
+    static constexpr int AUDIO_CTL_SET_OUTPUT  = 5;   // Switch audio output
+    static constexpr int AUDIO_CTL_BT_STATUS   = 6;   // Get Bluetooth connection status
+
+    static constexpr int SOCK_TCP = 1;
+    static constexpr int SOCK_UDP = 2;
+
+    struct NetCfg {
+        uint32_t ipAddress;   // network byte order
+        uint32_t subnetMask;  // network byte order
+        uint32_t gateway;     // network byte order
+        uint8_t  macAddress[6];
+        uint8_t  _pad[2];
+        uint32_t dnsServer;   // network byte order
+    };
+
+    struct DateTime {
+        uint16_t Year;
+        uint8_t Month;
+        uint8_t Day;
+        uint8_t Hour;
+        uint8_t Minute;
+        uint8_t Second;
+    };
+
+    struct FbInfo {
+        uint64_t width;
+        uint64_t height;
+        uint64_t pitch;      // bytes per scanline
+        uint64_t bpp;        // bits per pixel (32)
+        uint64_t userAddr;   // filled by SYS_FBMAP (0 until mapped)
+    };
+
+    struct SysInfo {
+        char osName[32];
+        char osVersion[32];
+        uint32_t    apiVersion;
+        uint32_t    maxProcesses;
+    };
+
+    struct KeyEvent {
+        uint8_t scancode;
+        char    ascii;
+        bool    pressed;
+        bool    shift;
+        bool    ctrl;
+        bool    alt;
+    };
+
+    struct MouseState {
+        int32_t  x;
+        int32_t  y;
+        int32_t  scrollDelta;
+        uint8_t  buttons;
+    };
+
+    // Window server shared types
+    struct WinEvent {
+        uint8_t type;     // 0=key, 1=mouse, 2=resize, 3=close, 4=scale
+        uint8_t _pad[3];
+        union {
+            KeyEvent key;
+            struct { int32_t x, y, scroll; uint8_t buttons, prev_buttons; } mouse;
+            struct { int32_t w, h; } resize;
+            struct { int32_t scale; } scale;
+        };
+    };
+
+    struct WinInfo {
+        int32_t  id;
+        int32_t  ownerPid;
+        char     title[64];
+        int32_t  width, height;
+        uint8_t  dirty;
+        uint8_t  cursor;    // 0=arrow, 1=resize_h, 2=resize_v
+        uint8_t  _pad2[2];
+    };
+
+    struct WinCreateResult {
+        int32_t  id;       // -1 on failure
+        uint32_t _pad;
+        uint64_t pixelVa;  // VA of pixel buffer in caller's address space
+    };
+
+    struct DevInfo {
+        uint8_t  category;     // 0=CPU, 1=Interrupt, 2=Timer, 3=Input, 4=USB, 5=Network, 6=Display, 7=Storage, 8=PCI
+        uint8_t  _pad[3];
+        char     name[48];
+        char     detail[48];
+    };
+
+    struct DiskInfo {
+        uint8_t  port;              // block device index
+        uint8_t  type;              // 0=none, 1=SATA, 2=SATAPI, 3=NVMe
+        uint8_t  sataGen;           // SATA gen (1/2/3)
+        uint8_t  _pad0;
+        uint64_t sectorCount;       // Total user-addressable sectors
+        uint16_t sectorSizeLog;     // Logical sector size (bytes)
+        uint16_t sectorSizePhys;    // Physical sector size (bytes)
+        uint16_t rpm;               // 0=unknown, 1=SSD, else RPM
+        uint16_t ncqDepth;          // 0 if no NCQ
+        uint8_t  supportsLba48;
+        uint8_t  supportsNcq;
+        uint8_t  supportsTrim;
+        uint8_t  supportsSmart;
+        uint8_t  supportsWriteCache;
+        uint8_t  supportsReadAhead;
+        uint8_t  _pad1[2];
+        char     model[41];
+        char     serial[21];
+        char     firmware[9];
+        char     _pad2[1];
+    };
+
+    struct PartGuid {
+        uint32_t Data1;
+        uint16_t Data2;
+        uint16_t Data3;
+        uint8_t  Data4[8];
+    };
+
+    struct PartInfo {
+        int32_t  blockDev;        // block device index
+        uint32_t _pad0;
+        uint64_t startLba;
+        uint64_t endLba;
+        uint64_t sectorCount;
+        PartGuid typeGuid;
+        PartGuid uniqueGuid;
+        uint64_t attributes;
+        char     name[72];        // ASCII partition name
+        char     typeName[24];    // human-readable type name
+    };
+
+    struct GptAddParams {
+        int32_t  blockDev;
+        uint32_t _pad0;
+        uint64_t startLba;        // 0 = auto (fill largest free region)
+        uint64_t endLba;          // 0 = auto
+        PartGuid typeGuid;
+        char     name[72];
+    };
+
+    // Filesystem type IDs for SYS_FSFORMAT
+    static constexpr int FS_TYPE_FAT32 = 1;
+    static constexpr int FS_TYPE_EXT2  = 2;
+
+    struct FsFormatParams {
+        int32_t  partIndex;       // global partition index
+        int32_t  fsType;          // FS_TYPE_FAT32, etc.
+        char     label[32];       // volume label
+    };
+
+    // Bluetooth scan result (returned by SYS_BTSCAN)
+    struct BtScanResult {
+        uint8_t  bdAddr[6];
+        uint8_t  _pad[2];
+        uint32_t classOfDevice;
+        int8_t   rssi;
+        uint8_t  _pad2[3];
+        char     name[64];
+    };
+
+    // Bluetooth connected device info (returned by SYS_BTLIST)
+    struct BtDevInfo {
+        uint8_t  bdAddr[6];
+        uint8_t  connected;
+        uint8_t  encrypted;
+        uint16_t handle;
+        uint8_t  linkType;
+        uint8_t  _pad;
+    };
+
+    // Bluetooth adapter info (returned by SYS_BTINFO)
+    struct BtAdapterInfo {
+        uint8_t  bdAddr[6];
+        uint8_t  initialized;
+        uint8_t  scanning;
+        char     name[64];
+    };
+
+    struct ProcInfo {
+        int32_t  pid;
+        int32_t  parentPid;
+        uint8_t  state;        // 0=Free, 1=Ready, 2=Running, 3=Terminated
+        uint8_t  _pad[3];
+        char     name[64];
+        uint64_t heapUsed;     // heapNext - UserHeapBase (bytes)
+    };
+
+    struct MemStats {
+        uint64_t totalBytes;
+        uint64_t freeBytes;
+        uint64_t usedBytes;
+        uint64_t pageSize;
+    };
+
+}

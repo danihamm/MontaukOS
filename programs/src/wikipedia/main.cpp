@@ -90,12 +90,14 @@ static void px_fill(uint32_t* px, int bw, int x, int y, int w, int h, Color c) {
     int x0 = x < 0 ? 0 : x,  y0 = y < 0 ? 0 : y;
     int x1 = x + w,           y1 = y + h;
     if (x1 > bw) x1 = bw;
+    if (y1 > g_win_h) y1 = g_win_h;
     for (int row = y0; row < y1; row++)
         for (int col = x0; col < x1; col++)
             px[row * bw + col] = v;
 }
 
 static void px_hline(uint32_t* px, int bw, int x, int y, int len, Color c) {
+    if (y < 0 || y >= g_win_h) return;
     uint32_t v = c.to_pixel();
     int x1 = x + len;
     if (x < 0) x = 0;
@@ -105,8 +107,12 @@ static void px_hline(uint32_t* px, int bw, int x, int y, int len, Color c) {
 }
 
 static void px_vline(uint32_t* px, int bw, int x, int y, int len, Color c) {
+    if (x < 0 || x >= bw) return;
     uint32_t v = c.to_pixel();
-    for (int row = y; row < y + len; row++)
+    int y1 = y + len;
+    if (y < 0) y = 0;
+    if (y1 > g_win_h) y1 = g_win_h;
+    for (int row = y; row < y1; row++)
         px[row * bw + x] = v;
 }
 

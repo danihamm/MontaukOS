@@ -18,6 +18,7 @@ endif
 PROG_INC := ../../include
 JPEG_LIB := ../../lib/libjpeg
 LIBC_LIB := ../../lib/libc
+BEARSSL  := ../../lib/bearssl
 LINK_LD  := ../../link.ld
 BINDIR   := ../../bin
 OBJDIR   := obj
@@ -48,6 +49,8 @@ CXXFLAGS := \
     -mcmodel=small \
     -MMD -MP \
     -I $(PROG_INC) \
+    -isystem $(PROG_INC)/libc \
+    -I $(BEARSSL)/inc \
     -isystem ../../../kernel/freestnd-c-hdrs/x86_64/include \
     -isystem ../../../kernel/freestnd-cxx-hdrs/x86_64/include
 
@@ -79,7 +82,7 @@ all: $(TARGET)
 
 # ---- Libraries ----
 
-LIBS := $(JPEG_LIB)/libjpeg.a $(LIBC_LIB)/liblibc.a
+LIBS := $(JPEG_LIB)/libjpeg.a $(BEARSSL)/libbearssl.a $(LIBC_LIB)/liblibc.a
 
 $(TARGET): $(OBJS) $(LIBS) $(LINK_LD) Makefile
 	mkdir -p $(BINDIR)/os

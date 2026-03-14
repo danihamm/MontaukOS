@@ -1,0 +1,32 @@
+/*
+ * stb_truetype_impl.cpp
+ * Single compilation unit for stb_truetype in MontaukOS freestanding environment
+ */
+
+#include <cstdint>
+#include <cstddef>
+#include <montauk/heap.h>
+#include <montauk/string.h>
+#include <gui/stb_math.h>
+
+#define STBTT_ifloor(x)   ((int) stb_floor(x))
+#define STBTT_iceil(x)    ((int) stb_ceil(x))
+#define STBTT_sqrt(x)     stb_sqrt(x)
+#define STBTT_pow(x,y)    stb_pow(x,y)
+#define STBTT_fmod(x,y)   stb_fmod(x,y)
+#define STBTT_cos(x)      stb_cos(x)
+#define STBTT_acos(x)     stb_acos(x)
+#define STBTT_fabs(x)     stb_fabs(x)
+
+#define STBTT_malloc(x,u)  ((void)(u), montauk::malloc(x))
+#define STBTT_free(x,u)    ((void)(u), montauk::mfree(x))
+
+#define STBTT_memcpy(d,s,n) montauk::memcpy(d,s,n)
+#define STBTT_memset(d,v,n) montauk::memset(d,v,n)
+
+#define STBTT_strlen(x)    montauk::slen(x)
+
+#define STBTT_assert(x)    ((void)(x))
+
+#define STB_TRUETYPE_IMPLEMENTATION
+#include <gui/stb_truetype.h>

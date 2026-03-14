@@ -32,6 +32,8 @@ namespace Fs::Ramdisk {
     void Close(int handle);
 
     int ReadDir(const char* path, const char** outNames, int maxEntries);
+    int Delete(const char* path);
+    int Mkdir(const char* path);
     int GetFileCount();
 
 }

@@ -360,7 +360,12 @@ static void filemanager_go_up(FileManagerState* fm) {
         if (fm->current_path[i] == '/') { last_slash = i; break; }
     }
     if (last_slash >= 0) {
-        fm->current_path[last_slash + 1] = '\0';
+        // Keep the slash only if it's the root slash (right after "N:")
+        if (last_slash > 0 && fm->current_path[last_slash - 1] == ':') {
+            fm->current_path[last_slash + 1] = '\0';
+        } else {
+            fm->current_path[last_slash] = '\0';
+        }
     }
     filemanager_push_history(fm);
     filemanager_read_dir(fm);

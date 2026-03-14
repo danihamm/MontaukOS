@@ -36,11 +36,19 @@ namespace Montauk {
         auto* proc = Sched::GetCurrentProcessPtr();
         if (proc == nullptr) return 0;
 
+        // Guard against overflow before rounding
+        static constexpr uint64_t USER_SPACE_END = 0x0000800000000000ULL;
+        if (size > 0xFFFFFFFFFFFF0000ULL) return 0;
+
         // Round up to page boundary
         size = (size + 0xFFF) & ~0xFFFULL;
         if (size == 0) size = 0x1000;
 
         uint64_t userVa = proc->heapNext;
+
+        // Ensure allocation stays within user address space
+        if (userVa + size < userVa || userVa + size > USER_SPACE_END) return 0;
+
         uint64_t numPages = size / 0x1000;
 
         // Allocate physical pages and map them into the process

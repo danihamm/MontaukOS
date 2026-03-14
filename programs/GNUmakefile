@@ -59,7 +59,7 @@ BINDIR := bin
 PROGRAMS := $(notdir $(wildcard src/*))
 
 # Programs with custom Makefiles (built separately).
-CUSTOM_BUILDS := doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer installer volume music bluetooth desktop
+CUSTOM_BUILDS := doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer installer volume music bluetooth desktop login shell
 SYSTEM_PROGRAMS := $(filter-out $(CUSTOM_BUILDS),$(PROGRAMS))
 
 # Build targets: system programs go to bin/os/, apps go to bin/apps/<name>/.
@@ -78,12 +78,12 @@ WWWDST := $(patsubst $(WWWDIR)/%,$(BINDIR)/www/%,$(WWWSRC))
 # CA certificate bundle.
 CA_CERTS := $(BINDIR)/etc/ca-certificates.crt
 
-# Home directory placeholder.
-HOMEKEEP := $(BINDIR)/home/.keep
+# Common shared assets (wallpapers, etc.)
+COMMONKEEP := $(BINDIR)/common/.keep
 
-.PHONY: all clean doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer installer volume music bluetooth desktop icons fonts bearssl libc tls libjpeg install-apps
+.PHONY: all clean doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer installer volume music bluetooth login desktop shell icons fonts bearssl libc tls libjpeg install-apps
 
-all: bearssl libc libjpeg tls $(TARGETS) fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer installer volume music bluetooth doom desktop icons fonts install-apps $(MANDST) $(WWWDST) $(CA_CERTS) $(HOMEKEEP)
+all: bearssl libc libjpeg tls $(TARGETS) fetch wiki wikipedia weather imageviewer fontpreview spreadsheet pdfviewer disks devexplorer installer volume music bluetooth doom login desktop shell icons fonts install-apps $(MANDST) $(WWWDST) $(CA_CERTS) $(COMMONKEEP)
 
 # Build BearSSL static library (cross-compiled for freestanding x86_64).
 BEARSSL_INCLUDES := -isystem $(shell cd .. && pwd)/kernel/freestnd-c-hdrs/x86_64/include -isystem $(abspath include/libc)
@@ -164,8 +164,16 @@ music: libc
 bluetooth: libc
 	$(MAKE) -C src/bluetooth
 
-# Build desktop via its own Makefile (depends on libc and libjpeg for wallpaper).
-desktop: libc libjpeg
+# Build login screen via its own Makefile (depends on bearssl and libc).
+login: bearssl libc
+	$(MAKE) -C src/login
+
+# Build shell via its own Makefile (multi-file build).
+shell:
+	$(MAKE) -C src/shell
+
+# Build desktop via its own Makefile (depends on libc, libjpeg, and bearssl for user.h).
+desktop: libc libjpeg bearssl
 	$(MAKE) -C src/desktop
 
 # Copy SVG icons for the desktop into bin/icons/.
@@ -199,9 +207,9 @@ $(CA_CERTS): data/ca-certificates.crt
 	mkdir -p $(BINDIR)/etc
 	cp $< $@
 
-# Create empty home directory with a keep file.
-$(HOMEKEEP):
-	mkdir -p $(BINDIR)/home
+# Ensure common assets directory exists.
+$(COMMONKEEP):
+	mkdir -p $(BINDIR)/common
 	touch $@
 
 # Build each system program from its source files.
@@ -218,6 +226,8 @@ clean:
 	$(MAKE) -C lib/tls clean
 	$(MAKE) -C src/fetch clean
 	$(MAKE) -C src/doom clean
+	$(MAKE) -C src/login clean
+	$(MAKE) -C src/shell clean
 	$(MAKE) -C src/desktop clean
 	$(MAKE) -C src/wikipedia clean
 	$(MAKE) -C src/weather clean

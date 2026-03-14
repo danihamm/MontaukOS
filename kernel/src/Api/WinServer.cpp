@@ -29,8 +29,8 @@ namespace WinServer {
         }
         if (slotIdx < 0) return -1;
 
-        // Validate dimensions
-        if (w <= 0 || h <= 0) return -1;
+        // Validate dimensions (cap at 16384 to prevent integer overflow in w*h*4)
+        if (w <= 0 || h <= 0 || w > 16384 || h > 16384) return -1;
         uint64_t bufSize = (uint64_t)w * h * 4;
         int numPages = (int)((bufSize + 0xFFF) / 0x1000);
         if (numPages > MaxPixelPages) return -1;
@@ -207,7 +207,7 @@ namespace WinServer {
         if (windowId < 0 || windowId >= MaxWindows) return -1;
         WindowSlot& slot = g_slots[windowId];
         if (!slot.used || slot.ownerPid != callerPid) return -1;
-        if (newW <= 0 || newH <= 0) return -1;
+        if (newW <= 0 || newH <= 0 || newW > 16384 || newH > 16384) return -1;
         if (newW == slot.width && newH == slot.height) {
             outVa = slot.ownerVa;
             return 0;

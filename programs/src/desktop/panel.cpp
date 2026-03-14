@@ -105,14 +105,42 @@ void gui::desktop_draw_panel(DesktopState* ds) {
     int date_x = clock_x - date_w - 10;
     draw_text(fb, date_x, clock_y, date_str, colors::PANEL_TEXT);
 
-    // Network icon (to the left of the date)
+    // Volume icon (to the left of the date)
     uint64_t now = montauk::get_milliseconds();
+    if (now - ds->vol_last_poll > 5000) {
+        int v = montauk::audio_get_volume(0);
+        if (v >= 0 && !ds->vol_muted) ds->vol_level = v;
+        ds->vol_last_poll = now;
+    }
+
+    int vol_icon_x = date_x - 16 - 12;
+    int vol_icon_y = (PANEL_HEIGHT - 16) / 2;
+    ds->vol_icon_rect = {vol_icon_x, vol_icon_y, 16, 16};
+
+    if (ds->icon_volume.pixels) {
+        if (ds->vol_muted) {
+            // Tint red-ish when muted
+            uint32_t* src = ds->icon_volume.pixels;
+            int npx = 16 * 16;
+            uint32_t tinted[256];
+            for (int p = 0; p < npx; p++) {
+                uint32_t px = src[p];
+                uint8_t a = (px >> 24) & 0xFF;
+                tinted[p] = ((uint32_t)a << 24) | 0x00CC3333;
+            }
+            fb.blit_alpha(vol_icon_x, vol_icon_y, 16, 16, tinted);
+        } else {
+            fb.blit_alpha(vol_icon_x, vol_icon_y, ds->icon_volume.width, ds->icon_volume.height, ds->icon_volume.pixels);
+        }
+    }
+
+    // Network icon (to the left of the volume icon)
     if (now - ds->net_cfg_last_poll > 5000) {
         montauk::get_netcfg(&ds->cached_net_cfg);
         ds->net_cfg_last_poll = now;
     }
 
-    int net_icon_x = date_x - 16 - 12;
+    int net_icon_x = vol_icon_x - 16 - 10;
     int net_icon_y = (PANEL_HEIGHT - 16) / 2;
     ds->net_icon_rect = {net_icon_x, net_icon_y, 16, 16};
 
@@ -237,51 +265,203 @@ void desktop_draw_app_menu(DesktopState* ds) {
 
 void desktop_draw_net_popup(DesktopState* ds) {
     Framebuffer& fb = ds->fb;
+    Montauk::NetCfg& nc = ds->cached_net_cfg;
+    bool connected = nc.ipAddress != 0;
 
     int popup_w = 220;
-    int popup_h = 130;
+    int fh = system_font_height();
+    int row_h = fh + 8;
+    int header_h = row_h + 8;       // title + status row + padding
+    int body_rows = 5;               // IP, Subnet, Gateway, DNS, MAC
+    int popup_h = header_h + row_h * body_rows + 12;
     int popup_x = ds->net_icon_rect.x + ds->net_icon_rect.w - popup_w;
     int popup_y = PANEL_HEIGHT + 2;
     if (popup_x < 4) popup_x = 4;
 
     draw_shadow(fb, popup_x, popup_y, popup_w, popup_h, 4, colors::SHADOW);
-    fb.fill_rect(popup_x, popup_y, popup_w, popup_h, colors::MENU_BG);
+    fill_rounded_rect(fb, popup_x, popup_y, popup_w, popup_h, 8, colors::MENU_BG);
     draw_rect(fb, popup_x, popup_y, popup_w, popup_h, colors::BORDER);
 
-    int tx = popup_x + 12;
+    int lx = popup_x + 14;
     int ty = popup_y + 10;
-    int line_h = system_font_height() + 6;
-    char line[64];
 
-    Montauk::NetCfg& nc = ds->cached_net_cfg;
+    // Header: "Ethernet" + status dot
+    draw_text(fb, lx, ty, "Ethernet", colors::TEXT_COLOR);
 
-    if (nc.ipAddress != 0) {
-        char ipbuf[20];
-        format_ip(ipbuf, nc.ipAddress);
-        snprintf(line, sizeof(line), "IP:      %s", ipbuf);
-    } else {
-        snprintf(line, sizeof(line), "IP:      Not connected");
+    // Status dot + label (right-aligned in header)
+    Color dot_color = connected
+        ? Color::from_rgb(0x4C, 0xAF, 0x50)   // green
+        : Color::from_rgb(0xCC, 0x33, 0x33);   // red
+    const char* status_str = connected ? "Connected" : "Disconnected";
+    int sw = text_width(status_str);
+    int dot_r = 4;
+    int status_x = popup_x + popup_w - 14 - sw;
+    int dot_x = status_x - dot_r * 2 - 5;
+    int dot_cy = ty + fh / 2;
+    for (int dy = -dot_r; dy <= dot_r; dy++)
+        for (int dx = -dot_r; dx <= dot_r; dx++)
+            if (dx * dx + dy * dy <= dot_r * dot_r)
+                fb.put_pixel(dot_x + dot_r + dx, dot_cy + dy, dot_color);
+    Color dim = Color::from_rgb(0x66, 0x66, 0x66);
+    draw_text(fb, status_x, ty, status_str, dim);
+
+    ty += row_h + 2;
+
+    // Separator line
+    for (int sx = popup_x + 10; sx < popup_x + popup_w - 10; sx++)
+        fb.put_pixel(sx, ty, colors::BORDER);
+    ty += 6;
+
+    // Body rows: label (dim) + value (dark), two-column
+    int val_x = popup_x + 76;  // fixed column for values
+
+    struct NetRow { const char* label; char value[24]; };
+    NetRow rows[5];
+
+    rows[0].label = "IP";
+    if (connected) format_ip(rows[0].value, nc.ipAddress);
+    else montauk::strcpy(rows[0].value, "\xE2\x80\x94");  // em dash
+
+    rows[1].label = "Subnet";
+    format_ip(rows[1].value, nc.subnetMask);
+
+    rows[2].label = "Gateway";
+    format_ip(rows[2].value, nc.gateway);
+
+    rows[3].label = "DNS";
+    format_ip(rows[3].value, nc.dnsServer);
+
+    rows[4].label = "MAC";
+    format_mac(rows[4].value, nc.macAddress);
+
+    for (int i = 0; i < body_rows; i++) {
+        draw_text(fb, lx, ty, rows[i].label, dim);
+        draw_text(fb, val_x, ty, rows[i].value, colors::TEXT_COLOR);
+        ty += row_h;
     }
-    draw_text(fb, tx, ty, line, colors::TEXT_COLOR);
-    ty += line_h;
+}
 
-    char buf[20];
-    format_ip(buf, nc.subnetMask);
-    snprintf(line, sizeof(line), "Subnet:  %s", buf);
-    draw_text(fb, tx, ty, line, colors::TEXT_COLOR);
-    ty += line_h;
+// ============================================================================
+// Volume Popup
+// ============================================================================
 
-    format_ip(buf, nc.gateway);
-    snprintf(line, sizeof(line), "Gateway: %s", buf);
-    draw_text(fb, tx, ty, line, colors::TEXT_COLOR);
-    ty += line_h;
+static constexpr int VOL_POPUP_W = 200;
+static constexpr int VOL_POPUP_H = 120;
+static constexpr int VOL_SLIDER_X = 16;
+static constexpr int VOL_SLIDER_W = VOL_POPUP_W - 32;
+static constexpr int VOL_SLIDER_H = 8;
+static constexpr int VOL_KNOB_R   = 8;
 
-    format_ip(buf, nc.dnsServer);
-    snprintf(line, sizeof(line), "DNS:     %s", buf);
-    draw_text(fb, tx, ty, line, colors::TEXT_COLOR);
-    ty += line_h;
+void desktop_draw_vol_popup(DesktopState* ds) {
+    Framebuffer& fb = ds->fb;
 
-    format_mac(buf, nc.macAddress);
-    snprintf(line, sizeof(line), "MAC:     %s", buf);
-    draw_text(fb, tx, ty, line, colors::TEXT_COLOR);
+    int popup_x = ds->vol_icon_rect.x + ds->vol_icon_rect.w - VOL_POPUP_W;
+    int popup_y = PANEL_HEIGHT + 2;
+    if (popup_x < 4) popup_x = 4;
+
+    draw_shadow(fb, popup_x, popup_y, VOL_POPUP_W, VOL_POPUP_H, 4, colors::SHADOW);
+    fill_rounded_rect(fb, popup_x, popup_y, VOL_POPUP_W, VOL_POPUP_H, 8, colors::MENU_BG);
+    draw_rect(fb, popup_x, popup_y, VOL_POPUP_W, VOL_POPUP_H, colors::BORDER);
+
+    int display_vol = ds->vol_muted ? 0 : ds->vol_level;
+
+    // Volume percentage label
+    char vol_str[8];
+    snprintf(vol_str, sizeof(vol_str), "%d%%", display_vol);
+    int vw = text_width(vol_str);
+    Color vol_color = ds->vol_muted ? Color::from_rgb(0xCC, 0x33, 0x33) : ds->settings.accent_color;
+    draw_text(fb, popup_x + (VOL_POPUP_W - vw) / 2, popup_y + 12, vol_str, vol_color);
+
+    // "Muted" sub-label
+    if (ds->vol_muted) {
+        const char* ml = "Muted";
+        int mw = text_width(ml);
+        draw_text(fb, popup_x + (VOL_POPUP_W - mw) / 2,
+                  popup_y + 12 + system_font_height() + 2, ml,
+                  Color::from_rgb(0xCC, 0x33, 0x33));
+    }
+
+    // Slider track
+    int slider_abs_x = popup_x + VOL_SLIDER_X;
+    int slider_abs_y = popup_y + 56;
+    fill_rounded_rect(fb, slider_abs_x, slider_abs_y, VOL_SLIDER_W, VOL_SLIDER_H, 4,
+                      Color::from_rgb(0xDD, 0xDD, 0xDD));
+
+    // Filled portion
+    int fill_w = (display_vol * VOL_SLIDER_W) / 100;
+    if (fill_w > 0)
+        fill_rounded_rect(fb, slider_abs_x, slider_abs_y, fill_w, VOL_SLIDER_H, 4,
+                          ds->settings.accent_color);
+
+    // Knob
+    int knob_cx = slider_abs_x + fill_w;
+    int knob_cy = slider_abs_y + VOL_SLIDER_H / 2;
+    // Draw filled circle for knob
+    for (int dy = -VOL_KNOB_R; dy <= VOL_KNOB_R; dy++) {
+        for (int dx = -VOL_KNOB_R; dx <= VOL_KNOB_R; dx++) {
+            if (dx * dx + dy * dy <= VOL_KNOB_R * VOL_KNOB_R) {
+                int px = knob_cx + dx;
+                int py = knob_cy + dy;
+                if (px >= 0 && px < ds->screen_w && py >= 0 && py < ds->screen_h)
+                    fb.put_pixel(px, py, ds->settings.accent_color);
+            }
+        }
+    }
+    // White center
+    int inner_r = VOL_KNOB_R - 3;
+    for (int dy = -inner_r; dy <= inner_r; dy++) {
+        for (int dx = -inner_r; dx <= inner_r; dx++) {
+            if (dx * dx + dy * dy <= inner_r * inner_r) {
+                int px = knob_cx + dx;
+                int py = knob_cy + dy;
+                if (px >= 0 && px < ds->screen_w && py >= 0 && py < ds->screen_h)
+                    fb.put_pixel(px, py, Color::from_rgb(0xFF, 0xFF, 0xFF));
+            }
+        }
+    }
+
+    // Buttons: [-] [+] [Mute]
+    int btn_h = 24;
+    int btn_y = popup_y + 78;
+    int btn_rad = 6;
+
+    int minus_w = 36;
+    int plus_w = 36;
+    int mute_w = 50;
+    int gap = 8;
+    int total_w = minus_w + plus_w + mute_w + gap * 2;
+    int bx = popup_x + (VOL_POPUP_W - total_w) / 2;
+
+    int mmx = ds->mouse.x;
+    int mmy = ds->mouse.y;
+
+    // [-] button
+    Color minus_bg = Color::from_rgb(0xE0, 0xE0, 0xE0);
+    Rect minus_r = {bx, btn_y, minus_w, btn_h};
+    if (minus_r.contains(mmx, mmy)) minus_bg = Color::from_rgb(0xD0, 0xD0, 0xD0);
+    fill_rounded_rect(fb, bx, btn_y, minus_w, btn_h, btn_rad, minus_bg);
+    int tw = text_width("-");
+    draw_text(fb, bx + (minus_w - tw) / 2, btn_y + (btn_h - system_font_height()) / 2, "-", colors::TEXT_COLOR);
+    bx += minus_w + gap;
+
+    // [+] button
+    Color plus_bg = Color::from_rgb(0xE0, 0xE0, 0xE0);
+    Rect plus_r = {bx, btn_y, plus_w, btn_h};
+    if (plus_r.contains(mmx, mmy)) plus_bg = Color::from_rgb(0xD0, 0xD0, 0xD0);
+    fill_rounded_rect(fb, bx, btn_y, plus_w, btn_h, btn_rad, plus_bg);
+    tw = text_width("+");
+    draw_text(fb, bx + (plus_w - tw) / 2, btn_y + (btn_h - system_font_height()) / 2, "+", colors::TEXT_COLOR);
+    bx += plus_w + gap;
+
+    // [Mute] button
+    Color mute_bg = ds->vol_muted ? Color::from_rgb(0xCC, 0x33, 0x33) : Color::from_rgb(0xE0, 0xE0, 0xE0);
+    Color mute_fg = ds->vol_muted ? Color::from_rgb(0xFF, 0xFF, 0xFF) : colors::TEXT_COLOR;
+    Rect mute_r = {bx, btn_y, mute_w, btn_h};
+    if (mute_r.contains(mmx, mmy)) {
+        if (ds->vol_muted) mute_bg = Color::from_rgb(0xAA, 0x22, 0x22);
+        else mute_bg = Color::from_rgb(0xD0, 0xD0, 0xD0);
+    }
+    fill_rounded_rect(fb, bx, btn_y, mute_w, btn_h, btn_rad, mute_bg);
+    tw = text_width("Mute");
+    draw_text(fb, bx + (mute_w - tw) / 2, btn_y + (btn_h - system_font_height()) / 2, "Mute", mute_fg);
 }

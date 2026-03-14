@@ -199,8 +199,8 @@ extern "C" void kmain() {
             Fs::Ramdisk::ReadDir,
             Fs::Ramdisk::Write,
             Fs::Ramdisk::Create,
-            nullptr,
-            nullptr
+            Fs::Ramdisk::Delete,
+            Fs::Ramdisk::Mkdir
         };
         Fs::Vfs::RegisterDrive(0, &ramdiskDriver);
     }

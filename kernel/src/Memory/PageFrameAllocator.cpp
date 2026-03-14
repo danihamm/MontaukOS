@@ -63,6 +63,7 @@ namespace Memory {
 
     void* PageFrameAllocator::AllocateZeroed() {
         auto page = Allocate();
+        if (page == nullptr) return nullptr;
         memset(page, 0, 0x1000);
 
         return page;

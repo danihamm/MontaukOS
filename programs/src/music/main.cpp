@@ -7,6 +7,7 @@
 #include <montauk/syscall.h>
 #include <montauk/string.h>
 #include <montauk/heap.h>
+#include <montauk/config.h>
 #include <gui/gui.hpp>
 #include <gui/truetype.hpp>
 #include <gui/svg.hpp>
@@ -922,6 +923,22 @@ extern "C" void _start() {
     g.hovered_item = -1;
 
     // Parse arguments: accept a directory path or a file path
+    // Helper: set dir_path to current user's home via session config
+    auto set_user_home = [&]() {
+        auto doc = montauk::config::load("session");
+        const char* name = doc.get_string("session.username", "");
+        if (name[0]) {
+            int p = 0;
+            const char* pfx = "0:/users/";
+            while (*pfx && p < (int)sizeof(g.dir_path) - 1) g.dir_path[p++] = *pfx++;
+            while (*name && p < (int)sizeof(g.dir_path) - 1) g.dir_path[p++] = *name++;
+            g.dir_path[p] = '\0';
+        } else {
+            memcpy(g.dir_path, "0:/home", 8);
+        }
+        doc.destroy();
+    };
+
     char arg_file[128] = {};
     {
         char args[256];
@@ -943,7 +960,7 @@ extern "C" void _start() {
                         arg_file[flen] = '\0';
                     }
                 } else {
-                    memcpy(g.dir_path, "0:/home", 8);
+                    set_user_home();
                 }
             } else {
                 int len = montauk::slen(args);
@@ -952,7 +969,7 @@ extern "C" void _start() {
                 g.dir_path[len] = '\0';
             }
         } else {
-            memcpy(g.dir_path, "0:/home", 8);
+            set_user_home();
         }
     }
 

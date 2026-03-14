@@ -157,10 +157,13 @@ extern "C" void _start() {
     // ---- Stage 1: Network configuration (non-blocking) ----
     run_service("0:/os/dhcp.elf", "dhcp", false);
 
-    // ---- Stage 2: Desktop environment (falls back to shell) ----
-    if (!run_service("0:/os/desktop.elf", "desktop")) {
-        log_warn("Desktop failed, falling back to shell");
-        run_service("0:/os/shell.elf", "shell");
+    // ---- Stage 2: Login screen -> desktop (falls back to desktop, then shell) ----
+    if (!run_service("0:/os/login.elf", "login")) {
+        log_warn("Login failed, falling back to desktop");
+        if (!run_service("0:/os/desktop.elf", "desktop")) {
+            log_warn("Desktop failed, falling back to shell");
+            run_service("0:/os/shell.elf", "shell");
+        }
     }
 
     log_warn("All services exited");

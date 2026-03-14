@@ -395,6 +395,10 @@ void *malloc(size_t size) {
         g_heapInit = 1;
     }
 
+    /* Guard against overflow: size + Header must not wrap */
+    if (size > (uint64_t)-1 - sizeof(struct HeapHeader) - 15)
+        return NULL;
+
     uint64_t needed = size + sizeof(struct HeapHeader);
     needed = (needed + 15) & ~15ULL;
 
@@ -455,6 +459,9 @@ void free(void *ptr) {
 }
 
 void *calloc(size_t nmemb, size_t size) {
+    /* Check for multiplication overflow */
+    if (nmemb != 0 && size > (size_t)-1 / nmemb)
+        return NULL;
     size_t total = nmemb * size;
     void *p = malloc(total);
     if (p) memset(p, 0, total);
@@ -540,7 +547,36 @@ long strtol(const char *nptr, char **endptr, int base) {
 }
 
 unsigned long strtoul(const char *nptr, char **endptr, int base) {
-    return (unsigned long)strtol(nptr, endptr, base);
+    const char *s = nptr;
+    unsigned long val = 0;
+
+    while (isspace((unsigned char)*s)) s++;
+    /* strtoul allows an optional leading + or - (result is negated for -) */
+    int neg = 0;
+    if (*s == '-') { neg = 1; s++; }
+    else if (*s == '+') { s++; }
+
+    if (base == 0) {
+        if (*s == '0' && (s[1] == 'x' || s[1] == 'X')) { base = 16; s += 2; }
+        else if (*s == '0') { base = 8; s++; }
+        else base = 10;
+    } else if (base == 16 && *s == '0' && (s[1] == 'x' || s[1] == 'X')) {
+        s += 2;
+    }
+
+    while (*s) {
+        int digit;
+        if (*s >= '0' && *s <= '9') digit = *s - '0';
+        else if (*s >= 'a' && *s <= 'z') digit = *s - 'a' + 10;
+        else if (*s >= 'A' && *s <= 'Z') digit = *s - 'A' + 10;
+        else break;
+        if (digit >= base) break;
+        val = val * (unsigned long)base + (unsigned long)digit;
+        s++;
+    }
+
+    if (endptr) *endptr = (char *)s;
+    return neg ? (unsigned long)(-(long)val) : val;
 }
 
 char *getenv(const char *name) {

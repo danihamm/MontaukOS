@@ -1,75 +1,30 @@
 /*
     * main.cpp
-    * Interactive shell for MontaukOS
-    * Copyright (c) 2025 Daniel Hammer
+    * Entry point, input loop, command dispatch, and chaining
+    * Copyright (c) 2025-2026 Daniel Hammer
 */
 
-#include <montauk/syscall.h>
-#include <montauk/string.h>
+#include "shell.h"
 
-using montauk::slen;
-using montauk::streq;
-using montauk::starts_with;
-using montauk::skip_spaces;
+// ---- Shared state definitions ----
 
-static void scopy(char* dst, const char* src, int maxLen) {
-    int i = 0;
-    while (src[i] && i < maxLen - 1) { dst[i] = src[i]; i++; }
-    dst[i] = '\0';
-}
+char cwd[128] = "";
+int current_drive = 0;
+int last_exit = 0;
+char session_user[32] = "";
+char session_home[64] = "";
 
-static void scat(char* dst, const char* src, int maxLen) {
-    int dLen = slen(dst);
-    int i = 0;
-    while (src[i] && dLen + i < maxLen - 1) {
-        dst[dLen + i] = src[i];
-        i++;
+// ---- Session info (read once at startup) ----
+
+void read_session() {
+    auto doc = montauk::config::load("session");
+    const char* name = doc.get_string("session.username", "");
+    if (name[0]) {
+        scopy(session_user, name, sizeof(session_user));
+        scopy(session_home, "0:/users/", sizeof(session_home));
+        scat(session_home, session_user, sizeof(session_home));
     }
-    dst[dLen + i] = '\0';
-}
-
-// Current working directory (relative to N:/).
-// "" = root, "man" = 0:/man, "man/sub" = 0:/man/sub
-static char cwd[128] = "";
-static int current_drive = 0;
-
-// Build VFS path with explicit drive number
-static void build_drive_path(int drive, const char* dir, char* out, int outMax) {
-    int i = 0;
-    if (drive >= 10) { out[i++] = '0' + drive / 10; }
-    out[i++] = '0' + drive % 10;
-    out[i++] = ':'; out[i++] = '/';
-    if (dir && dir[0]) {
-        int j = 0;
-        while (dir[j] && i < outMax - 1) out[i++] = dir[j++];
-    }
-    out[i] = '\0';
-}
-
-// Build VFS directory path: "N:/" or "N:/<dir>" using current_drive
-static void build_dir_path(const char* dir, char* out, int outMax) {
-    build_drive_path(current_drive, dir, out, outMax);
-}
-
-// Parse drive number from a drive prefix like "0:" or "12:". Returns -1 if invalid.
-static int parse_drive_prefix(const char* s) {
-    if (s[0] < '0' || s[0] > '9') return -1;
-    int n = s[0] - '0';
-    if (s[1] >= '0' && s[1] <= '9') {
-        n = n * 10 + (s[1] - '0');
-        if (s[2] != ':') return -1;
-    } else if (s[1] == ':') {
-        // single digit drive
-    } else {
-        return -1;
-    }
-    return n;
-}
-
-// Length of drive prefix ("0:" = 2, "12:" = 3). Assumes valid prefix.
-static int drive_prefix_len(const char* s) {
-    if (s[1] >= '0' && s[1] <= '9') return 3; // e.g. "12:"
-    return 2; // e.g. "0:"
+    doc.destroy();
 }
 
 // ---- Command history ----
@@ -77,11 +32,10 @@ static int drive_prefix_len(const char* s) {
 static constexpr int HISTORY_MAX = 32;
 static char history[HISTORY_MAX][256];
 static int history_count = 0;
-static int history_next = 0; // ring-buffer write index
+static int history_next = 0;
 
 static void history_add(const char* line) {
     if (line[0] == '\0') return;
-    // Don't add duplicate of last entry
     if (history_count > 0) {
         int prev = (history_next + HISTORY_MAX - 1) % HISTORY_MAX;
         if (streq(history[prev], line)) return;
@@ -91,7 +45,6 @@ static void history_add(const char* line) {
     if (history_count < HISTORY_MAX) history_count++;
 }
 
-// Get history entry by index (0 = most recent, 1 = one before that, ...)
 static const char* history_get(int idx) {
     if (idx < 0 || idx >= history_count) return nullptr;
     int pos = (history_next + HISTORY_MAX - 1 - idx) % HISTORY_MAX;
@@ -116,16 +69,13 @@ static void prompt() {
     montauk::print("> ");
 }
 
-// ---- Erase current input line on screen ----
+// ---- Line editing ----
 
 static void erase_input(int len) {
-    // Move cursor to start of input and overwrite with spaces
     for (int i = 0; i < len; i++) montauk::putchar('\b');
     for (int i = 0; i < len; i++) montauk::putchar(' ');
     for (int i = 0; i < len; i++) montauk::putchar('\b');
 }
-
-// ---- Replace visible line with new content ----
 
 static void replace_line(char* line, int* pos, const char* newContent) {
     int oldLen = *pos;
@@ -140,386 +90,43 @@ static void replace_line(char* line, int* pos, const char* newContent) {
     *pos = newLen;
 }
 
-// ---- Builtin: help ----
+// ---- Command dispatch (single command, already expanded) ----
 
-static void cmd_help() {
-    montauk::print("Shell builtins:\n");
-    montauk::print("  help          Show this help message\n");
-    montauk::print("  ls [dir]      List files in directory\n");
-    montauk::print("  cd [dir]      Change working directory\n");
-    montauk::print("  N:            Switch to drive N (e.g. 1:)\n");
-    montauk::print("  exit          Exit the shell\n");
-    montauk::print("\n");
-    montauk::print("System commands:\n");
-    montauk::print("  man <topic>   View manual pages\n");
-    montauk::print("  cat <file>    Display file contents\n");
-    montauk::print("  edit [file]   Text editor\n");
-    montauk::print("  info          Show system information\n");
-    montauk::print("  date          Show current date and time\n");
-    montauk::print("  uptime        Show uptime\n");
-    montauk::print("  clear         Clear the screen\n");
-    montauk::print("  fontscale [n] Set terminal font scale (1-8)\n");
-    montauk::print("  reset         Reboot the system\n");
-    montauk::print("  shutdown      Shut down the system\n");
-    montauk::print("\n");
-    montauk::print("Network commands:\n");
-    montauk::print("  ping <ip>     Send ICMP echo requests\n");
-    montauk::print("  nslookup      DNS lookup\n");
-    montauk::print("  ifconfig      Show/set network configuration\n");
-    montauk::print("  tcpconnect    Connect to a TCP server\n");
-    montauk::print("  irc           IRC client\n");
-    montauk::print("  dhcp          DHCP client\n");
-    montauk::print("  fetch <url>   HTTP client\n");
-    montauk::print("  httpd         HTTP server\n");
-    montauk::print("\n");
-    montauk::print("Games:\n");
-    montauk::print("  doom          DOOM\n");
-    montauk::print("\n");
-    montauk::print("Any .elf on the ramdisk is executable.\n");
-}
-
-// Check if a string already has a VFS drive prefix (e.g. "0:/" or "12:/")
-static bool has_drive_prefix(const char* s) {
-    return parse_drive_prefix(s) >= 0;
-}
-
-// ---- Builtin: ls ----
-
-static void cmd_ls(const char* arg) {
-    arg = skip_spaces(arg);
-
-    // Build the target directory (relative path from root)
-    char dir[128];
-    int drive = current_drive;
-    if (*arg) {
-        if (has_drive_prefix(arg)) {
-            // Absolute VFS path: "N:/something"
-            drive = parse_drive_prefix(arg);
-            int plen = drive_prefix_len(arg);
-            scopy(dir, arg + plen + 1, sizeof(dir)); // skip "N:/"
-        } else if (arg[0] == '/') {
-            // Absolute path from root: "/something"
-            scopy(dir, arg + 1, sizeof(dir));
-        } else if (cwd[0]) {
-            // Relative path with CWD
-            scopy(dir, cwd, sizeof(dir));
-            scat(dir, "/", sizeof(dir));
-            scat(dir, arg, sizeof(dir));
-        } else {
-            // Relative path at root
-            scopy(dir, arg, sizeof(dir));
-        }
-    } else {
-        // ls with no arg -- use cwd
-        scopy(dir, cwd, sizeof(dir));
-    }
-
-    char path[128];
-    build_drive_path(drive, dir, path, sizeof(path));
-
-    const char* entries[64];
-    int count = montauk::readdir(path, entries, 64);
-    if (count <= 0) {
-        montauk::print("(empty)\n");
-        return;
-    }
-
-    // Prefix to strip: "dir/" (if dir is non-empty)
-    int prefixLen = 0;
-    if (dir[0]) prefixLen = slen(dir) + 1;
-
-    for (int i = 0; i < count; i++) {
-        montauk::print("  ");
-        if (prefixLen > 0 && starts_with(entries[i], dir)) {
-            montauk::print(entries[i] + prefixLen);
-        } else {
-            montauk::print(entries[i]);
-        }
-        montauk::putchar('\n');
-    }
-}
-
-// ---- Builtin: cd ----
-
-// Switch to a drive. Returns true if valid.
-static bool switch_drive(int drive) {
-    // Validate drive exists by trying to readdir its root
-    char path[8];
-    build_drive_path(drive, "", path, sizeof(path));
-    const char* entries[1];
-    if (montauk::readdir(path, entries, 1) < 0) return false;
-    current_drive = drive;
-    cwd[0] = '\0';
-    return true;
-}
-
-static void cmd_cd(const char* arg) {
-    arg = skip_spaces(arg);
-
-    // Strip trailing slashes from argument (ls shows dirs as "www/", user may type that)
-    static char argBuf[128];
-    int aLen = 0;
-    while (arg[aLen] && aLen < 127) { argBuf[aLen] = arg[aLen]; aLen++; }
-    argBuf[aLen] = '\0';
-    while (aLen > 0 && argBuf[aLen - 1] == '/') argBuf[--aLen] = '\0';
-    arg = argBuf;
-
-    // cd or cd / -> go to root
-    if (*arg == '\0' || streq(arg, "/")) {
-        cwd[0] = '\0';
-        return;
-    }
-
-    // cd .. -> go up one level
-    if (streq(arg, "..")) {
-        int len = slen(cwd);
-        int last = -1;
-        for (int i = 0; i < len; i++) {
-            if (cwd[i] == '/') last = i;
-        }
-        if (last >= 0) {
-            cwd[last] = '\0';
-        } else {
-            cwd[0] = '\0';
-        }
-        return;
-    }
-
-    // cd /path -> absolute path from root
-    if (arg[0] == '/') {
-        arg++;
-        if (*arg == '\0') { cwd[0] = '\0'; return; }
-        char path[128];
-        build_dir_path(arg, path, sizeof(path));
-        const char* entries[1];
-        if (montauk::readdir(path, entries, 1) < 0) {
-            montauk::print("cd: no such directory: ");
-            montauk::print(arg);
-            montauk::putchar('\n');
-            return;
-        }
-        scopy(cwd, arg, sizeof(cwd));
-        return;
-    }
-
-    // cd N:/ or cd N:/path -> switch drive and optionally cd into path
-    if (has_drive_prefix(arg)) {
-        int drive = parse_drive_prefix(arg);
-        int plen = drive_prefix_len(arg);
-        const char* rel = arg + plen; // points at ":/" or ":"
-        if (*rel == '/') rel++;       // skip the '/'
-
-        // Validate drive exists
-        char rootPath[8];
-        build_drive_path(drive, "", rootPath, sizeof(rootPath));
-        const char* rootEntries[1];
-        if (montauk::readdir(rootPath, rootEntries, 1) < 0) {
-            montauk::print("cd: no such drive: ");
-            montauk::print(arg);
-            montauk::putchar('\n');
-            return;
-        }
-
-        // If there's a path after the drive, validate it
-        if (*rel != '\0') {
-            char path[128];
-            build_drive_path(drive, rel, path, sizeof(path));
-            const char* entries[1];
-            if (montauk::readdir(path, entries, 1) < 0) {
-                montauk::print("cd: no such directory: ");
-                montauk::print(arg);
-                montauk::putchar('\n');
-                return;
-            }
-            current_drive = drive;
-            scopy(cwd, rel, sizeof(cwd));
-        } else {
-            current_drive = drive;
-            cwd[0] = '\0';
-        }
-        return;
-    }
-
-    // Build target directory path (relative to CWD)
-    char target[128];
-    if (cwd[0]) {
-        scopy(target, cwd, sizeof(target));
-        scat(target, "/", sizeof(target));
-        scat(target, arg, sizeof(target));
-    } else {
-        scopy(target, arg, sizeof(target));
-    }
-
-    // Validate: try readdir on the target
-    char path[128];
-    build_dir_path(target, path, sizeof(path));
-    const char* entries[1];
-    int count = montauk::readdir(path, entries, 1);
-    if (count < 0) {
-        montauk::print("cd: no such directory: ");
-        montauk::print(arg);
-        montauk::putchar('\n');
-        return;
-    }
-
-    // Set cwd
-    scopy(cwd, target, sizeof(cwd));
-}
-
-// ---- Builtin: man ----
-
-static void cmd_man(const char* arg) {
-    arg = skip_spaces(arg);
-    if (*arg == '\0') {
-        montauk::print("Usage: man <topic>\n");
-        montauk::print("       man <section> <topic>\n");
-        montauk::print("Try: man intro\n");
-        return;
-    }
-
-    int pid = montauk::spawn("0:/os/man.elf", arg);
-    if (pid < 0) {
-        montauk::print("Error: failed to start man viewer\n");
-    } else {
-        montauk::waitpid(pid);
-    }
-}
-
-// ---- External command execution ----
-
-// Try to spawn an ELF at the given path. Returns true on success.
-static bool try_exec(const char* path, const char* args) {
-    // Check if the file exists before asking the kernel to load it
-    int h = montauk::open(path);
-    if (h < 0) return false;
-    montauk::close(h);
-
-    int pid = montauk::spawn(path, args);
-    if (pid < 0) return false;
-    montauk::waitpid(pid);
-    return true;
-}
-
-// Resolve arguments: expand relative file paths against CWD.
-// Tokens that already have a drive prefix (e.g. "0:/foo") are left as-is.
-// Everything before the first space-delimited token that looks like a path
-// option (starts with '-') is also left as-is.
-static void resolve_args(const char* args, char* out, int outMax) {
-    if (!args || !args[0]) { out[0] = '\0'; return; }
-
-    int o = 0;
-    const char* p = args;
-
-    while (*p && o < outMax - 1) {
-        // Skip spaces, copy them through
-        while (*p == ' ' && o < outMax - 1) { out[o++] = *p++; }
-        if (!*p) break;
-
-        // Extract the token
-        const char* tokStart = p;
-        int tokLen = 0;
-        while (p[tokLen] && p[tokLen] != ' ') tokLen++;
-
-        // Decide whether to resolve this token as a path.
-        // Don't resolve if it already has a drive prefix, or starts with '-'
-        bool resolve = (cwd[0] || current_drive != 0) && !has_drive_prefix(tokStart) && tokStart[0] != '-';
-
-        if (resolve) {
-            // Build candidate resolved path and check if the file exists
-            char candidate[256];
-            int r = 0;
-            if (current_drive >= 10) candidate[r++] = '0' + current_drive / 10;
-            candidate[r++] = '0' + current_drive % 10;
-            candidate[r++] = ':'; candidate[r++] = '/';
-            int j = 0;
-            while (cwd[j] && r < 255) candidate[r++] = cwd[j++];
-            if (cwd[0] && r < 255) candidate[r++] = '/';
-            for (int k = 0; k < tokLen && r < 255; k++) candidate[r++] = tokStart[k];
-            candidate[r] = '\0';
-
-            // Use the resolved path if the file exists. If it doesn't
-            // exist, still use the resolved path when the token looks
-            // like a filename (contains a dot) so that programs creating
-            // new files get the correct drive/directory prefix.
-            int h = montauk::open(candidate);
-            if (h >= 0) {
-                montauk::close(h);
-                for (int k = 0; k < r && o < outMax - 1; k++) out[o++] = candidate[k];
-            } else {
-                bool looksLikeFile = false;
-                for (int k = 0; k < tokLen; k++) {
-                    if (tokStart[k] == '.') { looksLikeFile = true; break; }
-                }
-                if (looksLikeFile) {
-                    for (int k = 0; k < r && o < outMax - 1; k++) out[o++] = candidate[k];
-                } else {
-                    for (int k = 0; k < tokLen && o < outMax - 1; k++) out[o++] = tokStart[k];
-                }
-            }
-        } else {
-            for (int k = 0; k < tokLen && o < outMax - 1; k++) out[o++] = tokStart[k];
-        }
-
-        p = tokStart + tokLen;
-    }
-    out[o] = '\0';
-}
-
-static void exec_external(const char* cmd, const char* args) {
-    char path[256];
-
-    // Resolve arguments against CWD so external programs get full VFS paths
-    char resolvedArgs[512];
-    resolve_args(args, resolvedArgs, sizeof(resolvedArgs));
-    const char* finalArgs = resolvedArgs[0] ? resolvedArgs : nullptr;
-
-    // Always search drive 0 for system commands (os/, games/)
-    // 1. Try 0:/os/<cmd>.elf
-    scopy(path, "0:/os/", sizeof(path));
-    scat(path, cmd, sizeof(path));
-    scat(path, ".elf", sizeof(path));
-    if (try_exec(path, finalArgs)) return;
-
-    // 2. Try 0:/games/<cmd>.elf
-    scopy(path, "0:/games/", sizeof(path));
-    scat(path, cmd, sizeof(path));
-    scat(path, ".elf", sizeof(path));
-    if (try_exec(path, finalArgs)) return;
-
-    // 3. Try N:/<cwd>/<cmd>.elf on current drive (if cwd is set)
-    if (cwd[0]) {
-        build_drive_path(current_drive, "", path, sizeof(path));
-        scat(path, cwd, sizeof(path));
-        scat(path, "/", sizeof(path));
-        scat(path, cmd, sizeof(path));
-        scat(path, ".elf", sizeof(path));
-        if (try_exec(path, finalArgs)) return;
-    }
-
-    // 4. Try N:/<cmd>.elf on current drive
-    build_drive_path(current_drive, "", path, sizeof(path));
-    scat(path, cmd, sizeof(path));
-    scat(path, ".elf", sizeof(path));
-    if (try_exec(path, finalArgs)) return;
-
-    // 5. If on a non-zero drive, also try 0:/<cmd>.elf
-    if (current_drive != 0) {
-        scopy(path, "0:/", sizeof(path));
-        scat(path, cmd, sizeof(path));
-        scat(path, ".elf", sizeof(path));
-        if (try_exec(path, finalArgs)) return;
-    }
-
-    // Not found
-    montauk::print(cmd);
-    montauk::print(": command not found\n");
-}
-
-// ---- Command dispatch ----
-
-static void process_command(const char* line) {
+static int process_command(const char* line) {
     line = skip_spaces(line);
-    if (*line == '\0') return;
+    if (*line == '\0') return 0;
+
+    // Variable assignment: NAME=VALUE
+    {
+        int eq = -1;
+        bool valid = (line[0] >= 'A' && line[0] <= 'Z') ||
+                     (line[0] >= 'a' && line[0] <= 'z') || line[0] == '_';
+        if (valid) {
+            for (int i = 1; line[i]; i++) {
+                if (line[i] == '=') { eq = i; break; }
+                if (!is_var_char(line[i])) break;
+            }
+        }
+        if (eq > 0) {
+            char name[32];
+            int nlen = eq < 31 ? eq : 31;
+            for (int i = 0; i < nlen; i++) name[i] = line[i];
+            name[nlen] = '\0';
+            const char* val = line + eq + 1;
+            int vlen = slen(val);
+            char vbuf[128];
+            if (vlen >= 2 && ((val[0] == '"' && val[vlen-1] == '"') ||
+                              (val[0] == '\'' && val[vlen-1] == '\''))) {
+                int j = 0;
+                for (int i = 1; i < vlen - 1 && j < 127; i++) vbuf[j++] = val[i];
+                vbuf[j] = '\0';
+                var_set(name, vbuf);
+            } else {
+                var_set(name, val);
+            }
+            return 0;
+        }
+    }
 
     // Parse command name and arguments
     char cmd[128];
@@ -543,26 +150,174 @@ static void process_command(const char* line) {
             montauk::print("No such drive: ");
             montauk::print(cmd);
             montauk::print("/\n");
+            return 1;
         }
-        return;
+        return 0;
     }
 
     // Builtins
-    if (streq(cmd, "help")) {
-        cmd_help();
-    } else if (streq(cmd, "ls")) {
-        cmd_ls(args ? args : "");
-    } else if (streq(cmd, "cd")) {
-        cmd_cd(args ? args : "");
-    } else if (streq(cmd, "man")) {
-        cmd_man(args ? args : "");
-    } else if (streq(cmd, "exit")) {
-        montauk::print("Goodbye.\n");
-        montauk::exit(0);
-    } else {
-        // External command -- pass full argument string
-        exec_external(cmd, args);
+    if (streq(cmd, "help")) { cmd_help(); return 0; }
+    if (streq(cmd, "ls")) { cmd_ls(args ? args : ""); return 0; }
+    if (streq(cmd, "cd")) { return cmd_cd(args ? args : ""); }
+    if (streq(cmd, "man")) { return cmd_man(args ? args : ""); }
+    if (streq(cmd, "true")) { return 0; }
+    if (streq(cmd, "false")) { return 1; }
+
+    if (streq(cmd, "pwd")) {
+        char path[128];
+        build_dir_path(cwd, path, sizeof(path));
+        montauk::print(path);
+        montauk::putchar('\n');
+        return 0;
     }
+
+    if (streq(cmd, "echo")) {
+        if (!args) {
+            montauk::putchar('\n');
+            return 0;
+        }
+        bool no_newline = false;
+        if (starts_with(args, "-n ")) {
+            no_newline = true;
+            args = skip_spaces(args + 3);
+        } else if (streq(args, "-n")) {
+            return 0;
+        }
+        montauk::print(args);
+        if (!no_newline) montauk::putchar('\n');
+        return 0;
+    }
+
+    if (streq(cmd, "set")) {
+        if (!args) {
+            // List all variables
+            if (session_user[0]) {
+                montauk::print("USER=");
+                montauk::print(session_user);
+                montauk::putchar('\n');
+            }
+            if (session_home[0]) {
+                montauk::print("HOME=");
+                montauk::print(session_home);
+                montauk::putchar('\n');
+            }
+            char path[128];
+            build_dir_path(cwd, path, sizeof(path));
+            montauk::print("PWD=");
+            montauk::print(path);
+            montauk::putchar('\n');
+            int vc = var_user_count();
+            for (int j = 0; j < vc; j++) {
+                montauk::print(var_user_name(j));
+                montauk::putchar('=');
+                montauk::print(var_user_value(j));
+                montauk::putchar('\n');
+            }
+            return 0;
+        }
+        // set VAR=value
+        int eq = -1;
+        for (int j = 0; args[j]; j++) {
+            if (args[j] == '=') { eq = j; break; }
+        }
+        if (eq > 0) {
+            char name[32];
+            int nlen = eq < 31 ? eq : 31;
+            for (int j = 0; j < nlen; j++) name[j] = args[j];
+            name[nlen] = '\0';
+            var_set(name, args + eq + 1);
+            return 0;
+        }
+        // set VAR (show value)
+        const char* val = var_get(args);
+        if (val) {
+            montauk::print(args);
+            montauk::putchar('=');
+            montauk::print(val);
+            montauk::putchar('\n');
+        } else {
+            montauk::print(args);
+            montauk::print(": not set\n");
+        }
+        return 0;
+    }
+
+    if (streq(cmd, "unset")) {
+        if (!args) {
+            montauk::print("Usage: unset <variable>\n");
+            return 1;
+        }
+        var_unset(args);
+        return 0;
+    }
+
+    if (streq(cmd, "exit")) {
+        montauk::print("Goodbye.\n");
+        montauk::exit(last_exit);
+    }
+
+    // External command
+    return exec_external(cmd, args);
+}
+
+// ---- Command line execution with chaining ----
+
+static void execute_line(const char* raw) {
+    // Step 1: expand tilde
+    char texp[512];
+    expand_tilde(raw, texp, sizeof(texp));
+
+    // Step 2: expand variables
+    char expanded[512];
+    expand_vars(texp, expanded, sizeof(expanded));
+
+    // Step 3: strip comments
+    strip_comment(expanded);
+
+    // Step 4: split on ;, &&, || and execute with chaining logic
+    const char* p = expanded;
+    int prev = 0;
+    enum { OP_NONE, OP_SEMI, OP_AND, OP_OR } pending = OP_NONE;
+
+    while (true) {
+        p = skip_spaces(p);
+        if (!*p) break;
+
+        // Extract next command segment
+        char seg[256];
+        int si = 0;
+        int op = OP_NONE;
+        bool in_sq = false, in_dq = false;
+
+        while (*p && si < 255) {
+            if (*p == '\'' && !in_dq) { in_sq = !in_sq; seg[si++] = *p++; continue; }
+            if (*p == '"' && !in_sq) { in_dq = !in_dq; seg[si++] = *p++; continue; }
+            if (!in_sq && !in_dq) {
+                if (*p == ';') { op = OP_SEMI; p++; break; }
+                if (*p == '&' && p[1] == '&') { op = OP_AND; p += 2; break; }
+                if (*p == '|' && p[1] == '|') { op = OP_OR; p += 2; break; }
+            }
+            seg[si++] = *p++;
+        }
+        seg[si] = '\0';
+
+        // Trim trailing spaces
+        while (si > 0 && seg[si - 1] == ' ') seg[--si] = '\0';
+
+        // Decide whether to run based on pending operator
+        bool run = true;
+        if (pending == OP_AND && prev != 0) run = false;
+        if (pending == OP_OR && prev == 0) run = false;
+
+        if (run && seg[0]) {
+            prev = process_command(seg);
+        }
+
+        pending = (decltype(pending))op;
+        if (op == OP_NONE) break;
+    }
+
+    last_exit = prev;
 }
 
 // ---- Arrow key scancodes ----
@@ -575,17 +330,26 @@ static constexpr uint8_t SC_RIGHT = 0x4D;
 // ---- Entry point ----
 
 extern "C" void _start() {
+    read_session();
+
     montauk::print("\n");
     montauk::print("  MontaukOS\n");
     montauk::print("  Copyright (c) 2025-2026 Daniel Hammer\n");
     montauk::print("\n");
+
+    if (session_user[0]) {
+        montauk::print("  Logged in as ");
+        montauk::print(session_user);
+        montauk::putchar('\n');
+        montauk::print("\n");
+    }
 
     montauk::print("  Type 'help' for available commands.\n");
     montauk::print("\n");
 
     char line[256];
     int pos = 0;
-    int hist_nav = -1; // -1 = not navigating history
+    int hist_nav = -1;
 
     prompt();
 
@@ -603,7 +367,6 @@ extern "C" void _start() {
         // Arrow keys: ascii == 0, check scancode
         if (ev.ascii == 0) {
             if (ev.scancode == SC_UP) {
-                // Navigate to older history entry
                 int next = hist_nav + 1;
                 const char* entry = history_get(next);
                 if (entry) {
@@ -611,7 +374,6 @@ extern "C" void _start() {
                     replace_line(line, &pos, entry);
                 }
             } else if (ev.scancode == SC_DOWN) {
-                // Navigate to newer history entry
                 if (hist_nav > 0) {
                     hist_nav--;
                     const char* entry = history_get(hist_nav);
@@ -619,14 +381,12 @@ extern "C" void _start() {
                         replace_line(line, &pos, entry);
                     }
                 } else if (hist_nav == 0) {
-                    // Back to empty line
                     hist_nav = -1;
                     erase_input(pos);
                     pos = 0;
                     line[0] = '\0';
                 }
             }
-            // Left/Right arrows: ignore for now (no cursor movement within line)
             continue;
         }
 
@@ -634,7 +394,7 @@ extern "C" void _start() {
             montauk::putchar('\n');
             line[pos] = '\0';
             history_add(line);
-            process_command(line);
+            execute_line(line);
             pos = 0;
             hist_nav = -1;
             prompt();

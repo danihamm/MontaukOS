@@ -5,6 +5,8 @@
 */
 
 #include "desktop_internal.hpp"
+#include <montauk/config.h>
+#include <montauk/user.h>
 
 // ============================================================================
 // App Manifest Scanning
@@ -168,9 +170,11 @@ void desktop_build_menu(DesktopState* ds) {
 
     // Divider + always-visible entries
     menu_add_category("");  // divider (cat 4, always expanded)
-    menu_add_embedded("Settings", 11, &ds->icon_settings);
-    menu_add_embedded("Reboot",   12, &ds->icon_reboot);
-    menu_add_embedded("Shutdown", 14, &ds->icon_shutdown);
+    menu_add_embedded("Settings",    11, &ds->icon_settings);
+    menu_add_embedded("Lock Screen", 17, &ds->icon_lock);
+    menu_add_embedded("Log Out",     16, &ds->icon_logout);
+    menu_add_embedded("Reboot",      12, &ds->icon_reboot);
+    menu_add_embedded("Shutdown",    14, &ds->icon_shutdown);
 }
 
 // ============================================================================
@@ -224,9 +228,12 @@ void gui::desktop_init(DesktopState* ds) {
     ds->icon_settings = svg_load("0:/icons/help-about.svg",     20, 20, defColor);
     ds->icon_reboot   = svg_load("0:/icons/system-reboot.svg", 20, 20, defColor);
     ds->icon_shutdown = svg_load("0:/icons/system-shutdown.svg", 20, 20, defColor);
+    ds->icon_logout   = svg_load("0:/icons/gnome-logout.svg",    20, 20, defColor);
 
     ds->icon_procmgr    = svg_load("0:/icons/system-monitor.svg",        20, 20, defColor);
     ds->icon_mandelbrot = svg_load("0:/icons/applications-science.svg",  20, 20, defColor);
+    ds->icon_volume     = svg_load("0:/icons/audio-volume-high-symbolic.svg", 16, 16, colors::PANEL_TEXT);
+    ds->icon_lock       = svg_load("0:/icons/lock.svg",                  20, 20, defColor);
 
     // Scan 0:/apps/ for external app manifests and build the menu
     desktop_scan_apps(ds);
@@ -248,10 +255,61 @@ void gui::desktop_init(DesktopState* ds) {
     ds->settings.clock_24h = true;
     ds->settings.ui_scale = 1;
 
-    // Try to load default wallpaper
-    wallpaper_load(&ds->settings, "0:/home/lucas-alexander-2dJn8XoIKCg-unsplash.jpg",
-                   ds->screen_w, ds->screen_h);
-    montauk::win_setscale(1);
+    // Load per-user desktop settings
+    {
+        auto doc = montauk::config::load_user(ds->current_user, "desktop");
+
+        const char* wp = doc.get_string("wallpaper.path", "");
+        if (wp[0] != '\0') {
+            wallpaper_load(&ds->settings, wp, ds->screen_w, ds->screen_h);
+        } else {
+            // Fall back to system-wide default wallpaper from 0:/config/desktop.toml
+            auto sys = montauk::config::load("desktop");
+            const char* def_wp = sys.get_string("wallpaper.path", "");
+            if (def_wp[0] != '\0') {
+                wallpaper_load(&ds->settings, def_wp, ds->screen_w, ds->screen_h);
+            }
+            sys.destroy();
+        }
+
+        // Restore other settings from user config
+        const char* bg_mode = doc.get_string("background.mode", "");
+        if (montauk::streq(bg_mode, "solid")) {
+            ds->settings.bg_gradient = false;
+            ds->settings.bg_image = false;
+        } else if (montauk::streq(bg_mode, "gradient")) {
+            ds->settings.bg_gradient = true;
+            ds->settings.bg_image = false;
+        }
+        // (image mode is set by wallpaper_load above)
+
+        // Background colors
+        int64_t solid = doc.get_int("background.solid_color", -1);
+        if (solid >= 0) ds->settings.bg_solid = Color::from_rgb(
+            (uint8_t)((solid >> 16) & 0xFF), (uint8_t)((solid >> 8) & 0xFF), (uint8_t)(solid & 0xFF));
+        int64_t gtop = doc.get_int("background.grad_top", -1);
+        if (gtop >= 0) ds->settings.bg_grad_top = Color::from_rgb(
+            (uint8_t)((gtop >> 16) & 0xFF), (uint8_t)((gtop >> 8) & 0xFF), (uint8_t)(gtop & 0xFF));
+        int64_t gbot = doc.get_int("background.grad_bottom", -1);
+        if (gbot >= 0) ds->settings.bg_grad_bottom = Color::from_rgb(
+            (uint8_t)((gbot >> 16) & 0xFF), (uint8_t)((gbot >> 8) & 0xFF), (uint8_t)(gbot & 0xFF));
+
+        // Appearance colors
+        int64_t panel = doc.get_int("appearance.panel_color", -1);
+        if (panel >= 0) ds->settings.panel_color = Color::from_rgb(
+            (uint8_t)((panel >> 16) & 0xFF), (uint8_t)((panel >> 8) & 0xFF), (uint8_t)(panel & 0xFF));
+        int64_t accent = doc.get_int("appearance.accent_color", -1);
+        if (accent >= 0) ds->settings.accent_color = Color::from_rgb(
+            (uint8_t)((accent >> 16) & 0xFF), (uint8_t)((accent >> 8) & 0xFF), (uint8_t)(accent & 0xFF));
+
+        int64_t scale = doc.get_int("display.ui_scale", 1);
+        ds->settings.ui_scale = (int)scale;
+        ds->settings.clock_24h = doc.get_bool("display.clock_24h", true);
+        ds->settings.show_shadows = doc.get_bool("display.show_shadows", true);
+
+        doc.destroy();
+    }
+    montauk::win_setscale(ds->settings.ui_scale);
 
     ds->ctx_menu_open = false;
     ds->ctx_menu_x = 0;
@@ -262,8 +320,22 @@ void gui::desktop_init(DesktopState* ds) {
     ds->net_cfg_last_poll = montauk::get_milliseconds();
     ds->net_icon_rect = {0, 0, 0, 0};
 
+    ds->vol_popup_open = false;
+    ds->vol_icon_rect = {0, 0, 0, 0};
+    int vol = montauk::audio_get_volume(0);
+    ds->vol_level = vol >= 0 ? vol : 80;
+    ds->vol_muted = false;
+    ds->vol_pre_mute = ds->vol_level;
+    ds->vol_dragging = false;
+    ds->vol_last_poll = montauk::get_milliseconds();
+
     ds->closing_ext_count = 0;
 
+    ds->screen_locked = false;
+    ds->lock_password[0] = '\0';
+    ds->lock_password_len = 0;
+    ds->lock_error[0] = '\0';
+    ds->lock_show_error = false;
 }
 
 // ============================================================================
@@ -412,21 +484,25 @@ void gui::desktop_run(DesktopState* ds) {
         // Poll external windows (discover new, remove dead, update dirty)
         desktop_poll_external_windows(ds);
 
-        // Poll windows that have a poll callback
-        for (int i = 0; i < ds->window_count; i++) {
-            Window* win = &ds->windows[i];
-            if (win->state == WIN_CLOSED) continue;
-            if (win->on_poll) {
-                win->on_poll(win);
+        if (!ds->screen_locked) {
+            // Poll windows that have a poll callback
+            for (int i = 0; i < ds->window_count; i++) {
+                Window* win = &ds->windows[i];
+                if (win->state == WIN_CLOSED) continue;
+                if (win->on_poll) {
+                    win->on_poll(win);
+                }
             }
         }
 
         // Handle mouse events
         desktop_handle_mouse(ds);
 
-        // Re-poll external windows so that any killed during mouse/key
-        // handling are removed before we touch their pixel buffers.
-        desktop_poll_external_windows(ds);
+        if (!ds->screen_locked) {
+            // Re-poll external windows so that any killed during mouse/key
+            // handling are removed before we touch their pixel buffers.
+            desktop_poll_external_windows(ds);
+        }
 
         // Compose and present
         desktop_compose(ds);
@@ -449,6 +525,31 @@ extern "C" void _start() {
 
     // Placement-new the Framebuffer since it has a constructor
     new (&ds->fb) Framebuffer();
+
+    // Read username from spawn args
+    char username[32] = {};
+    montauk::getargs(username, 32);
+    if (username[0] == '\0') {
+        montauk::strcpy(username, "default");
+    }
+    montauk::strncpy(ds->current_user, username, 31);
+
+    // Build user paths
+    montauk::user::home_dir(username, ds->home_dir, sizeof(ds->home_dir));
+    montauk::user::config_dir(username, ds->user_config_dir, sizeof(ds->user_config_dir));
+
+    // Check if user is admin
+    ds->is_admin = false;
+    {
+        montauk::user::UserInfo users[16];
+        int count = montauk::user::load_users(users, 16);
+        for (int i = 0; i < count; i++) {
+            if (montauk::streq(users[i].username, username)) {
+                ds->is_admin = montauk::streq(users[i].role, "admin");
+                break;
+            }
+        }
+    }
 
     g_desktop = ds;
 

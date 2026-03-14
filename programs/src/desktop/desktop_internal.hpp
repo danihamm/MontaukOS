@@ -115,6 +115,10 @@ gui::CursorStyle cursor_for_edge(gui::ResizeEdge edge);
 // panel.cpp
 void desktop_draw_app_menu(gui::DesktopState* ds);
 void desktop_draw_net_popup(gui::DesktopState* ds);
+void desktop_draw_vol_popup(gui::DesktopState* ds);
+
+// compose.cpp
+void desktop_draw_lock_screen(gui::DesktopState* ds);
 
 // main.cpp
 void desktop_scan_apps(gui::DesktopState* ds);
