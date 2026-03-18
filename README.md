@@ -23,6 +23,7 @@ MontaukOS is a hobbyist operating system written in modern C++. It runs on bare 
 * Mandelbrot set renderer
 * PDF viewer app with full support for text (inc. baked-in TrueType fonts) and some graphics
 * Userspace Music app with support for MP3 and WAV files
+* 2D game engine and demo game with fantasy tileset
 
 ## Ideology
 The goal of the MontaukOS project is to create a modern and unique operating system that runs on both emulators and on real hardware. The kernel and included userspace applications are written in modern C++.
