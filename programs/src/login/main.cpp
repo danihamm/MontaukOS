@@ -815,8 +815,5 @@ extern "C" void _start() {
 
         // Draw
         draw_login_screen(ls);
-
-        // ~30fps (login doesn't need 60)
-        montauk::sleep_ms(33);
     }
 }
