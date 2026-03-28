@@ -672,6 +672,79 @@ namespace Fs::Fat32 {
         return count;
     }
 
+    static int ReadDirectoryNames(int inst, uint32_t dirCluster,
+                                   char outNames[MaxDirEntries][MaxNameLen],
+                                   int maxEntries) {
+        auto& self = g_instances[inst];
+        uint16_t lfnBuf[MaxNameLen];
+        bool hasLfn = false;
+        int count = 0;
+
+        uint32_t cluster = dirCluster;
+        while (!IsEndOfChain(cluster) && count < maxEntries) {
+            if (!ReadCluster(self, cluster)) break;
+
+            int perCluster = (int)(self.clusterSize / 32);
+            for (int i = 0; i < perCluster && count < maxEntries; i++) {
+                uint8_t* e = self.clusterBuf + i * 32;
+
+                if (e[0] == 0x00) return count;
+                if (e[0] == 0xE5) { hasLfn = false; continue; }
+
+                uint8_t attr = e[11];
+
+                if (attr == ATTR_LFN) {
+                    uint8_t seq = e[0];
+                    int seqNum = seq & 0x1F;
+
+                    if (seq & 0x40) {
+                        for (int k = 0; k < MaxNameLen; k++) lfnBuf[k] = 0;
+                        hasLfn = true;
+                    }
+
+                    if (hasLfn && seqNum >= 1 && seqNum <= 20) {
+                        uint16_t chars[13];
+                        ExtractLfnChars(e, chars);
+                        int offset = (seqNum - 1) * 13;
+                        for (int k = 0; k < 13 && offset + k < MaxNameLen; k++) {
+                            lfnBuf[offset + k] = chars[k];
+                        }
+                    }
+                    continue;
+                }
+
+                if (attr & ATTR_VOLUME_ID) { hasLfn = false; continue; }
+
+                if (hasLfn) {
+                    Utf16ToAscii(lfnBuf, MaxNameLen, outNames[count]);
+                } else {
+                    ParseShortName(e, outNames[count]);
+                }
+
+                hasLfn = false;
+
+                if (outNames[count][0] == '.' &&
+                    (outNames[count][1] == '\0' ||
+                     (outNames[count][1] == '.' && outNames[count][2] == '\0'))) {
+                    continue;
+                }
+
+                int len = 0;
+                while (outNames[count][len] && len < MaxNameLen - 2) len++;
+                if ((attr & ATTR_DIRECTORY) && len < MaxNameLen - 1) {
+                    outNames[count][len++] = '/';
+                    outNames[count][len] = '\0';
+                }
+
+                count++;
+            }
+
+            cluster = GetNextCluster(self, cluster);
+        }
+
+        return count;
+    }
+
     // =========================================================================
     // Case-insensitive string comparison
     // =========================================================================
@@ -932,23 +1005,11 @@ namespace Fs::Fat32 {
         if (!TraversePath(inst, path, &dirEntry)) return -1;
         if (!(dirEntry.attributes & ATTR_DIRECTORY)) return -1;
 
-        ParsedEntry entries[MaxDirEntries];
         int limit = maxEntries < MaxDirEntries ? maxEntries : MaxDirEntries;
-        int count = ReadDirectory(inst, dirEntry.firstCluster, entries, limit);
+        int count = ReadDirectoryNames(inst, dirEntry.firstCluster, self.dirNames, limit);
 
-        // Copy names into persistent cache
         self.dirNameCount = count;
         for (int i = 0; i < count; i++) {
-            int j = 0;
-            while (entries[i].name[j] && j < MaxNameLen - 2) {
-                self.dirNames[i][j] = entries[i].name[j];
-                j++;
-            }
-            // Append trailing '/' for directories so userspace can distinguish them
-            if ((entries[i].attributes & ATTR_DIRECTORY) && j < MaxNameLen - 1) {
-                self.dirNames[i][j++] = '/';
-            }
-            self.dirNames[i][j] = '\0';
             outNames[i] = self.dirNames[i];
         }
 

@@ -695,6 +695,14 @@ namespace Fs::Ext2 {
         uint8_t  fileType;
     };
 
+    static bool IsValidDirEntry(const DirEntry* de, uint32_t pos, uint32_t remaining) {
+        if (de->rec_len == 0) return false;
+        if (de->rec_len < sizeof(DirEntry)) return false;
+        if (pos + de->rec_len > remaining) return false;
+        if (de->name_len > de->rec_len - sizeof(DirEntry)) return false;
+        return true;
+    }
+
     // Find a single entry by name in a directory inode.
     static bool FindInDirectory(Ext2Instance& inst, const Inode& dirInode,
                                  const char* name, ParsedEntry* out) {
@@ -718,8 +726,7 @@ namespace Fs::Ext2 {
 
             while (pos + 8 <= remaining) {
                 DirEntry* de = (DirEntry*)(dirBuf + pos);
-                if (de->rec_len == 0) break;
-                if (de->rec_len < 8 || pos + de->rec_len > blockSize) break;
+                if (!IsValidDirEntry(de, pos, remaining)) break;
 
                 if (de->inode != 0 && de->name_len > 0) {
                     char entryName[MaxNameLen];
@@ -767,8 +774,7 @@ namespace Fs::Ext2 {
 
             while (pos + 8 <= remaining && count < maxEntries) {
                 DirEntry* de = (DirEntry*)(dirBuf + pos);
-                if (de->rec_len == 0) break;
-                if (de->rec_len < 8 || pos + de->rec_len > blockSize) break;
+                if (!IsValidDirEntry(de, pos, remaining)) break;
 
                 if (de->inode != 0 && de->name_len > 0) {
                     int nameLen = de->name_len;
@@ -787,6 +793,59 @@ namespace Fs::Ext2 {
 
                     entries[count].inodeNum = de->inode;
                     entries[count].fileType = de->file_type;
+                    count++;
+                }
+
+                pos += de->rec_len;
+            }
+        }
+
+        Memory::g_pfa->Free(dirBuf);
+        return count;
+    }
+
+    static int ReadDirectoryNames(Ext2Instance& inst, const Inode& dirInode,
+                                   char outNames[MaxDirEntries][MaxNameLen],
+                                   int maxEntries) {
+        uint32_t dirSize = dirInode.i_size;
+        uint32_t blockSize = inst.blockSize;
+        uint32_t numBlocks = (dirSize + blockSize - 1) / blockSize;
+        int count = 0;
+
+        uint8_t* dirBuf = (uint8_t*)Memory::g_pfa->AllocateZeroed();
+        if (!dirBuf) return 0;
+
+        for (uint32_t bi = 0; bi < numBlocks && count < maxEntries; bi++) {
+            uint32_t physBlock = GetPhysicalBlock(inst, dirInode, bi);
+            if (physBlock == 0) continue;
+            if (!ReadBlock(inst, physBlock, dirBuf)) continue;
+
+            uint32_t pos = 0;
+            uint32_t remaining = dirSize - bi * blockSize;
+            if (remaining > blockSize) remaining = blockSize;
+
+            while (pos + 8 <= remaining && count < maxEntries) {
+                DirEntry* de = (DirEntry*)(dirBuf + pos);
+                if (!IsValidDirEntry(de, pos, remaining)) break;
+
+                if (de->inode != 0 && de->name_len > 0) {
+                    int nameLen = de->name_len;
+                    if (nameLen >= MaxNameLen) nameLen = MaxNameLen - 1;
+                    memcpy(outNames[count], (uint8_t*)de + sizeof(DirEntry), nameLen);
+                    outNames[count][nameLen] = '\0';
+
+                    if (outNames[count][0] == '.' &&
+                        (outNames[count][1] == '\0' ||
+                         (outNames[count][1] == '.' && outNames[count][2] == '\0'))) {
+                        pos += de->rec_len;
+                        continue;
+                    }
+
+                    if (de->file_type == EXT2_FT_DIR && nameLen < MaxNameLen - 1) {
+                        outNames[count][nameLen++] = '/';
+                        outNames[count][nameLen] = '\0';
+                    }
+
                     count++;
                 }
 
@@ -1096,22 +1155,11 @@ namespace Fs::Ext2 {
         if (!TraversePath(self, path, &inodeNum, &inode)) return -1;
         if ((inode.i_mode & IMODE_TYPE_MASK) != IMODE_DIR) return -1;
 
-        ParsedEntry entries[MaxDirEntries];
         int limit = maxEntries < MaxDirEntries ? maxEntries : MaxDirEntries;
-        int count = ReadDirectoryEntries(self, inode, entries, limit);
+        int count = ReadDirectoryNames(self, inode, self.dirNames, limit);
 
         self.dirNameCount = count;
         for (int i = 0; i < count; i++) {
-            int j = 0;
-            while (entries[i].name[j] && j < MaxNameLen - 2) {
-                self.dirNames[i][j] = entries[i].name[j];
-                j++;
-            }
-            // Append trailing '/' for directories so userspace can distinguish them
-            if (entries[i].fileType == EXT2_FT_DIR && j < MaxNameLen - 1) {
-                self.dirNames[i][j++] = '/';
-            }
-            self.dirNames[i][j] = '\0';
             outNames[i] = self.dirNames[i];
         }
 
