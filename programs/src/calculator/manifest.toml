@@ -1,0 +1,11 @@
+[app]
+name = "Calculator"
+binary = "calculator.elf"
+icon = "accessories-calculator.svg"
+
+[menu]
+category = "Applications"
+visible = true
+
+[launch]
+pass_home_dir = false

@@ -127,9 +127,18 @@ void desktop_draw_lock_screen(gui::DesktopState* ds);
 // main.cpp
 void desktop_scan_apps(gui::DesktopState* ds);
 void desktop_build_menu(gui::DesktopState* ds);
+void desktop_open_launcher(gui::DesktopState* ds);
+void desktop_close_launcher(gui::DesktopState* ds);
 
 // Month names (shared by panel clock)
 inline const char* month_names[] = {
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 };
+
+// launcher.cpp
+void desktop_init_launcher(gui::DesktopState* ds);
+bool desktop_handle_launcher_keyboard(gui::DesktopState* ds, const Montauk::KeyEvent& key);
+void desktop_handle_launcher_mouse(gui::DesktopState* ds);
+void desktop_draw_launcher(gui::DesktopState* ds);
+uint64_t desktop_launcher_blink_token(const gui::DesktopState* ds, uint64_t now);

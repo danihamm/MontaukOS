@@ -29,7 +29,7 @@ MontaukOS supports two kinds of GUI applications:
 | **Window** | Own process, shared-memory pixel buffer | Embedded in desktop compositor |
 | **Event loop** | `win_poll()` syscall | Callback-driven (`on_draw`, `on_mouse`, `on_key`) |
 | **Drawing** | Direct pixel buffer writes | `Canvas` abstraction |
-| **Examples** | Spreadsheet, Music, Wikipedia | Calculator, File Manager, Terminal |
+| **Examples** | Spreadsheet, Music, Wikipedia | File Manager, System Info, Settings |
 
 **Choose standalone** when you need a separate process (e.g., networking, heavy computation, isolation). **Choose desktop-integrated** for lightweight tools that benefit from tight compositor integration.
 

@@ -1903,7 +1903,32 @@ static void filemanager_on_close(Window* win) {
 // File Manager launcher
 // ============================================================================
 
-void open_filemanager(DesktopState* ds) {
+void ensure_filemanager_icons_loaded(DesktopState* ds) {
+    if (!ds || ds->icon_drive.pixels) return;
+
+    Color defColor = colors::ICON_COLOR;
+    ds->icon_drive          = svg_load("0:/icons/drive-harddisk.svg", 16, 16, defColor);
+    ds->icon_drive_lg       = svg_load("0:/icons/drive-harddisk.svg", 48, 48, defColor);
+    ds->icon_home_folder    = svg_load("0:/icons/folder-blue-home.svg", 16, 16, defColor);
+    ds->icon_home_folder_lg = svg_load("0:/icons/folder-blue-home.svg", 48, 48, defColor);
+    ds->icon_apps           = svg_load("0:/icons/folder-blue-development.svg", 16, 16, defColor);
+    ds->icon_apps_lg        = svg_load("0:/icons/folder-blue-development.svg", 48, 48, defColor);
+
+    for (int sf = 0; sf < SF_COUNT; sf++) {
+        char icon_path[128];
+        snprintf(icon_path, 128, "0:/icons/%s", sf_icons[sf]);
+        ds->icon_special_folder[sf]    = svg_load(icon_path, 16, 16, defColor);
+        ds->icon_special_folder_lg[sf] = svg_load(icon_path, 48, 48, defColor);
+    }
+    ds->icon_delete     = svg_load("0:/icons/trash-empty.svg", 16, 16, defColor);
+    ds->icon_copy       = svg_load("0:/icons/edit-copy.svg", 16, 16, defColor);
+    ds->icon_cut        = svg_load("0:/icons/edit-cut.svg", 16, 16, defColor);
+    ds->icon_paste      = svg_load("0:/icons/edit-paste.svg", 16, 16, defColor);
+    ds->icon_rename     = svg_load("0:/icons/edit-rename.svg", 16, 16, defColor);
+    ds->icon_folder_new = svg_load("0:/icons/folder-new.svg", 16, 16, defColor);
+}
+
+static void open_filemanager_internal(DesktopState* ds, const char* initial_path) {
     int idx = desktop_create_window(ds, "Files", 150, 120, 560, 420);
     if (idx < 0) return;
 
@@ -1919,32 +1944,20 @@ void open_filemanager(DesktopState* ds) {
 
     fm->scrollbar.init(0, 0, FM_SCROLLBAR_W, 100);
 
-    // Lazy-load file manager icons on first open
-    if (ds && !ds->icon_drive.pixels) {
-        Color defColor = colors::ICON_COLOR;
-        ds->icon_drive          = svg_load("0:/icons/drive-harddisk.svg", 16, 16, defColor);
-        ds->icon_drive_lg       = svg_load("0:/icons/drive-harddisk.svg", 48, 48, defColor);
-        ds->icon_home_folder    = svg_load("0:/icons/folder-blue-home.svg", 16, 16, defColor);
-        ds->icon_home_folder_lg = svg_load("0:/icons/folder-blue-home.svg", 48, 48, defColor);
-        ds->icon_apps           = svg_load("0:/icons/folder-blue-development.svg", 16, 16, defColor);
-        ds->icon_apps_lg        = svg_load("0:/icons/folder-blue-development.svg", 48, 48, defColor);
+    ensure_filemanager_icons_loaded(ds);
 
-        // Special user folder icons
-        for (int sf = 0; sf < SF_COUNT; sf++) {
-            char icon_path[128];
-            snprintf(icon_path, 128, "0:/icons/%s", sf_icons[sf]);
-            ds->icon_special_folder[sf]    = svg_load(icon_path, 16, 16, defColor);
-            ds->icon_special_folder_lg[sf] = svg_load(icon_path, 48, 48, defColor);
+    if (initial_path && initial_path[0] != '\0') {
+        int probe_fd = montauk::open(initial_path);
+        if (probe_fd >= 0) {
+            montauk::close(probe_fd);
+            montauk::strncpy(fm->current_path, initial_path, sizeof(fm->current_path));
+            filemanager_read_dir(fm);
+        } else {
+            filemanager_read_drives(fm);
         }
-        ds->icon_delete     = svg_load("0:/icons/trash-empty.svg", 16, 16, defColor);
-        ds->icon_copy       = svg_load("0:/icons/edit-copy.svg", 16, 16, defColor);
-        ds->icon_cut        = svg_load("0:/icons/edit-cut.svg", 16, 16, defColor);
-        ds->icon_paste      = svg_load("0:/icons/edit-paste.svg", 16, 16, defColor);
-        ds->icon_rename     = svg_load("0:/icons/edit-rename.svg", 16, 16, defColor);
-        ds->icon_folder_new = svg_load("0:/icons/folder-new.svg", 16, 16, defColor);
+    } else {
+        filemanager_read_drives(fm);
     }
-
-    filemanager_read_drives(fm);
     filemanager_push_history(fm);
 
     win->app_data = fm;
@@ -1952,4 +1965,12 @@ void open_filemanager(DesktopState* ds) {
     win->on_mouse = filemanager_on_mouse;
     win->on_key = filemanager_on_key;
     win->on_close = filemanager_on_close;
+}
+
+void open_filemanager(DesktopState* ds) {
+    open_filemanager_internal(ds, nullptr);
+}
+
+void open_filemanager_path(DesktopState* ds, const char* path) {
+    open_filemanager_internal(ds, path);
 }

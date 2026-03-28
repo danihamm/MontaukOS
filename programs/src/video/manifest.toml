@@ -1,7 +1,7 @@
 [app]
 name = "Videos"
 binary = "video.elf"
-icon = "multimedia-video-player.svg"
+icon = "video.svg"
 
 [menu]
 category = "Applications"

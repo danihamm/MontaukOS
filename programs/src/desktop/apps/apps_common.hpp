@@ -161,6 +161,8 @@ inline void format_size(char* buf, int size) {
 
 void open_terminal(DesktopState* ds);
 void open_filemanager(DesktopState* ds);
+void open_filemanager_path(DesktopState* ds, const char* path);
+void ensure_filemanager_icons_loaded(DesktopState* ds);
 void open_sysinfo(DesktopState* ds);
 void open_calculator(DesktopState* ds);
 void open_texteditor(DesktopState* ds);

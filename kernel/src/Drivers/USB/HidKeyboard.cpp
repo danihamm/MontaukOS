@@ -160,9 +160,11 @@ namespace Drivers::USB::HidKeyboard {
     constexpr uint8_t SC_LEFT_CTRL    = 0x1D;
     constexpr uint8_t SC_LEFT_SHIFT   = 0x2A;
     constexpr uint8_t SC_LEFT_ALT     = 0x38;
+    constexpr uint8_t SC_LEFT_GUI     = 0x5B;
     constexpr uint8_t SC_RIGHT_CTRL   = 0x1D;  // Extended in PS/2, but we use same base
     constexpr uint8_t SC_RIGHT_SHIFT  = 0x36;
     constexpr uint8_t SC_RIGHT_ALT    = 0x38;  // Extended in PS/2
+    constexpr uint8_t SC_RIGHT_GUI    = 0x5C;
 
     // -------------------------------------------------------------------------
     // State
@@ -290,6 +292,9 @@ namespace Drivers::USB::HidKeyboard {
         if (modChanged & MOD_LEFT_ALT) {
             InjectModifierKey(SC_LEFT_ALT, (modifiers & MOD_LEFT_ALT) != 0, modifiers);
         }
+        if (modChanged & MOD_LEFT_GUI) {
+            InjectModifierKey(SC_LEFT_GUI, (modifiers & MOD_LEFT_GUI) != 0, modifiers);
+        }
         if (modChanged & MOD_RIGHT_CTRL) {
             InjectModifierKey(SC_RIGHT_CTRL, (modifiers & MOD_RIGHT_CTRL) != 0, modifiers);
         }
@@ -298,6 +303,9 @@ namespace Drivers::USB::HidKeyboard {
         }
         if (modChanged & MOD_RIGHT_ALT) {
             InjectModifierKey(SC_RIGHT_ALT, (modifiers & MOD_RIGHT_ALT) != 0, modifiers);
+        }
+        if (modChanged & MOD_RIGHT_GUI) {
+            InjectModifierKey(SC_RIGHT_GUI, (modifiers & MOD_RIGHT_GUI) != 0, modifiers);
         }
 
         // -----------------------------------------------------------------

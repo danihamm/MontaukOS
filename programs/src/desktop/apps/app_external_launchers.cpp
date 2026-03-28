@@ -17,6 +17,11 @@ void open_terminal(DesktopState* ds) {
     spawn_app("0:/apps/terminal/terminal.elf", home);
 }
 
+void open_calculator(DesktopState* ds) {
+    (void)ds;
+    spawn_app("0:/apps/calculator/calculator.elf");
+}
+
 void open_texteditor(DesktopState* ds) {
     (void)ds;
     spawn_app("0:/apps/texteditor/texteditor.elf");

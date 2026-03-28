@@ -18,6 +18,7 @@ static void lock_screen(DesktopState* ds) {
     ds->lock_error[0] = '\0';
     ds->lock_show_error = false;
     ds->app_menu_open = false;
+    desktop_close_launcher(ds);
     ds->ctx_menu_open = false;
     ds->net_popup_open = false;
     ds->vol_popup_open = false;
@@ -129,6 +130,11 @@ static void handle_lock_keyboard(DesktopState* ds, const Montauk::KeyEvent& key)
 void gui::desktop_handle_mouse(DesktopState* ds) {
     if (ds->screen_locked) {
         handle_lock_mouse(ds);
+        return;
+    }
+
+    if (ds->launcher_open) {
+        desktop_handle_launcher_mouse(ds);
         return;
     }
 
@@ -349,7 +355,6 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
                             switch (row.app_id) {
                             case 1:  open_filemanager(ds); break;
                             case 2:  open_sysinfo(ds); break;
-                            case 3:  open_calculator(ds); break;
                             case 11: open_settings(ds); break;
                             case 12: open_reboot_dialog(ds); break;
                             case 14: open_shutdown_dialog(ds); break;
@@ -730,6 +735,10 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
 }
 
 void gui::desktop_handle_keyboard(DesktopState* ds, const Montauk::KeyEvent& key) {
+    if (desktop_handle_launcher_keyboard(ds, key)) {
+        return;
+    }
+
     if (ds->screen_locked) {
         handle_lock_keyboard(ds, key);
         return;

@@ -28,11 +28,12 @@ APPS=(
     "installer|mimetypes/scalable/text-x-install.svg"
     "volume|apps/scalable/pavucontrol.svg"
     "music|apps/scalable/audio-player.svg"
-    "video|apps/scalable/multimedia-video-player.svg"
+    "video|apps/scalable/video-player.svg"
     "bluetooth|apps/scalable/bluetooth.svg"
     "terminal|apps/scalable/utilities-terminal.svg"
     "klog|apps/scalable/utilities-terminal.svg"
     "procmgr|apps/scalable/system-monitor.svg"
+    "calculator|apps/scalable/accessories-calculator.svg"
     "rpgdemo|apps/scalable/utilities-terminal.svg"
     "paint|apps/scalable/kolourpaint.svg"
     "screenshot|apps/scalable/gnome-screenshot.svg"
@@ -55,14 +56,17 @@ for entry in "${APPS[@]}"; do
         echo "install_apps: warning: $manifest not found" >&2
     fi
 
-    # Copy icon
+    # Copy icon. Prefer a local app icon file when one exists; otherwise fall back
+    # to the shared theme asset declared in the app table above.
     icon_src="$ICON_SRC/$icon_rel"
-    # Extract target icon name from manifest
     icon_name=$(grep '^icon' "$manifest" 2>/dev/null | sed 's/.*= *"\(.*\)"/\1/' || echo "")
-    if [ -n "$icon_name" ] && [ -f "$icon_src" ]; then
+    local_icon="$SRC/$name/$icon_name"
+    if [ -n "$icon_name" ] && [ -f "$local_icon" ]; then
+        cp "$local_icon" "$app_dir/$icon_name"
+    elif [ -n "$icon_name" ] && [ -f "$icon_src" ]; then
         cp "$icon_src" "$app_dir/$icon_name"
     elif [ -n "$icon_name" ]; then
-        echo "install_apps: warning: icon $icon_src not found for $name" >&2
+        echo "install_apps: warning: icon $local_icon or $icon_src not found for $name" >&2
     fi
 
     installed=$((installed + 1))

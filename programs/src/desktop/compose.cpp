@@ -270,6 +270,10 @@ void gui::desktop_compose(DesktopState* ds) {
         }
     }
 
+    if (ds->launcher_open) {
+        desktop_draw_launcher(ds);
+    }
+
     // Draw snap preview overlay while dragging to screen edge
     for (int i = 0; i < ds->window_count; i++) {
         Window* win = &ds->windows[i];
@@ -288,31 +292,33 @@ void gui::desktop_compose(DesktopState* ds) {
 
     // Determine cursor style based on resize hover or active resize
     CursorStyle cur_style = CURSOR_ARROW;
-    for (int i = ds->window_count - 1; i >= 0; i--) {
-        Window* win = &ds->windows[i];
-        if (win->resizing) {
-            cur_style = cursor_for_edge(win->resize_edge);
-            break;
-        }
-        if (win->state == WIN_MINIMIZED || win->state == WIN_CLOSED || win->state == WIN_MAXIMIZED)
-            continue;
-        if (win->frame.contains(ds->mouse.x, ds->mouse.y)) {
-            ResizeEdge edge = hit_test_resize_edge(win->frame, ds->mouse.x, ds->mouse.y);
-            if (edge != RESIZE_NONE) {
-                cur_style = cursor_for_edge(edge);
+    if (!ds->launcher_open) {
+        for (int i = ds->window_count - 1; i >= 0; i--) {
+            Window* win = &ds->windows[i];
+            if (win->resizing) {
+                cur_style = cursor_for_edge(win->resize_edge);
+                break;
             }
-            break;
+            if (win->state == WIN_MINIMIZED || win->state == WIN_CLOSED || win->state == WIN_MAXIMIZED)
+                continue;
+            if (win->frame.contains(ds->mouse.x, ds->mouse.y)) {
+                ResizeEdge edge = hit_test_resize_edge(win->frame, ds->mouse.x, ds->mouse.y);
+                if (edge != RESIZE_NONE) {
+                    cur_style = cursor_for_edge(edge);
+                }
+                break;
+            }
         }
-    }
 
-    // Check if focused external window requests a cursor style
-    if (cur_style == CURSOR_ARROW && ds->focused_window >= 0) {
-        Window* fwin = &ds->windows[ds->focused_window];
-        if (fwin->external && fwin->ext_cursor > 0) {
-            Rect cr = fwin->content_rect();
-            if (cr.contains(ds->mouse.x, ds->mouse.y)) {
-                if (fwin->ext_cursor == 1) cur_style = CURSOR_RESIZE_H;
-                else if (fwin->ext_cursor == 2) cur_style = CURSOR_RESIZE_V;
+        // Check if focused external window requests a cursor style
+        if (cur_style == CURSOR_ARROW && ds->focused_window >= 0) {
+            Window* fwin = &ds->windows[ds->focused_window];
+            if (fwin->external && fwin->ext_cursor > 0) {
+                Rect cr = fwin->content_rect();
+                if (cr.contains(ds->mouse.x, ds->mouse.y)) {
+                    if (fwin->ext_cursor == 1) cur_style = CURSOR_RESIZE_H;
+                    else if (fwin->ext_cursor == 2) cur_style = CURSOR_RESIZE_V;
+                }
             }
         }
     }

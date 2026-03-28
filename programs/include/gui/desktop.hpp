@@ -18,6 +18,7 @@ namespace gui {
 static constexpr int MAX_WINDOWS = 8;
 static constexpr int PANEL_HEIGHT = 32;
 static constexpr int MAX_EXTERNAL_APPS = 32;
+static constexpr int MAX_LAUNCHER_ITEMS = 64;
 
 // External app discovered from 0:/apps/ manifest
 struct ExternalApp {
@@ -27,6 +28,24 @@ struct ExternalApp {
     SvgIcon icon;
     bool menu_visible;
     bool launch_with_home;
+};
+
+enum LauncherItemKind : uint8_t {
+    LAUNCHER_ITEM_EXTERNAL_APP = 0,
+    LAUNCHER_ITEM_BUILTIN_FILES,
+    LAUNCHER_ITEM_COMMAND_REBOOT,
+    LAUNCHER_ITEM_COMMAND_SHUTDOWN,
+    LAUNCHER_ITEM_SPECIAL_FOLDER,
+};
+
+struct LauncherItem {
+    char name[64];
+    char category[48];
+    char path[128];
+    char search_text[192];
+    SvgIcon* icon;
+    LauncherItemKind kind;
+    int ref_index;
 };
 
 struct DesktopSettings {
@@ -72,6 +91,17 @@ struct DesktopState {
     uint8_t prev_buttons;
 
     bool app_menu_open;
+    bool launcher_open;
+    char launcher_query[64];
+    int launcher_query_len;
+    LauncherItem launcher_items[MAX_LAUNCHER_ITEMS];
+    int launcher_item_count;
+    int launcher_results[MAX_LAUNCHER_ITEMS];
+    int launcher_result_count;
+    int launcher_selected;
+    int launcher_scroll;
+    bool super_left_down;
+    bool super_right_down;
 
     SvgIcon icon_terminal;
     SvgIcon icon_filemanager;
@@ -80,7 +110,6 @@ struct DesktopState {
     SvgIcon icon_folder;
     SvgIcon icon_file;
     SvgIcon icon_network;
-    SvgIcon icon_calculator;
     SvgIcon icon_go_up;
     SvgIcon icon_go_back;
     SvgIcon icon_go_forward;
