@@ -163,6 +163,10 @@ static bool is_audio_file(const char* name) {
     return str_ends_with(name, ".mp3") || str_ends_with(name, ".wav");
 }
 
+static bool is_video_file(const char* name) {
+    return str_ends_with(name, ".avi");
+}
+
 static int detect_file_type(const char* name, bool is_dir) {
     if (is_dir) return 1;
     if (str_ends_with(name, ".elf")) return 2;
@@ -1079,6 +1083,8 @@ static void filemanager_open_entry(FileManagerState* fm, int idx) {
         montauk::spawn("0:/apps/wordprocessor/wordprocessor.elf", fullpath);
     } else if (is_audio_file(fm->entry_names[idx])) {
         montauk::spawn("0:/apps/music/music.elf", fullpath);
+    } else if (is_video_file(fm->entry_names[idx])) {
+        montauk::spawn("0:/apps/video/video.elf", fullpath);
     } else if (str_ends_with(fm->entry_names[idx], ".elf")) {
         montauk::spawn(fullpath);
     } else {
