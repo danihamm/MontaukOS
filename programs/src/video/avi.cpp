@@ -29,6 +29,7 @@ static constexpr uint32_t FCC_rec  = fourcc('r', 'e', 'c', ' ');
 static constexpr uint32_t FCC_avih = fourcc('a', 'v', 'i', 'h');
 static constexpr uint32_t FCC_strh = fourcc('s', 't', 'r', 'h');
 static constexpr uint32_t FCC_strf = fourcc('s', 't', 'r', 'f');
+static constexpr uint32_t FCC_idx1 = fourcc('i', 'd', 'x', '1');
 static constexpr uint32_t FCC_vids = fourcc('v', 'i', 'd', 's');
 static constexpr uint32_t FCC_auds = fourcc('a', 'u', 'd', 's');
 static constexpr uint32_t FCC_MJPG = fourcc('M', 'J', 'P', 'G');
@@ -50,6 +51,10 @@ static int32_t rd_s32(const uint8_t* p) {
 }
 
 static uint32_t min_u32(uint32_t a, uint32_t b) {
+    return a < b ? a : b;
+}
+
+static uint64_t min_u64(uint64_t a, uint64_t b) {
     return a < b ? a : b;
 }
 
@@ -363,6 +368,184 @@ static bool parse_movi_list(File& file, uint64_t start, uint64_t size,
     return true;
 }
 
+static void clear_chunk_index(File& file) {
+    if (file.video_chunks) {
+        montauk::mfree(file.video_chunks);
+        file.video_chunks = nullptr;
+    }
+    if (file.audio_chunks) {
+        montauk::mfree(file.audio_chunks);
+        file.audio_chunks = nullptr;
+    }
+    file.video_chunk_count = 0;
+    file.video_chunk_cap = 0;
+    file.audio_chunk_count = 0;
+    file.audio_chunk_cap = 0;
+    file.total_audio_bytes = 0;
+    file.total_audio_frames = 0;
+}
+
+enum Idx1OffsetMode {
+    IDX1_UNKNOWN = -1,
+    IDX1_ABS_HEADER = 0,
+    IDX1_ABS_PAYLOAD,
+    IDX1_REL_MOVI_HEADER,
+    IDX1_REL_MOVI_PAYLOAD,
+    IDX1_REL_DATA_HEADER,
+    IDX1_REL_DATA_PAYLOAD,
+};
+
+static bool compute_idx1_header_offset(const File& file, int mode, uint32_t raw_offset,
+                                       uint64_t movi_payload, uint64_t movi_data_start,
+                                       uint64_t* out_header) {
+    if (!out_header) return false;
+
+    uint64_t header = 0;
+    switch (mode) {
+        case IDX1_ABS_HEADER:
+            header = (uint64_t)raw_offset;
+            break;
+        case IDX1_ABS_PAYLOAD:
+            if (raw_offset < 8u) return false;
+            header = (uint64_t)raw_offset - 8ull;
+            break;
+        case IDX1_REL_MOVI_HEADER:
+            header = movi_payload + (uint64_t)raw_offset;
+            break;
+        case IDX1_REL_MOVI_PAYLOAD:
+            if (raw_offset < 8u) return false;
+            header = movi_payload + (uint64_t)raw_offset - 8ull;
+            break;
+        case IDX1_REL_DATA_HEADER:
+            header = movi_data_start + (uint64_t)raw_offset;
+            break;
+        case IDX1_REL_DATA_PAYLOAD:
+            if (raw_offset < 8u) return false;
+            header = movi_data_start + (uint64_t)raw_offset - 8ull;
+            break;
+        default:
+            return false;
+    }
+
+    if (header > file.size || file.size - header < 8ull) return false;
+    *out_header = header;
+    return true;
+}
+
+static bool resolve_idx1_header_offset(const File& file, uint32_t chunk_id, uint32_t chunk_size,
+                                       uint32_t raw_offset, uint64_t movi_payload,
+                                       uint64_t movi_data_start, int* io_mode,
+                                       uint64_t* out_header) {
+    if (!io_mode || !out_header) return false;
+
+    if (*io_mode != IDX1_UNKNOWN) {
+        return compute_idx1_header_offset(file, *io_mode, raw_offset,
+                                          movi_payload, movi_data_start, out_header);
+    }
+
+    static constexpr int kModes[] = {
+        IDX1_REL_MOVI_HEADER,
+        IDX1_REL_DATA_HEADER,
+        IDX1_ABS_HEADER,
+        IDX1_REL_MOVI_PAYLOAD,
+        IDX1_REL_DATA_PAYLOAD,
+        IDX1_ABS_PAYLOAD,
+    };
+
+    uint8_t hdr[8];
+    for (int mode : kModes) {
+        uint64_t header = 0;
+        if (!compute_idx1_header_offset(file, mode, raw_offset,
+                                        movi_payload, movi_data_start, &header)) {
+            continue;
+        }
+        if (!read_exact(file, header, hdr, 8)) continue;
+        if (rd_u32(hdr + 0) != chunk_id || rd_u32(hdr + 4) != chunk_size) continue;
+        *io_mode = mode;
+        *out_header = header;
+        return true;
+    }
+
+    return false;
+}
+
+static bool parse_idx1(File& file, uint64_t start, uint64_t size,
+                       int video_stream_index, int audio_stream_index,
+                       uint64_t movi_payload, uint64_t movi_data_start,
+                       bool* out_used_index) {
+    if (out_used_index) *out_used_index = false;
+    if (size < 16) return true;
+
+    int offset_mode = IDX1_UNKNOWN;
+    uint64_t pos = start;
+    uint64_t end = start + size;
+    uint8_t buf[8192];
+
+    while (pos + 16 <= end) {
+        uint32_t bytes = (uint32_t)min_u64((uint64_t)sizeof(buf), end - pos);
+        bytes -= bytes % 16u;
+        if (bytes == 0) break;
+
+        if (!read_exact(file, pos, buf, bytes)) {
+            set_error(file, "Failed to read AVI idx1 index");
+            return false;
+        }
+
+        for (uint32_t off = 0; off + 16 <= bytes; off += 16) {
+            uint32_t id = rd_u32(buf + off + 0);
+            uint32_t chunk_size = rd_u32(buf + off + 12);
+            if (chunk_size == 0) continue;
+
+            int stream_index = -1;
+            char kind0 = 0;
+            char kind1 = 0;
+            if (!chunk_stream_id(id, &stream_index, &kind0, &kind1)) continue;
+
+            bool is_video =
+                stream_index == video_stream_index &&
+                ((kind0 == 'd' && kind1 == 'b') || (kind0 == 'd' && kind1 == 'c') ||
+                 (kind0 == 'D' && kind1 == 'B') || (kind0 == 'D' && kind1 == 'C'));
+            bool is_audio =
+                stream_index == audio_stream_index &&
+                kind0 == 'w' && kind1 == 'b';
+            if (!is_video && !is_audio) continue;
+
+            uint64_t header = 0;
+            uint32_t raw_offset = rd_u32(buf + off + 8);
+            if (!resolve_idx1_header_offset(file, id, chunk_size, raw_offset,
+                                            movi_payload, movi_data_start,
+                                            &offset_mode, &header)) {
+                continue;
+            }
+
+            uint64_t payload = header + 8ull;
+            if (payload > 0xFFFFFFFFull) continue;
+            if (payload > file.size || (uint64_t)chunk_size > file.size - payload) continue;
+
+            if (is_video) {
+                if (!push_chunk(file.video_chunks, file.video_chunk_count, file.video_chunk_cap,
+                                (uint32_t)payload, chunk_size)) {
+                    set_error(file, "Out of memory indexing video frames");
+                    return false;
+                }
+            } else {
+                if (!push_chunk(file.audio_chunks, file.audio_chunk_count, file.audio_chunk_cap,
+                                (uint32_t)payload, chunk_size)) {
+                    set_error(file, "Out of memory indexing audio chunks");
+                    return false;
+                }
+                file.total_audio_bytes += chunk_size;
+            }
+
+            if (out_used_index) *out_used_index = true;
+        }
+
+        pos += bytes;
+    }
+
+    return true;
+}
+
 void reset(File& file) {
     if (file.fd >= 0) montauk::close(file.fd);
     if (file.video_chunks) montauk::mfree(file.video_chunks);
@@ -396,6 +579,11 @@ bool parse(File& file, int fd, uint64_t size) {
     int stream_counter = 0;
     int video_stream_index = -1;
     int audio_stream_index = -1;
+    uint64_t movi_payload = 0;
+    uint64_t movi_data_start = 0;
+    uint64_t movi_data_size = 0;
+    uint64_t idx1_payload = 0;
+    uint64_t idx1_size = 0;
 
     uint64_t pos = 12;
     while (pos + 8 <= size) {
@@ -425,14 +613,33 @@ bool parse(File& file, int fd, uint64_t size) {
                     return false;
                 }
             } else if (list_type == FCC_movi) {
-                if (!parse_movi_list(file, payload + 4, chunk_size - 4,
-                                     video_stream_index, audio_stream_index)) {
-                    return false;
-                }
+                movi_payload = payload;
+                movi_data_start = payload + 4;
+                movi_data_size = chunk_size - 4;
             }
+        } else if (id == FCC_idx1) {
+            idx1_payload = payload;
+            idx1_size = chunk_size;
         }
 
         pos = next;
+    }
+
+    bool used_idx1 = false;
+    if (idx1_payload > 0 && movi_data_size > 0) {
+        if (!parse_idx1(file, idx1_payload, idx1_size,
+                        video_stream_index, audio_stream_index,
+                        movi_payload, movi_data_start, &used_idx1)) {
+            return false;
+        }
+    }
+
+    if (!used_idx1 && movi_data_size > 0) {
+        clear_chunk_index(file);
+        if (!parse_movi_list(file, movi_data_start, movi_data_size,
+                             video_stream_index, audio_stream_index)) {
+            return false;
+        }
     }
 
     if (video_stream_index < 0 || file.video_chunk_count <= 0 || file.width <= 0 || file.height <= 0) {
