@@ -15,11 +15,12 @@ section .text
 ;
 ; Saves all CPU registers into the CpuState structure, then returns 1.
 ; The caller is expected to enter S3 after this returns.
-; When the system resumes, AcpiResumeLongMode jumps to the saved RIP
-; with RAX=0, so Suspend() knows it's a resume.
+; On resume we rebuild the caller-visible stack frame and return to the
+; original Suspend() continuation via AcpiResumeEntry().
 ;
 ; Returns: 1 on initial call (proceed to enter S3)
-;          0 on resume from S3
+;          Resume does not re-enter this function directly; control is
+;          reconstructed by AcpiResumeLongMode/AcpiResumeEntry.
 ;
 ; CpuState layout:
 ;   0x00  RAX      0x40  R8       0x80  RFLAGS
@@ -41,7 +42,12 @@ AcpiSaveAndSuspend:
     mov [rdi + 0x20], rsi
     mov [rdi + 0x28], rdi    ; save rdi (pointer to state area)
     mov [rdi + 0x30], rbp
-    mov [rdi + 0x38], rsp
+    ; Save the caller's post-return RSP, not our own entry RSP. The raw
+    ; entry RSP points at this call's temporary return-address slot, which
+    ; the suspend path will later reuse for other calls before the machine
+    ; actually enters S3.
+    lea rax, [rsp + 8]
+    mov [rdi + 0x38], rax
     mov [rdi + 0x40], r8
     mov [rdi + 0x48], r9
     mov [rdi + 0x50], r10
@@ -122,8 +128,8 @@ g_wakeStatePtr: dq 0
 ; extern "C" void AcpiResumeLongMode(CpuState* stateArea)
 ;   rdi = pointer to CpuState structure
 ;
-; Restores all saved registers and returns to the original Suspend() caller
-; with RAX=0 to indicate "resumed from S3".
+; Restores the saved machine state, reconstructs the original Suspend()
+; continuation on the stack, and then jumps into the C resume path.
 ;
 global AcpiResumeLongMode
 AcpiResumeLongMode:
@@ -139,7 +145,10 @@ AcpiResumeLongMode:
     ; We must restore the kernel stack FIRST so push/pop work, then reload
     ; GDT/CS/IDT before any interrupt can fire.
 
-    ; Restore kernel RSP immediately so we have a valid stack
+    ; Restore the caller-visible kernel RSP immediately so we have a valid
+    ; stack. AcpiSaveAndSuspend saved the post-return value (RSP after the
+    ; original call had completed), so we will reconstruct the return address
+    ; explicitly below before entering C.
     mov rsp, [rdi + 0x38]
 
     ; Restore GDT
@@ -208,8 +217,13 @@ AcpiResumeLongMode:
     mov r14, [rdi + 0x70]
     mov r15, [rdi + 0x78]
 
-    ; Restore RFLAGS
+    ; Restore RFLAGS but keep IF masked until AcpiResumeEntry finishes
+    ; rebuilding GS base, TSS, APIC, and the rest of the interrupt state.
+    ; The saved flags usually have IF=1 because Suspend() is entered from a
+    ; live syscall path; restoring that too early lets an IRQ hit a
+    ; half-restored kernel.
     mov rax, [rdi + 0x80]
+    and rax, ~(1 << 9)
     push rax
     popfq
 
@@ -219,11 +233,14 @@ AcpiResumeLongMode:
     mov al, 0xC4
     out 0x71, al
 
-    ; Restore rdi last
-    mov rdi, [rdi + 0x28]
+    ; Reconstruct the original return address. The suspend path ran many more
+    ; calls after AcpiSaveAndSuspend returned, so the old call-frame slot on
+    ; the kernel stack can no longer be trusted.
+    push qword [rdi + 0x88]
 
-    ; Instead of returning to Suspend() via ret (which is fragile due to
-    ; compiler stack frame assumptions), jump directly to a dedicated C
-    ; resume function. This is how Linux and other kernels handle S3 resume.
+    ; Instead of re-entering Suspend() directly from assembly, jump to a
+    ; dedicated C resume function which rebuilds the rest of the runtime
+    ; environment and then returns to the original caller via the RIP we just
+    ; pushed.
     extern AcpiResumeEntry
     jmp AcpiResumeEntry

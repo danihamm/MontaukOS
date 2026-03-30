@@ -47,19 +47,15 @@ namespace Hal {
                 Io::Out16(bits, (uint16_t)g_pm1bEventBlock);
         }
 
-        static void EnablePM1Events(uint16_t mask) {
+        static void SetPM1Events(uint16_t mask) {
             uint16_t enableOffset = g_pm1EventLength / 2;
             if (enableOffset == 0) return;
 
             if (g_pm1aEventBlock != 0) {
-                uint16_t en = Io::In16((uint16_t)(g_pm1aEventBlock + enableOffset));
-                en |= mask;
-                Io::Out16(en, (uint16_t)(g_pm1aEventBlock + enableOffset));
+                Io::Out16(mask, (uint16_t)(g_pm1aEventBlock + enableOffset));
             }
             if (g_pm1bEventBlock != 0) {
-                uint16_t en = Io::In16((uint16_t)(g_pm1bEventBlock + enableOffset));
-                en |= mask;
-                Io::Out16(en, (uint16_t)(g_pm1bEventBlock + enableOffset));
+                Io::Out16(mask, (uint16_t)(g_pm1bEventBlock + enableOffset));
             }
         }
 
@@ -112,7 +108,7 @@ namespace Hal {
                 AcpiSleep::PM1_BM_STS);
 
             // Enable power button event
-            EnablePM1Events(AcpiSleep::PM1_PWRBTN_EN);
+            SetPM1Events(AcpiSleep::PM1_PWRBTN_EN);
 
             // Route SCI to an IRQ vector. The SCI is level-triggered,
             // active-low (ACPI spec requirement). The MADT may have an
@@ -137,10 +133,18 @@ namespace Hal {
         void Reinitialize() {
             if (!g_initialized) return;
 
-            // Clear pending status and re-enable power button event
+            // Resume may leave WAK/RTC/GBL bits pending. Because the SCI is
+            // level-triggered, re-enabling interrupts without clearing them can
+            // immediately retrigger the SCI in a tight loop.
             ClearPM1StatusBits(
-                AcpiSleep::PM1_PWRBTN_STS | AcpiSleep::PM1_SLPBTN_STS);
-            EnablePM1Events(AcpiSleep::PM1_PWRBTN_EN);
+                AcpiSleep::PM1_PWRBTN_STS | AcpiSleep::PM1_SLPBTN_STS |
+                AcpiSleep::PM1_WAK_STS | AcpiSleep::PM1_TMR_STS |
+                AcpiSleep::PM1_GBL_STS | AcpiSleep::PM1_RTC_STS |
+                AcpiSleep::PM1_BM_STS);
+
+            // Drop the suspend-time RTC wake enable and restore only the
+            // fixed events we actually want during normal runtime.
+            SetPM1Events(AcpiSleep::PM1_PWRBTN_EN);
         }
 
     };

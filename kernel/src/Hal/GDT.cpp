@@ -70,6 +70,11 @@ namespace Hal {
     }
 
     void LoadTSS() {
+        // LTR marks the TSS descriptor busy in the GDT (type 0xB). S3 loses
+        // the CPU's loaded task register state, but the busy bit in RAM
+        // persists, so a plain second LTR on resume can #GP. Re-mark it as an
+        // available 64-bit TSS before reloading TR.
+        kernelGDT.TSS.AccessByte = 0x89;
         LoadTR();
         KernelLogStream(OK, "Hal") << "Loaded TSS (selector 0x28)";
     }

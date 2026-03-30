@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <Efi/UEFI.hpp>
 #include <Memory/Paging.hpp>
+#include <Io/IoPort.hpp>
+#include <Graphics/Cursor.hpp>
 #include <ACPI/AcpiShutdown.hpp>
 #include <ACPI/AcpiSleep.hpp>
 
