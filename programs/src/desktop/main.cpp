@@ -117,7 +117,6 @@ struct EmbeddedAppDef {
 
 static const EmbeddedAppDef embedded_apps[] = {
     { "Files",           1,  0 },
-    { "System Info",     2,  2 },
 };
 
 static constexpr int NUM_EMBEDDED = sizeof(embedded_apps) / sizeof(embedded_apps[0]);
@@ -126,7 +125,6 @@ static constexpr int NUM_EMBEDDED = sizeof(embedded_apps) / sizeof(embedded_apps
 static SvgIcon* icon_for_embedded(DesktopState* ds, int app_id) {
     switch (app_id) {
     case 1:  return &ds->icon_filemanager;
-    case 2:  return &ds->icon_sysinfo;
     default: return nullptr;
     }
 }

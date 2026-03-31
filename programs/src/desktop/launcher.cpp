@@ -1,6 +1,6 @@
 /*
     * launcher.cpp
-    * Spotlight-style launcher indexing, input, and rendering
+    * Super + Space launcher
     * Copyright (c) 2026 Daniel Hammer
 */
 

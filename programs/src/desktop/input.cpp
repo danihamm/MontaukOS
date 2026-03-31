@@ -354,7 +354,6 @@ void gui::desktop_handle_mouse(DesktopState* ds) {
                             // Dispatch desktop-owned launcher entry
                             switch (row.app_id) {
                             case 1:  open_filemanager(ds); break;
-                            case 2:  open_sysinfo(ds); break;
                             case 11: open_settings(ds); break;
                             case 12: open_reboot_dialog(ds); break;
                             case 14: open_shutdown_dialog(ds); break;
@@ -756,10 +755,6 @@ void gui::desktop_handle_keyboard(DesktopState* ds, const Montauk::KeyEvent& key
         }
         if (key.ascii == 'f' || key.ascii == 'F') {
             open_filemanager(ds);
-            return;
-        }
-        if (key.ascii == 'i' || key.ascii == 'I') {
-            open_sysinfo(ds);
             return;
         }
         if (key.ascii == 'c' || key.ascii == 'C') {
