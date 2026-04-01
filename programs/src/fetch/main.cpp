@@ -198,8 +198,14 @@ static int plain_http_exchange(int fd, const char* request, int reqLen,
         if (r > 0) { respLen += r; deadline = montauk::get_milliseconds() + 15000; }
         else if (r < 0) break;
         else {
-            if (montauk::get_milliseconds() >= deadline) break;
-            montauk::sleep_ms(1);
+            uint64_t now = montauk::get_milliseconds();
+            if (now >= deadline) break;
+            uint32_t signals = montauk::wait_handle(
+                fd,
+                Montauk::IPC_SIGNAL_READABLE | Montauk::IPC_SIGNAL_PEER_CLOSED,
+                deadline - now
+            );
+            if (signals == 0 || signals == (uint32_t)-1) break;
         }
     }
     return respLen;

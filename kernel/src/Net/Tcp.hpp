@@ -80,4 +80,10 @@ namespace Net::Tcp {
     // Get the state of a connection
     State GetState(Connection* conn);
 
+    // Readiness helpers used by the IPC layer.
+    bool HasPendingAccept(Connection* conn);
+    bool HasReceiveData(Connection* conn);
+    bool CanSend(Connection* conn);
+    bool IsClosedForIo(Connection* conn);
+
 }

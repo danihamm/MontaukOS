@@ -12,25 +12,26 @@
 #include <Memory/HHDM.hpp>
 #include <Memory/Paging.hpp>
 #include <Libraries/Memory.hpp>
+#include <Ipc/Ipc.hpp>
 #include "Path.hpp"
 
 namespace Montauk {
     static int Sys_Open(const char* path) {
         char resolved[256];
         if (!ResolveProcessPath(path, resolved, sizeof(resolved))) return -1;
-        return Fs::Vfs::VfsOpen(resolved);
+        return Ipc::OpenFileHandle(resolved);
     }
 
     static int Sys_Read(int handle, uint8_t* buffer, uint64_t offset, uint64_t size) {
-        return Fs::Vfs::VfsRead(handle, buffer, offset, size);
+        return Ipc::FileReadHandle(handle, buffer, offset, size);
     }
 
     static uint64_t Sys_GetSize(int handle) {
-        return Fs::Vfs::VfsGetSize(handle);
+        return Ipc::FileGetSizeHandle(handle);
     }
 
     static void Sys_Close(int handle) {
-        Fs::Vfs::VfsClose(handle);
+        Ipc::CloseHandle(handle);
     }
 
     static int Sys_ReadDir(const char* path, const char** outNames, int maxEntries) {
@@ -89,13 +90,13 @@ namespace Montauk {
     }
 
     static int Sys_FWrite(int handle, const uint8_t* data, uint64_t offset, uint64_t size) {
-        return Fs::Vfs::VfsWrite(handle, data, offset, size);
+        return Ipc::FileWriteHandle(handle, data, offset, size);
     }
 
     static int Sys_FCreate(const char* path) {
         char resolved[256];
         if (!ResolveProcessPath(path, resolved, sizeof(resolved))) return -1;
-        return Fs::Vfs::VfsCreate(resolved);
+        return Ipc::CreateFileHandle(resolved);
     }
 
     static int Sys_FDelete(const char* path) {

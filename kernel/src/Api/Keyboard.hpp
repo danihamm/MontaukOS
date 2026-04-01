@@ -7,6 +7,7 @@
 #pragma once
 #include <Sched/Scheduler.hpp>
 #include <Drivers/PS2/Keyboard.hpp>
+#include <Libraries/Memory.hpp>
 
 #include "Common.hpp"
 
@@ -14,8 +15,8 @@ namespace Montauk {
     static bool Sys_IsKeyAvailable() {
         auto* proc = Sched::GetCurrentProcessPtr();
         if (proc && proc->redirected) {
-            auto* target = GetRedirTarget(proc);
-            if (target) return target->keyHead != target->keyTail;
+            Ipc::Mailbox* mailbox = GetRedirKeyMailbox(proc);
+            if (mailbox != nullptr) return Ipc::MailboxHasMessage(mailbox);
         }
         return Drivers::PS2::Keyboard::IsKeyAvailable();
     }
@@ -24,15 +25,18 @@ namespace Montauk {
         if (outEvent == nullptr) return;
         auto* proc = Sched::GetCurrentProcessPtr();
         if (proc && proc->redirected) {
-            auto* target = GetRedirTarget(proc);
-            if (target) {
-                // Wait for key in target's keyBuf ring
-                while (target->keyHead == target->keyTail) {
-                    Sched::Schedule();
+            Ipc::Mailbox* mailbox = GetRedirKeyMailbox(proc);
+            if (mailbox != nullptr) {
+                for (;;) {
+                    uint16_t len = sizeof(KeyEvent);
+                    int rc = Ipc::MailboxRecv(mailbox, nullptr, outEvent, &len, true);
+                    if (rc > 0) return;
+                    if (rc < 0) {
+                        memset(outEvent, 0, sizeof(KeyEvent));
+                        return;
+                    }
+                    Sched::BlockOnObject(mailbox, 0);
                 }
-                *outEvent = target->keyBuf[target->keyTail];
-                target->keyTail = (target->keyTail + 1) % 64;
-                return;
             }
         }
         auto k = Drivers::PS2::Keyboard::GetKey();
@@ -47,24 +51,40 @@ namespace Montauk {
     static char Sys_GetChar() {
         auto* proc = Sched::GetCurrentProcessPtr();
         if (proc && proc->redirected) {
-            auto* target = GetRedirTarget(proc);
-            if (target) {
-                while (true) {
-                    if (target->inBuf && target->inTail != target->inHead) {
-                        uint8_t c = target->inBuf[target->inTail];
-                        target->inTail = (target->inTail + 1) % Sched::Process::IoBufSize;
-                        return (char)c;
+            Ipc::Stream* input = GetRedirInStream(proc);
+            Ipc::Mailbox* mailbox = GetRedirKeyMailbox(proc);
+            if (input != nullptr || mailbox != nullptr) {
+                for (;;) {
+                    if (input != nullptr) {
+                        uint8_t c = 0;
+                        int rc = Ipc::StreamRead(input, &c, 1, true);
+                        if (rc > 0) return (char)c;
+                        if (rc < 0 && mailbox == nullptr) return 0;
                     }
 
-                    if (target->keyTail != target->keyHead) {
-                        auto ev = target->keyBuf[target->keyTail];
-                        target->keyTail = (target->keyTail + 1) % 64;
-                        if (ev.pressed && ev.ascii != 0) {
-                            return ev.ascii;
+                    if (mailbox != nullptr) {
+                        KeyEvent ev{};
+                        uint16_t len = sizeof(ev);
+                        int rc = Ipc::MailboxRecv(mailbox, nullptr, &ev, &len, true);
+                        if (rc > 0) {
+                            if (ev.pressed && ev.ascii != 0) return ev.ascii;
+                            continue;
                         }
+                        if (rc < 0 && input == nullptr) return 0;
                     }
 
-                    Sched::Schedule();
+                    if (proc->ioWaitsetHandle >= 0) {
+                        Ipc::WaitsetReady ready{};
+                        if (Ipc::WaitsetWaitHandle(proc->ioWaitsetHandle, &ready, ~0ULL) < 0) {
+                            return 0;
+                        }
+                    } else if (input != nullptr) {
+                        Sched::BlockOnObject(input, 0);
+                    } else if (mailbox != nullptr) {
+                        Sched::BlockOnObject(mailbox, 0);
+                    } else {
+                        return 0;
+                    }
                 }
             }
         }

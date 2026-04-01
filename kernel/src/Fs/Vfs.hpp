@@ -11,7 +11,11 @@
 namespace Fs::Vfs {
 
     static constexpr int MaxDrives = 16;
-    static constexpr int MaxHandles = 64;
+
+    struct BackendFile {
+        int driveNumber;
+        int localHandle;
+    };
 
     struct FsDriver {
         int (*Open)(const char* path);
@@ -29,13 +33,15 @@ namespace Fs::Vfs {
     void Initialize();
     int RegisterDrive(int driveNumber, FsDriver* driver);
 
-    int VfsOpen(const char* path);
-    int VfsRead(int handle, uint8_t* buffer, uint64_t offset, uint64_t size);
-    int VfsWrite(int handle, const uint8_t* buffer, uint64_t offset, uint64_t size);
-    int VfsCreate(const char* path);
+    int OpenBackendFile(const char* path, BackendFile& outFile);
+    int CreateBackendFile(const char* path, BackendFile& outFile);
+    int ReadBackendFile(const BackendFile& file, uint8_t* buffer, uint64_t offset, uint64_t size);
+    int WriteBackendFile(const BackendFile& file, const uint8_t* buffer, uint64_t offset, uint64_t size);
+    uint64_t GetBackendFileSize(const BackendFile& file);
+    bool BackendFileCanWrite(const BackendFile& file);
+    void CloseBackendFile(BackendFile& file);
+
     int VfsDelete(const char* path);
-    uint64_t VfsGetSize(int handle);
-    void VfsClose(int handle);
     int VfsReadDir(const char* path, const char** outNames, int maxEntries);
     int VfsMkdir(const char* path);
     int VfsRename(const char* oldPath, const char* newPath);

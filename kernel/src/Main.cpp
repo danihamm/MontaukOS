@@ -38,6 +38,7 @@
 #include <Fs/Ext2.hpp>
 #include <Fs/FsProbe.hpp>
 #include <Sched/Scheduler.hpp>
+#include <Ipc/Ipc.hpp>
 #include <Api/Syscall.hpp>
 #include <Hal/SmpBoot.hpp>
 using namespace Kt;
@@ -227,6 +228,7 @@ extern "C" void kmain() {
     Montauk::InitializeSyscalls();
 
     Sched::Initialize();
+    Ipc::Initialize();
 
     // Boot Application Processors (all subsystems ready, APs can schedule)
     Smp::BootAPs();

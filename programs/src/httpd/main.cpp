@@ -386,9 +386,17 @@ static void handle_client(int clientFd) {
         } else if (r == 0) {
             break; // Connection closed
         } else {
-            idleCount++;
-            if (idleCount > 500) break; // Timeout
-            montauk::yield();
+            uint32_t signals = montauk::wait_handle(
+                clientFd,
+                Montauk::IPC_SIGNAL_READABLE | Montauk::IPC_SIGNAL_PEER_CLOSED,
+                20
+            );
+            if (signals == 0) {
+                idleCount++;
+                if (idleCount > 500) break;
+            } else if (signals & Montauk::IPC_SIGNAL_PEER_CLOSED) {
+                break;
+            }
         }
     }
     reqBuf[reqLen] = '\0';

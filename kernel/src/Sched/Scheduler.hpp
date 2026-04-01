@@ -35,7 +35,8 @@ namespace Sched {
         int pid;
         ProcessState state;
         int waitingForPid;     // PID this process is blocked on (-1 if none)
-        uint64_t sleepUntilTick; // Tick deadline for SYS_SLEEP_MS (0 = not sleeping)
+        uint64_t sleepUntilTick; // Tick deadline for sleep/object wait timeout (0 = none)
+        void* waitingOnObject; // IPC/scheduler object this process is blocked on (nullptr if none)
         char name[64];
         uint64_t savedRsp;
         uint64_t stackBase;       // Bottom of allocated kernel stack (lowest address)
@@ -71,6 +72,12 @@ namespace Sched {
         int termCols = 0;
         int termRows = 0;
 
+        // IPC-backed redirected terminal channels
+        int ioOutHandle = -1;
+        int ioInHandle = -1;
+        int ioKeyHandle = -1;
+        int ioWaitsetHandle = -1;
+
         // FPU/SSE state (FXSAVE format, must be 16-byte aligned)
         uint8_t fpuState[512] __attribute__((aligned(16)));
     };
@@ -99,6 +106,13 @@ namespace Sched {
 
     // Block the current process for the given number of milliseconds.
     void BlockForSleep(uint64_t ms);
+
+    // Block the current process until the given object is signaled or timed out.
+    // timeoutMs == 0 means wait indefinitely.
+    void BlockOnObject(void* object, uint64_t timeoutMs = 0);
+
+    // Wake any processes blocked on the given object.
+    void WakeObjectWaiters(void* object);
 
     // Kill a process by PID. If the process is running on another CPU,
     // sets a kill-pending flag checked on the next timer tick.

@@ -79,6 +79,7 @@ extern "C" {
 #define MTK_SYS_WINPOLL         57
 #define MTK_SYS_WINENUM         58
 #define MTK_SYS_WINMAP          59
+#define MTK_SYS_WINUNMAP        97
 #define MTK_SYS_WINSENDEVENT    60
 #define MTK_SYS_PROCLIST        61
 #define MTK_SYS_KILL            62
@@ -99,9 +100,30 @@ extern "C" {
 #define MTK_SYS_GETTZ           91
 #define MTK_SYS_GETCWD          95
 #define MTK_SYS_CHDIR           96
+#define MTK_SYS_DUPHANDLE       98
+#define MTK_SYS_WAIT_HANDLE     99
+#define MTK_SYS_STREAM_CREATE   100
+#define MTK_SYS_STREAM_READ     101
+#define MTK_SYS_STREAM_WRITE    102
+#define MTK_SYS_MAILBOX_CREATE  103
+#define MTK_SYS_MAILBOX_SEND    104
+#define MTK_SYS_MAILBOX_RECV    105
+#define MTK_SYS_WAITSET_CREATE  106
+#define MTK_SYS_WAITSET_ADD     107
+#define MTK_SYS_WAITSET_REMOVE  108
+#define MTK_SYS_WAITSET_WAIT    109
+#define MTK_SYS_PROC_OPEN       110
+#define MTK_SYS_SURFACE_CREATE  111
+#define MTK_SYS_SURFACE_MAP     112
+#define MTK_SYS_SURFACE_RESIZE  113
 
 #define MTK_SOCK_TCP 1
 #define MTK_SOCK_UDP 2
+#define MTK_IPC_SIGNAL_READABLE    (1u << 0)
+#define MTK_IPC_SIGNAL_WRITABLE    (1u << 1)
+#define MTK_IPC_SIGNAL_PEER_CLOSED (1u << 2)
+#define MTK_IPC_SIGNAL_EXITED      (1u << 3)
+#define MTK_IPC_SIGNAL_READY       (1u << 4)
 
 /* Window event types */
 #define MTK_EVENT_KEY    0
@@ -135,6 +157,11 @@ typedef struct {
     int32_t  scroll_delta;
     uint8_t  buttons;
 } mtk_mouse_state;
+
+typedef struct {
+    int32_t  index;
+    uint32_t signals;
+} mtk_ipc_wait_result;
 
 typedef struct {
     uint8_t type;
@@ -397,6 +424,78 @@ static inline int mtk_readdir(const char *path, const char **names, int max) {
 }
 
 /* ====================================================================
+   Generic IPC
+   ==================================================================== */
+
+static inline int mtk_dup_handle(int handle) {
+    return (int)_mtk_syscall1(MTK_SYS_DUPHANDLE, (long)handle);
+}
+
+static inline uint32_t mtk_wait_handle(int handle, uint32_t wanted_signals, unsigned long timeout_ms) {
+    return (uint32_t)_mtk_syscall3(MTK_SYS_WAIT_HANDLE, (long)handle, (long)wanted_signals, (long)timeout_ms);
+}
+
+static inline int mtk_stream_create(int *out_read_handle, int *out_write_handle, unsigned long capacity) {
+    return (int)_mtk_syscall3(MTK_SYS_STREAM_CREATE, (long)out_read_handle, (long)out_write_handle, (long)capacity);
+}
+
+static inline int mtk_stream_read(int handle, void *buf, int max_len) {
+    return (int)_mtk_syscall3(MTK_SYS_STREAM_READ, (long)handle, (long)buf, (long)max_len);
+}
+
+static inline int mtk_stream_write(int handle, const void *data, int len) {
+    return (int)_mtk_syscall3(MTK_SYS_STREAM_WRITE, (long)handle, (long)data, (long)len);
+}
+
+static inline int mtk_mailbox_create(int *out_send_handle, int *out_recv_handle) {
+    return (int)_mtk_syscall2(MTK_SYS_MAILBOX_CREATE, (long)out_send_handle, (long)out_recv_handle);
+}
+
+static inline int mtk_mailbox_send(int handle, uint32_t msg_type, const void *data,
+                                   uint16_t len, int attach_handle) {
+    return (int)_mtk_syscall5(MTK_SYS_MAILBOX_SEND, (long)handle, (long)msg_type,
+                              (long)data, (long)len, (long)attach_handle);
+}
+
+static inline int mtk_mailbox_recv(int handle, uint32_t *out_msg_type, void *data,
+                                   uint16_t *in_out_len, int *out_attach_handle) {
+    return (int)_mtk_syscall5(MTK_SYS_MAILBOX_RECV, (long)handle, (long)out_msg_type,
+                              (long)data, (long)in_out_len, (long)out_attach_handle);
+}
+
+static inline int mtk_waitset_create(void) {
+    return (int)_mtk_syscall0(MTK_SYS_WAITSET_CREATE);
+}
+
+static inline int mtk_waitset_add(int waitset_handle, int target_handle, uint32_t signals) {
+    return (int)_mtk_syscall3(MTK_SYS_WAITSET_ADD, (long)waitset_handle, (long)target_handle, (long)signals);
+}
+
+static inline int mtk_waitset_remove(int waitset_handle, int index) {
+    return (int)_mtk_syscall2(MTK_SYS_WAITSET_REMOVE, (long)waitset_handle, (long)index);
+}
+
+static inline int mtk_waitset_wait(int waitset_handle, mtk_ipc_wait_result *out_ready, unsigned long timeout_ms) {
+    return (int)_mtk_syscall3(MTK_SYS_WAITSET_WAIT, (long)waitset_handle, (long)out_ready, (long)timeout_ms);
+}
+
+static inline int mtk_proc_open(int pid) {
+    return (int)_mtk_syscall1(MTK_SYS_PROC_OPEN, (long)pid);
+}
+
+static inline int mtk_surface_create(unsigned long byte_size) {
+    return (int)_mtk_syscall1(MTK_SYS_SURFACE_CREATE, (long)byte_size);
+}
+
+static inline void *mtk_surface_map(int handle) {
+    return (void *)_mtk_syscall1(MTK_SYS_SURFACE_MAP, (long)handle);
+}
+
+static inline int mtk_surface_resize(int handle, unsigned long new_size) {
+    return (int)_mtk_syscall2(MTK_SYS_SURFACE_RESIZE, (long)handle, (long)new_size);
+}
+
+/* ====================================================================
    Memory
    ==================================================================== */
 
@@ -478,12 +577,20 @@ static inline int mtk_win_poll(int id, mtk_win_event *event) {
     return (int)_mtk_syscall2(MTK_SYS_WINPOLL, (long)id, (long)event);
 }
 
+static inline int mtk_win_unmap(int id) {
+    return (int)_mtk_syscall1(MTK_SYS_WINUNMAP, (long)id);
+}
+
 static inline unsigned long mtk_win_resize(int id, int w, int h) {
     return (unsigned long)_mtk_syscall3(MTK_SYS_WINRESIZE, (long)id, (long)w, (long)h);
 }
 
 static inline int mtk_win_enumerate(mtk_win_info *info, int max) {
     return (int)_mtk_syscall2(MTK_SYS_WINENUM, (long)info, (long)max);
+}
+
+static inline unsigned long mtk_win_map(int id) {
+    return (unsigned long)_mtk_syscall1(MTK_SYS_WINMAP, (long)id);
 }
 
 static inline int mtk_win_setcursor(int id, int cursor) {

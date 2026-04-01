@@ -18,6 +18,7 @@
 #include <Hal/SmpBoot.hpp>
 #include <Timekeeping/ApicTimer.hpp>
 #include <Api/WinServer.hpp>
+#include <Ipc/Ipc.hpp>
 
 // Assembly: context switch with CR3 and FPU state parameters
 extern "C" void SchedContextSwitch(uint64_t* oldRsp, uint64_t newRsp, uint64_t newCR3,
@@ -45,6 +46,45 @@ namespace Sched {
     // The idle loop runs in the kernel PML4
     static uint64_t GetKernelCR3() {
         return (uint64_t)Memory::VMM::g_paging->PML4;
+    }
+
+    static void SwitchAwayFromBlockedCurrentLocked() {
+        auto* cpu = Smp::GetCurrentCpuData();
+        int slot = cpu->currentSlot;
+        if (slot < 0) {
+            schedLock.Release();
+            return;
+        }
+
+        int next = -1;
+        for (int i = 0; i < MaxProcesses; i++) {
+            if (processTable[i].state == ProcessState::Ready) {
+                next = i;
+                break;
+            }
+        }
+
+        if (next >= 0) {
+            cpu->currentSlot = next;
+            processTable[next].state = ProcessState::Running;
+            readyCount--;
+            processTable[next].runningOnCpu = cpu->cpuIndex;
+            processTable[next].sliceRemaining = TimeSliceMs;
+
+            cpu->kernelRsp = processTable[next].kernelStackTop;
+            cpu->tss->rsp0 = processTable[next].kernelStackTop;
+
+            SchedContextSwitch(&processTable[slot].savedRsp, processTable[next].savedRsp,
+                              processTable[next].pml4Phys,
+                              processTable[slot].fpuState, processTable[next].fpuState);
+            schedLock.Release();
+            return;
+        }
+
+        cpu->currentSlot = -1;
+        SchedContextSwitch(&processTable[slot].savedRsp, cpu->idleSavedRsp,
+                          GetKernelCR3(), processTable[slot].fpuState, nullptr);
+        schedLock.Release();
     }
 
     // Startup function for newly spawned processes.
@@ -97,6 +137,7 @@ namespace Sched {
             processTable[i].killPending = false;
             processTable[i].waitingForPid = -1;
             processTable[i].sleepUntilTick = 0;
+            processTable[i].waitingOnObject = nullptr;
             processTable[i].redirected = false;
             processTable[i].parentPid = -1;
             processTable[i].outBuf = nullptr;
@@ -109,6 +150,10 @@ namespace Sched {
             processTable[i].keyTail = 0;
             processTable[i].termCols = 0;
             processTable[i].termRows = 0;
+            processTable[i].ioOutHandle = -1;
+            processTable[i].ioInHandle = -1;
+            processTable[i].ioKeyHandle = -1;
+            processTable[i].ioWaitsetHandle = -1;
         }
 
         nextPid = 0;
@@ -276,6 +321,7 @@ namespace Sched {
         proc.killPending = false;
         proc.waitingForPid = -1;
         proc.sleepUntilTick = 0;
+        proc.waitingOnObject = nullptr;
 
         // Copy arguments string into process
         proc.args[0] = '\0';
@@ -333,11 +379,17 @@ namespace Sched {
         proc.keyTail = 0;
         proc.termCols = 0;
         proc.termRows = 0;
+        proc.ioOutHandle = -1;
+        proc.ioInHandle = -1;
+        proc.ioKeyHandle = -1;
+        proc.ioWaitsetHandle = -1;
 
         // Initialize FPU state: zero out, then set default FCW and MXCSR
         memset(proc.fpuState, 0, 512);
         *(uint16_t*)&proc.fpuState[0] = 0x037F;   // FCW: default x87 control word
         *(uint32_t*)&proc.fpuState[24] = 0x1F80;   // MXCSR: default SSE control/status
+
+        Ipc::ProcessStartedInSlot(slot, proc.pid);
 
         int resultPid = proc.pid;
         schedLock.Release();
@@ -486,6 +538,8 @@ namespace Sched {
                     processTable[i].sleepUntilTick != 0 &&
                     now >= processTable[i].sleepUntilTick) {
                     processTable[i].sleepUntilTick = 0;
+                    processTable[i].waitingForPid = -1;
+                    processTable[i].waitingOnObject = nullptr;
                     processTable[i].state = ProcessState::Ready;
                     readyCount++;
                 }
@@ -554,15 +608,30 @@ namespace Sched {
         // Clean up any windows owned by this process
         WinServer::CleanupProcess(exitingPid);
 
-        // Free I/O redirect buffers
-        if (proc.outBuf) {
-            Memory::g_pfa->Free(proc.outBuf);
-            proc.outBuf = nullptr;
-        }
-        if (proc.inBuf) {
-            Memory::g_pfa->Free(proc.inBuf);
-            proc.inBuf = nullptr;
-        }
+        // Release process-scoped IPC handles/mappings before tearing down the address space.
+        Ipc::CleanupProcessSlot(slot, exitingPid, proc.pml4Phys);
+
+        proc.waitingForPid = -1;
+        proc.sleepUntilTick = 0;
+        proc.waitingOnObject = nullptr;
+        proc.redirected = false;
+        proc.parentPid = -1;
+        proc.outBuf = nullptr;
+        proc.outHead = 0;
+        proc.outTail = 0;
+        proc.inBuf = nullptr;
+        proc.inHead = 0;
+        proc.inTail = 0;
+        proc.keyHead = 0;
+        proc.keyTail = 0;
+        proc.termCols = 0;
+        proc.termRows = 0;
+        proc.ioOutHandle = -1;
+        proc.ioInHandle = -1;
+        proc.ioKeyHandle = -1;
+        proc.ioWaitsetHandle = -1;
+
+        Ipc::ProcessExitedInSlot(slot, exitingPid);
 
         // Free all user-space physical pages and page table structures
         Memory::VMM::Paging::FreeUserHalf(proc.pml4Phys);
@@ -579,6 +648,8 @@ namespace Sched {
                 processTable[i].state = ProcessState::Ready;
                 readyCount++;
                 processTable[i].waitingForPid = -1;
+                processTable[i].waitingOnObject = nullptr;
+                processTable[i].sleepUntilTick = 0;
             }
         }
 
@@ -664,6 +735,9 @@ namespace Sched {
             readyCount--;
         proc.state = ProcessState::Terminated;
         proc.killPending = false;
+        proc.waitingForPid = -1;
+        proc.sleepUntilTick = 0;
+        proc.waitingOnObject = nullptr;
 
         // Wake any processes blocked on this PID
         for (int i = 0; i < MaxProcesses; i++) {
@@ -672,6 +746,8 @@ namespace Sched {
                 processTable[i].state = ProcessState::Ready;
                 readyCount++;
                 processTable[i].waitingForPid = -1;
+                processTable[i].waitingOnObject = nullptr;
+                processTable[i].sleepUntilTick = 0;
             }
         }
 
@@ -679,15 +755,26 @@ namespace Sched {
 
         // Safe to clean up resources now -- process is not running anywhere.
         WinServer::CleanupProcess(killedPid);
+        Ipc::CleanupProcessSlot(slot, killedPid, proc.pml4Phys);
 
-        if (proc.outBuf) {
-            Memory::g_pfa->Free(proc.outBuf);
-            proc.outBuf = nullptr;
-        }
-        if (proc.inBuf) {
-            Memory::g_pfa->Free(proc.inBuf);
-            proc.inBuf = nullptr;
-        }
+        proc.redirected = false;
+        proc.parentPid = -1;
+        proc.outBuf = nullptr;
+        proc.outHead = 0;
+        proc.outTail = 0;
+        proc.inBuf = nullptr;
+        proc.inHead = 0;
+        proc.inTail = 0;
+        proc.keyHead = 0;
+        proc.keyTail = 0;
+        proc.termCols = 0;
+        proc.termRows = 0;
+        proc.ioOutHandle = -1;
+        proc.ioInHandle = -1;
+        proc.ioKeyHandle = -1;
+        proc.ioWaitsetHandle = -1;
+
+        Ipc::ProcessExitedInSlot(slot, killedPid);
 
         Memory::VMM::Paging::FreeUserHalf(proc.pml4Phys);
 
@@ -727,39 +814,10 @@ namespace Sched {
         // ExitProcess will wake us when the target terminates.
         processTable[slot].state = ProcessState::Blocked;
         processTable[slot].waitingForPid = pid;
+        processTable[slot].waitingOnObject = nullptr;
+        processTable[slot].sleepUntilTick = 0;
         processTable[slot].runningOnCpu = -1;
-
-        // Find next ready process to switch to
-        int next = -1;
-        for (int i = 0; i < MaxProcesses; i++) {
-            if (processTable[i].state == ProcessState::Ready) {
-                next = i;
-                break;
-            }
-        }
-
-        if (next >= 0) {
-            cpu->currentSlot = next;
-            processTable[next].state = ProcessState::Running;
-            readyCount--;
-            processTable[next].runningOnCpu = cpu->cpuIndex;
-            processTable[next].sliceRemaining = TimeSliceMs;
-
-            cpu->kernelRsp = processTable[next].kernelStackTop;
-            cpu->tss->rsp0 = processTable[next].kernelStackTop;
-
-            SchedContextSwitch(&processTable[slot].savedRsp, processTable[next].savedRsp,
-                              processTable[next].pml4Phys,
-                              processTable[slot].fpuState, processTable[next].fpuState);
-            schedLock.Release();
-        } else {
-            // No ready process -- go idle
-            cpu->currentSlot = -1;
-
-            SchedContextSwitch(&processTable[slot].savedRsp, cpu->idleSavedRsp,
-                              GetKernelCR3(), processTable[slot].fpuState, nullptr);
-            schedLock.Release();
-        }
+        SwitchAwayFromBlockedCurrentLocked();
     }
 
     void BlockForSleep(uint64_t ms) {
@@ -772,38 +830,46 @@ namespace Sched {
         schedLock.Acquire();
 
         processTable[slot].state = ProcessState::Blocked;
+        processTable[slot].waitingForPid = -1;
+        processTable[slot].waitingOnObject = nullptr;
         processTable[slot].sleepUntilTick = Timekeeping::GetTicks() + ms;
         processTable[slot].runningOnCpu = -1;
+        SwitchAwayFromBlockedCurrentLocked();
+    }
 
-        int next = -1;
+    void BlockOnObject(void* object, uint64_t timeoutMs) {
+        if (object == nullptr) return;
+
+        auto* cpu = Smp::GetCurrentCpuData();
+        int slot = cpu->currentSlot;
+        if (slot < 0) return;
+
+        schedLock.Acquire();
+        processTable[slot].state = ProcessState::Blocked;
+        processTable[slot].waitingForPid = -1;
+        processTable[slot].waitingOnObject = object;
+        processTable[slot].sleepUntilTick = (timeoutMs > 0)
+            ? (Timekeeping::GetTicks() + timeoutMs)
+            : 0;
+        processTable[slot].runningOnCpu = -1;
+        SwitchAwayFromBlockedCurrentLocked();
+    }
+
+    void WakeObjectWaiters(void* object) {
+        if (object == nullptr) return;
+
+        schedLock.Acquire();
         for (int i = 0; i < MaxProcesses; i++) {
-            if (processTable[i].state == ProcessState::Ready) {
-                next = i;
-                break;
-            }
+            if (processTable[i].state != ProcessState::Blocked) continue;
+            if (processTable[i].waitingOnObject != object) continue;
+
+            processTable[i].waitingOnObject = nullptr;
+            processTable[i].sleepUntilTick = 0;
+            processTable[i].waitingForPid = -1;
+            processTable[i].state = ProcessState::Ready;
+            readyCount++;
         }
-
-        if (next >= 0) {
-            cpu->currentSlot = next;
-            processTable[next].state = ProcessState::Running;
-            readyCount--;
-            processTable[next].runningOnCpu = cpu->cpuIndex;
-            processTable[next].sliceRemaining = TimeSliceMs;
-
-            cpu->kernelRsp = processTable[next].kernelStackTop;
-            cpu->tss->rsp0 = processTable[next].kernelStackTop;
-
-            SchedContextSwitch(&processTable[slot].savedRsp, processTable[next].savedRsp,
-                              processTable[next].pml4Phys,
-                              processTable[slot].fpuState, processTable[next].fpuState);
-            schedLock.Release();
-        } else {
-            cpu->currentSlot = -1;
-
-            SchedContextSwitch(&processTable[slot].savedRsp, cpu->idleSavedRsp,
-                              GetKernelCR3(), processTable[slot].fpuState, nullptr);
-            schedLock.Release();
-        }
+        schedLock.Release();
     }
 
     bool IsAlive(int pid) {

@@ -1028,7 +1028,9 @@ extern "C" void _start() {
             }
         } else {
             if (!dirty) {
-                montauk::yield();
+                montauk::wait_handle(irc.fd,
+                                     Montauk::IPC_SIGNAL_READABLE | Montauk::IPC_SIGNAL_PEER_CLOSED,
+                                     10);
                 continue;
             }
         }

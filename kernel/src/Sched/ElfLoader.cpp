@@ -52,15 +52,15 @@ namespace Sched {
     }
 
     uint64_t ElfLoad(const char* vfsPath, uint64_t pml4Phys) {
-        int handle = Fs::Vfs::VfsOpen(vfsPath);
-        if (handle < 0) {
+        Fs::Vfs::BackendFile file = {-1, -1};
+        if (Fs::Vfs::OpenBackendFile(vfsPath, file) < 0) {
             return 0;
         }
 
-        uint64_t fileSize = Fs::Vfs::VfsGetSize(handle);
+        uint64_t fileSize = Fs::Vfs::GetBackendFileSize(file);
         if (fileSize < sizeof(Elf64Header)) {
             Kt::KernelLogStream(Kt::ERROR, "ELF") << "File too small (" << fileSize << " bytes)";
-            Fs::Vfs::VfsClose(handle);
+            Fs::Vfs::CloseBackendFile(file);
             return 0;
         }
 
@@ -68,12 +68,12 @@ namespace Sched {
         uint8_t* fileData = (uint8_t*)Memory::g_heap->Request(fileSize);
         if (fileData == nullptr) {
             Kt::KernelLogStream(Kt::ERROR, "ELF") << "Failed to allocate " << fileSize << " bytes for file";
-            Fs::Vfs::VfsClose(handle);
+            Fs::Vfs::CloseBackendFile(file);
             return 0;
         }
 
-        Fs::Vfs::VfsRead(handle, fileData, 0, fileSize);
-        Fs::Vfs::VfsClose(handle);
+        Fs::Vfs::ReadBackendFile(file, fileData, 0, fileSize);
+        Fs::Vfs::CloseBackendFile(file);
 
         // Prevent the optimizer from reordering the VfsRead store past the
         // header validation reads that follow.

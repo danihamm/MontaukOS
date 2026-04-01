@@ -76,6 +76,7 @@ namespace Montauk {
     static constexpr uint64_t SYS_WINPOLL      = 57;
     static constexpr uint64_t SYS_WINENUM      = 58;
     static constexpr uint64_t SYS_WINMAP       = 59;
+    static constexpr uint64_t SYS_WINUNMAP     = 97;
     static constexpr uint64_t SYS_WINSENDEVENT = 60;
     static constexpr uint64_t SYS_WINRESIZE   = 64;
     static constexpr uint64_t SYS_WINSETSCALE = 65;
@@ -126,6 +127,28 @@ namespace Montauk {
     static constexpr uint64_t SYS_FRENAME       = 94;
     static constexpr uint64_t SYS_GETCWD        = 95;
     static constexpr uint64_t SYS_CHDIR         = 96;
+    static constexpr uint64_t SYS_DUPHANDLE     = 98;
+    static constexpr uint64_t SYS_WAIT_HANDLE   = 99;
+    static constexpr uint64_t SYS_STREAM_CREATE = 100;
+    static constexpr uint64_t SYS_STREAM_READ   = 101;
+    static constexpr uint64_t SYS_STREAM_WRITE  = 102;
+    static constexpr uint64_t SYS_MAILBOX_CREATE = 103;
+    static constexpr uint64_t SYS_MAILBOX_SEND   = 104;
+    static constexpr uint64_t SYS_MAILBOX_RECV   = 105;
+    static constexpr uint64_t SYS_WAITSET_CREATE = 106;
+    static constexpr uint64_t SYS_WAITSET_ADD    = 107;
+    static constexpr uint64_t SYS_WAITSET_REMOVE = 108;
+    static constexpr uint64_t SYS_WAITSET_WAIT   = 109;
+    static constexpr uint64_t SYS_PROC_OPEN      = 110;
+    static constexpr uint64_t SYS_SURFACE_CREATE = 111;
+    static constexpr uint64_t SYS_SURFACE_MAP    = 112;
+    static constexpr uint64_t SYS_SURFACE_RESIZE = 113;
+
+    static constexpr uint32_t IPC_SIGNAL_READABLE    = 1u << 0;
+    static constexpr uint32_t IPC_SIGNAL_WRITABLE    = 1u << 1;
+    static constexpr uint32_t IPC_SIGNAL_PEER_CLOSED = 1u << 2;
+    static constexpr uint32_t IPC_SIGNAL_EXITED      = 1u << 3;
+    static constexpr uint32_t IPC_SIGNAL_READY       = 1u << 4;
 
     // Audio control commands (for SYS_AUDIOCTL)
     static constexpr int AUDIO_CTL_SET_VOLUME = 0;
@@ -186,6 +209,11 @@ namespace Montauk {
         int32_t  y;
         int32_t  scrollDelta;
         uint8_t  buttons;
+    };
+
+    struct IpcWaitResult {
+        int32_t index;
+        uint32_t signals;
     };
 
     // Window server shared types

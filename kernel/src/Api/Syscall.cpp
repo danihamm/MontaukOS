@@ -32,6 +32,7 @@
 #include "Window.hpp"     // SYS_WINCREATE, SYS_WINDESTROY, SYS_WINPRESENT, SYS_WINPOLL, SYS_WINENUM, SYS_WINMAP, SYS_WINSENDEVENT, SYS_WINRESIZE, SYS_WINSETSCALE, SYS_WINGETSCALE
 #include "Audio.hpp"      // SYS_AUDIOOPEN, SYS_AUDIOCLOSE, SYS_AUDIOWRITE, SYS_AUDIOCTL
 #include "BluetoothSyscall.hpp" // SYS_BTSCAN, SYS_BTCONNECT, SYS_BTDISCONNECT, SYS_BTLIST, SYS_BTINFO
+#include "IpcSyscall.hpp" // SYS_DUPHANDLE, SYS_WAIT_HANDLE, SYS_STREAM_CREATE, SYS_STREAM_READ, SYS_STREAM_WRITE, SYS_MAILBOX_CREATE, SYS_MAILBOX_SEND, SYS_MAILBOX_RECV, SYS_WAITSET_CREATE, SYS_WAITSET_ADD, SYS_WAITSET_REMOVE, SYS_WAITSET_WAIT, SYS_PROC_OPEN, SYS_SURFACE_CREATE, SYS_SURFACE_MAP, SYS_SURFACE_RESIZE
 
 // Assembly entry point
 extern "C" void SyscallEntry();
@@ -256,6 +257,8 @@ namespace Montauk {
                 return (int64_t)Sys_WinEnum((WinInfo*)frame->arg1, (int)frame->arg2);
             case SYS_WINMAP:
                 return (int64_t)Sys_WinMap((int)frame->arg1);
+            case SYS_WINUNMAP:
+                return (int64_t)Sys_WinUnmap((int)frame->arg1);
             case SYS_WINSENDEVENT:
                 if (!ValidUserPtr(frame->arg2)) return -1;
                 return (int64_t)Sys_WinSendEvent((int)frame->arg1, (const WinEvent*)frame->arg2);
@@ -353,6 +356,56 @@ namespace Montauk {
             case SYS_CHDIR:
                 if (!ValidUserPtr(frame->arg1)) return -1;
                 return Sys_Chdir((const char*)frame->arg1);
+            case SYS_DUPHANDLE:
+                return Sys_DupHandle((int)frame->arg1);
+            case SYS_WAIT_HANDLE:
+                return (int64_t)Sys_WaitHandle((int)frame->arg1, (uint32_t)frame->arg2, frame->arg3);
+            case SYS_STREAM_CREATE:
+                if (!ValidUserPtr(frame->arg1) || !ValidUserPtr(frame->arg2)) return -1;
+                return Sys_StreamCreate((int*)frame->arg1, (int*)frame->arg2, (uint32_t)frame->arg3);
+            case SYS_STREAM_READ:
+                if (!ValidUserPtr(frame->arg2)) return -1;
+                return Sys_StreamRead((int)frame->arg1, (uint8_t*)frame->arg2, (int)frame->arg3);
+            case SYS_STREAM_WRITE:
+                if (!ValidUserPtr(frame->arg2)) return -1;
+                return Sys_StreamWrite((int)frame->arg1, (const uint8_t*)frame->arg2, (int)frame->arg3);
+            case SYS_MAILBOX_CREATE:
+                if (!ValidUserPtr(frame->arg1) || !ValidUserPtr(frame->arg2)) return -1;
+                return Sys_MailboxCreate((int*)frame->arg1, (int*)frame->arg2);
+            case SYS_MAILBOX_SEND:
+                if (frame->arg3 != 0 && !ValidUserPtr(frame->arg3)) return -1;
+                return Sys_MailboxSend((int)frame->arg1, (uint32_t)frame->arg2,
+                                       (const void*)frame->arg3, (uint16_t)frame->arg4,
+                                       (int)frame->arg5);
+            case SYS_MAILBOX_RECV:
+                if (frame->arg2 != 0 && !IsUserPtr(frame->arg2)) return -1;
+                if (frame->arg3 != 0 && !IsUserPtr(frame->arg3)) return -1;
+                if (!ValidUserPtr(frame->arg4)) return -1;
+                if (frame->arg5 != 0 && !IsUserPtr(frame->arg5)) return -1;
+                return Sys_MailboxRecv((int)frame->arg1,
+                                       IsUserPtr(frame->arg2) ? (uint32_t*)frame->arg2 : nullptr,
+                                       IsUserPtr(frame->arg3) ? (void*)frame->arg3 : nullptr,
+                                       (uint16_t*)frame->arg4,
+                                       IsUserPtr(frame->arg5) ? (int*)frame->arg5 : nullptr);
+            case SYS_WAITSET_CREATE:
+                return Sys_WaitsetCreate();
+            case SYS_WAITSET_ADD:
+                return Sys_WaitsetAdd((int)frame->arg1, (int)frame->arg2, (uint32_t)frame->arg3);
+            case SYS_WAITSET_REMOVE:
+                return Sys_WaitsetRemove((int)frame->arg1, (int)frame->arg2);
+            case SYS_WAITSET_WAIT:
+                if (frame->arg2 != 0 && !ValidUserPtr(frame->arg2)) return -1;
+                return Sys_WaitsetWait((int)frame->arg1,
+                                       IsUserPtr(frame->arg2) ? (IpcWaitResult*)frame->arg2 : nullptr,
+                                       frame->arg3);
+            case SYS_PROC_OPEN:
+                return Sys_ProcOpen((int)frame->arg1);
+            case SYS_SURFACE_CREATE:
+                return Sys_SurfaceCreate(frame->arg1);
+            case SYS_SURFACE_MAP:
+                return (int64_t)Sys_SurfaceMap((int)frame->arg1);
+            case SYS_SURFACE_RESIZE:
+                return Sys_SurfaceResize((int)frame->arg1, frame->arg2);
             default:
                 return -1;
         }

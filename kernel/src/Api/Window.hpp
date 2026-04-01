@@ -51,6 +51,12 @@ namespace Montauk {
         return WinServer::Map(windowId, proc->pid, proc->pml4Phys, proc->heapNext);
     }
 
+    static int Sys_WinUnmap(int windowId) {
+        auto* proc = Sched::GetCurrentProcessPtr();
+        if (proc == nullptr) return -1;
+        return WinServer::Unmap(windowId, proc->pid, proc->pml4Phys);
+    }
+
     static int Sys_WinSendEvent(int windowId, const WinEvent* event) {
         if (event == nullptr) return -1;
         return WinServer::SendEvent(windowId, event);

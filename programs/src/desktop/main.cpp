@@ -390,11 +390,14 @@ bool desktop_poll_external_windows(DesktopState* ds) {
         for (int i = 0; i < ds->window_count; i++) {
             if (ds->windows[i].external && ds->windows[i].ext_win_id == extId) {
                 found = true;
+                bool remapRequested = false;
+                uint64_t currentVa = (uint64_t)(uintptr_t)ds->windows[i].content;
                 if (ds->windows[i].content_w != extWins[e].width ||
                     ds->windows[i].content_h != extWins[e].height) {
                     ds->windows[i].content_w = extWins[e].width;
                     ds->windows[i].content_h = extWins[e].height;
                     ds->windows[i].dirty = true;
+                    remapRequested = true;
                     if (ds->windows[i].state != WIN_MINIMIZED && ds->windows[i].state != WIN_CLOSED) {
                         changed = true;
                     }
@@ -411,12 +414,20 @@ bool desktop_poll_external_windows(DesktopState* ds) {
                     changed = true;
                 }
                 ds->windows[i].ext_cursor = extWins[e].cursor;
-                // Always verify mapping is current. If a window slot was
-                // recycled (app exited, new app got same slot), desktopVa
-                // was zeroed and Map() returns a new VA. Detect this and
-                // update the content pointer to avoid using a stale VA.
+
+                if (remapRequested && currentVa != 0) {
+                    montauk::win_unmap(extId);
+                    ds->windows[i].content = nullptr;
+                    currentVa = 0;
+                }
+
                 uint64_t va = montauk::win_map(extId);
-                if (va != 0 && va != (uint64_t)(uintptr_t)ds->windows[i].content) {
+                if (!remapRequested && va != 0 && va != currentVa) {
+                    montauk::win_unmap(extId);
+                    va = montauk::win_map(extId);
+                }
+
+                if (va != 0 && va != currentVa) {
                     ds->windows[i].content = (uint32_t*)va;
                     ds->windows[i].content_w = extWins[e].width;
                     ds->windows[i].content_h = extWins[e].height;
@@ -508,6 +519,9 @@ bool desktop_poll_external_windows(DesktopState* ds) {
 
         if (!stillExists) {
             // Window gone — remove without freeing content (shared memory)
+            if (ds->windows[i].content != nullptr) {
+                montauk::win_unmap(extId);
+            }
             ds->windows[i].content = nullptr; // prevent free
             gui::desktop_close_window(ds, i);
             changed = true;

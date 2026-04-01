@@ -8,11 +8,13 @@
 #include <Net/Ipv4.hpp>
 #include <Net/ByteOrder.hpp>
 #include <Net/NetConfig.hpp>
+#include <Ipc/Ipc.hpp>
 #include <Libraries/Memory.hpp>
 #include <Terminal/Terminal.hpp>
 #include <CppLib/Stream.hpp>
 #include <CppLib/Spinlock.hpp>
 #include <Timekeeping/ApicTimer.hpp>
+#include <Sched/Scheduler.hpp>
 
 using namespace Kt;
 
@@ -216,6 +218,8 @@ namespace Net::Tcp {
                     listener->PendingRemotePort = srcPort;
                     listener->PendingSeq = seqNum;
                     listener->Lock.Release();
+                    Sched::WakeObjectWaiters(listener);
+                    Ipc::NotifyTcpConnectionChanged(listener);
                     return;
                 }
             }
@@ -235,12 +239,15 @@ namespace Net::Tcp {
         }
 
         conn->Lock.Acquire();
+        bool notify = false;
 
         // RST handling
         if (flags & FLAG_RST) {
             conn->CurrentState = State::Closed;
             conn->Active = false;
             conn->Lock.Release();
+            Sched::WakeObjectWaiters(conn);
+            Ipc::NotifyTcpConnectionChanged(conn);
             return;
         }
 
@@ -255,6 +262,7 @@ namespace Net::Tcp {
 
                         // Send ACK
                         SendSegment(conn, FLAG_ACK, nullptr, 0);
+                        notify = true;
                     }
                 }
                 break;
@@ -266,6 +274,7 @@ namespace Net::Tcp {
                     if (ackNum == conn->SendNext) {
                         conn->SendUnack = ackNum;
                         conn->CurrentState = State::Established;
+                        notify = true;
                     }
                 }
                 break;
@@ -275,6 +284,7 @@ namespace Net::Tcp {
                 // Handle incoming data
                 if (flags & FLAG_ACK) {
                     conn->SendUnack = ackNum;
+                    notify = true;
                 }
 
                 if (payloadLen > 0 && seqNum == conn->RecvNext) {
@@ -283,6 +293,7 @@ namespace Net::Tcp {
 
                     // Send ACK
                     SendSegment(conn, FLAG_ACK, nullptr, 0);
+                    notify = true;
                 }
 
                 if (flags & FLAG_FIN) {
@@ -291,6 +302,7 @@ namespace Net::Tcp {
 
                     // Send ACK for the FIN
                     SendSegment(conn, FLAG_ACK, nullptr, 0);
+                    notify = true;
                 }
                 break;
             }
@@ -302,13 +314,16 @@ namespace Net::Tcp {
                         conn->RecvNext = seqNum + 1;
                         conn->CurrentState = State::TimeWait;
                         SendSegment(conn, FLAG_ACK, nullptr, 0);
+                        notify = true;
                     } else {
                         conn->CurrentState = State::FinWait2;
+                        notify = true;
                     }
                 } else if (flags & FLAG_FIN) {
                     conn->RecvNext = seqNum + 1;
                     conn->CurrentState = State::TimeWait;
                     SendSegment(conn, FLAG_ACK, nullptr, 0);
+                    notify = true;
                 }
                 break;
             }
@@ -318,6 +333,7 @@ namespace Net::Tcp {
                     conn->RecvNext = seqNum + 1;
                     conn->CurrentState = State::TimeWait;
                     SendSegment(conn, FLAG_ACK, nullptr, 0);
+                    notify = true;
                 }
                 break;
             }
@@ -326,6 +342,7 @@ namespace Net::Tcp {
                 if (flags & FLAG_ACK) {
                     conn->CurrentState = State::Closed;
                     conn->Active = false;
+                    notify = true;
                 }
                 break;
             }
@@ -340,6 +357,10 @@ namespace Net::Tcp {
         }
 
         conn->Lock.Release();
+        if (notify) {
+            Sched::WakeObjectWaiters(conn);
+            Ipc::NotifyTcpConnectionChanged(conn);
+        }
     }
 
     Connection* Listen(uint16_t port) {
@@ -421,19 +442,25 @@ namespace Net::Tcp {
                 }
 
                 // Wait for ACK to complete the handshake
-                for (int i = 0; i < 100; i++) {
+                uint64_t deadline = Timekeeping::GetMilliseconds() + 5000;
+                while (Timekeeping::GetMilliseconds() < deadline) {
                     if (conn->CurrentState == State::Established) {
                         return conn;
                     }
-                    Timekeeping::Sleep(50);
+                    uint64_t now = Timekeeping::GetMilliseconds();
+                    uint64_t waitMs = (deadline > now) ? (deadline - now) : 0;
+                    if (waitMs == 0) break;
+                    Sched::BlockOnObject(conn, waitMs);
                 }
 
                 // Timed out waiting for ACK
                 conn->Active = false;
+                Sched::WakeObjectWaiters(conn);
+                Ipc::NotifyTcpConnectionChanged(conn);
                 return nullptr;
             }
             listener->Lock.Release();
-            Timekeeping::Sleep(10);
+            Sched::BlockOnObject(listener, 0);
         }
     }
 
@@ -480,11 +507,15 @@ namespace Net::Tcp {
 
         // Wait for SYN-ACK
         for (int attempt = 0; attempt < MAX_RETRANSMITS; attempt++) {
-            for (int i = 0; i < 20; i++) {
+            uint64_t deadline = Timekeeping::GetMilliseconds() + 1000;
+            while (Timekeeping::GetMilliseconds() < deadline) {
                 if (conn->CurrentState == State::Established) {
                     return conn;
                 }
-                Timekeeping::Sleep(50);
+                uint64_t now = Timekeeping::GetMilliseconds();
+                uint64_t waitMs = (deadline > now) ? (deadline - now) : 0;
+                if (waitMs == 0) break;
+                Sched::BlockOnObject(conn, waitMs);
             }
 
             if (conn->CurrentState == State::SynSent) {
@@ -512,6 +543,8 @@ namespace Net::Tcp {
 
         // Failed to connect
         conn->Active = false;
+        Sched::WakeObjectWaiters(conn);
+        Ipc::NotifyTcpConnectionChanged(conn);
         return nullptr;
     }
 
@@ -580,8 +613,15 @@ namespace Net::Tcp {
                 conn->RetransmitTime = Timekeeping::GetMilliseconds();
                 conn->Lock.Release();
                 asm volatile("push %0; popfq" :: "r"(flags) : "memory");
+                continue;
             }
-            Timekeeping::Sleep(10);
+
+            uint64_t waitMs = 10;
+            if (conn->RetransmitLen > 0 && now <= conn->RetransmitTime + RETRANSMIT_TIMEOUT_MS) {
+                waitMs = (conn->RetransmitTime + RETRANSMIT_TIMEOUT_MS) - now;
+                if (waitMs == 0) waitMs = 1;
+            }
+            Sched::BlockOnObject(conn, waitMs);
         }
 
         return sent;
@@ -625,7 +665,7 @@ namespace Net::Tcp {
 
             conn->Lock.Release();
             asm volatile("push %0; popfq" :: "r"(flags) : "memory");
-            Timekeeping::Sleep(10);
+            Sched::BlockOnObject(conn, 0);
         }
     }
 
@@ -691,9 +731,11 @@ namespace Net::Tcp {
                         conn->CurrentState == State::Closed) {
                         break;
                     }
-                    Timekeeping::Sleep(50);
+                    Sched::BlockOnObject(conn, 50);
                 }
                 conn->Active = false;
+                Sched::WakeObjectWaiters(conn);
+                Ipc::NotifyTcpConnectionChanged(conn);
                 return;
             }
 
@@ -709,9 +751,11 @@ namespace Net::Tcp {
                     if (conn->CurrentState == State::Closed) {
                         break;
                     }
-                    Timekeeping::Sleep(50);
+                    Sched::BlockOnObject(conn, 50);
                 }
                 conn->Active = false;
+                Sched::WakeObjectWaiters(conn);
+                Ipc::NotifyTcpConnectionChanged(conn);
                 return;
             }
 
@@ -721,6 +765,8 @@ namespace Net::Tcp {
                 conn->Active = false;
                 conn->Lock.Release();
                 asm volatile("push %0; popfq" :: "r"(flags) : "memory");
+                Sched::WakeObjectWaiters(conn);
+                Ipc::NotifyTcpConnectionChanged(conn);
                 return;
             }
 
@@ -728,6 +774,8 @@ namespace Net::Tcp {
                 conn->Lock.Release();
                 asm volatile("push %0; popfq" :: "r"(flags) : "memory");
                 conn->Active = false;
+                Sched::WakeObjectWaiters(conn);
+                Ipc::NotifyTcpConnectionChanged(conn);
                 return;
         }
     }
@@ -736,7 +784,44 @@ namespace Net::Tcp {
         if (conn == nullptr) {
             return State::Closed;
         }
-        return conn->CurrentState;
+        conn->Lock.Acquire();
+        State state = conn->CurrentState;
+        conn->Lock.Release();
+        return state;
+    }
+
+    bool HasPendingAccept(Connection* conn) {
+        if (conn == nullptr) return false;
+        conn->Lock.Acquire();
+        bool pending = conn->PendingAccept;
+        conn->Lock.Release();
+        return pending;
+    }
+
+    bool HasReceiveData(Connection* conn) {
+        if (conn == nullptr) return false;
+        conn->Lock.Acquire();
+        bool hasData = conn->RecvCount > 0;
+        conn->Lock.Release();
+        return hasData;
+    }
+
+    bool CanSend(Connection* conn) {
+        if (conn == nullptr) return false;
+        conn->Lock.Acquire();
+        bool writable = conn->CurrentState == State::Established;
+        conn->Lock.Release();
+        return writable;
+    }
+
+    bool IsClosedForIo(Connection* conn) {
+        if (conn == nullptr) return true;
+        conn->Lock.Acquire();
+        bool closed = conn->CurrentState == State::CloseWait ||
+                      conn->CurrentState == State::Closed ||
+                      conn->CurrentState == State::TimeWait;
+        conn->Lock.Release();
+        return closed;
     }
 
 }

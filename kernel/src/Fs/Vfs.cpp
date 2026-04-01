@@ -10,14 +10,7 @@
 
 namespace Fs::Vfs {
 
-    struct HandleEntry {
-        bool inUse;
-        int driveNumber;
-        int localHandle;
-    };
-
     static FsDriver* driveTable[MaxDrives];
-    static HandleEntry handleTable[MaxHandles];
 
     // Protects handle table and driver dispatch from concurrent CPU access.
     // Uses Mutex (not Spinlock) so interrupts stay enabled while held --
@@ -49,22 +42,12 @@ namespace Fs::Vfs {
         return true;
     }
 
-    static int AllocHandle() {
-        for (int i = 0; i < MaxHandles; i++) {
-            if (!handleTable[i].inUse) return i;
-        }
-        return -1;
-    }
-
     void Initialize() {
         for (int i = 0; i < MaxDrives; i++) {
             driveTable[i] = nullptr;
         }
-        for (int i = 0; i < MaxHandles; i++) {
-            handleTable[i].inUse = false;
-        }
 
-        Kt::KernelLogStream(Kt::OK, "VFS") << "Initialized (" << MaxDrives << " drives, " << MaxHandles << " handles)";
+        Kt::KernelLogStream(Kt::OK, "VFS") << "Initialized (" << MaxDrives << " drives)";
     }
 
     int RegisterDrive(int driveNumber, FsDriver* driver) {
@@ -76,7 +59,10 @@ namespace Fs::Vfs {
         return 0;
     }
 
-    int VfsOpen(const char* path) {
+    int OpenBackendFile(const char* path, BackendFile& outFile) {
+        outFile.driveNumber = -1;
+        outFile.localHandle = -1;
+
         int drive;
         const char* localPath;
 
@@ -84,67 +70,86 @@ namespace Fs::Vfs {
         if (drive < 0 || drive >= MaxDrives || driveTable[drive] == nullptr) return -1;
 
         vfsLock.Acquire();
-
         int localHandle = driveTable[drive]->Open(localPath);
-        if (localHandle < 0) { vfsLock.Release(); return -1; }
+        vfsLock.Release();
+        if (localHandle < 0) return -1;
 
-        int globalHandle = AllocHandle();
-        if (globalHandle < 0) {
-            driveTable[drive]->Close(localHandle);
+        outFile.driveNumber = drive;
+        outFile.localHandle = localHandle;
+        return 0;
+    }
+
+    int ReadBackendFile(const BackendFile& file, uint8_t* buffer, uint64_t offset, uint64_t size) {
+        vfsLock.Acquire();
+        if (file.driveNumber < 0 || file.driveNumber >= MaxDrives || driveTable[file.driveNumber] == nullptr ||
+            file.localHandle < 0) {
             vfsLock.Release();
             return -1;
         }
 
-        handleTable[globalHandle].inUse = true;
-        handleTable[globalHandle].driveNumber = drive;
-        handleTable[globalHandle].localHandle = localHandle;
-
-        vfsLock.Release();
-        return globalHandle;
-    }
-
-    int VfsRead(int handle, uint8_t* buffer, uint64_t offset, uint64_t size) {
-        vfsLock.Acquire();
-        if (handle < 0 || handle >= MaxHandles || !handleTable[handle].inUse) { vfsLock.Release(); return -1; }
-
-        HandleEntry& entry = handleTable[handle];
-        int result = driveTable[entry.driveNumber]->Read(entry.localHandle, buffer, offset, size);
+        int result = driveTable[file.driveNumber]->Read(file.localHandle, buffer, offset, size);
         vfsLock.Release();
         return result;
     }
 
-    uint64_t VfsGetSize(int handle) {
+    uint64_t GetBackendFileSize(const BackendFile& file) {
         vfsLock.Acquire();
-        if (handle < 0 || handle >= MaxHandles || !handleTable[handle].inUse) { vfsLock.Release(); return 0; }
+        if (file.driveNumber < 0 || file.driveNumber >= MaxDrives || driveTable[file.driveNumber] == nullptr ||
+            file.localHandle < 0) {
+            vfsLock.Release();
+            return 0;
+        }
 
-        HandleEntry& entry = handleTable[handle];
-        uint64_t result = driveTable[entry.driveNumber]->GetSize(entry.localHandle);
+        uint64_t result = driveTable[file.driveNumber]->GetSize(file.localHandle);
         vfsLock.Release();
         return result;
     }
 
-    void VfsClose(int handle) {
+    bool BackendFileCanWrite(const BackendFile& file) {
         vfsLock.Acquire();
-        if (handle < 0 || handle >= MaxHandles || !handleTable[handle].inUse) { vfsLock.Release(); return; }
-
-        HandleEntry& entry = handleTable[handle];
-        driveTable[entry.driveNumber]->Close(entry.localHandle);
-        entry.inUse = false;
+        bool canWrite = file.driveNumber >= 0 && file.driveNumber < MaxDrives &&
+            driveTable[file.driveNumber] != nullptr &&
+            file.localHandle >= 0 &&
+            driveTable[file.driveNumber]->Write != nullptr;
         vfsLock.Release();
+        return canWrite;
     }
 
-    int VfsWrite(int handle, const uint8_t* buffer, uint64_t offset, uint64_t size) {
+    void CloseBackendFile(BackendFile& file) {
         vfsLock.Acquire();
-        if (handle < 0 || handle >= MaxHandles || !handleTable[handle].inUse) { vfsLock.Release(); return -1; }
+        if (file.driveNumber < 0 || file.driveNumber >= MaxDrives || driveTable[file.driveNumber] == nullptr ||
+            file.localHandle < 0) {
+            vfsLock.Release();
+            file.driveNumber = -1;
+            file.localHandle = -1;
+            return;
+        }
 
-        HandleEntry& entry = handleTable[handle];
-        if (driveTable[entry.driveNumber]->Write == nullptr) { vfsLock.Release(); return -1; }
-        int result = driveTable[entry.driveNumber]->Write(entry.localHandle, buffer, offset, size);
+        driveTable[file.driveNumber]->Close(file.localHandle);
+        vfsLock.Release();
+
+        file.driveNumber = -1;
+        file.localHandle = -1;
+    }
+
+    int WriteBackendFile(const BackendFile& file, const uint8_t* buffer, uint64_t offset, uint64_t size) {
+        vfsLock.Acquire();
+        if (file.driveNumber < 0 || file.driveNumber >= MaxDrives || driveTable[file.driveNumber] == nullptr ||
+            file.localHandle < 0) {
+            vfsLock.Release();
+            return -1;
+        }
+
+        if (driveTable[file.driveNumber]->Write == nullptr) { vfsLock.Release(); return -1; }
+        int result = driveTable[file.driveNumber]->Write(file.localHandle, buffer, offset, size);
         vfsLock.Release();
         return result;
     }
 
-    int VfsCreate(const char* path) {
+    int CreateBackendFile(const char* path, BackendFile& outFile) {
+        outFile.driveNumber = -1;
+        outFile.localHandle = -1;
+
         int drive;
         const char* localPath;
 
@@ -155,20 +160,12 @@ namespace Fs::Vfs {
         vfsLock.Acquire();
 
         int localHandle = driveTable[drive]->Create(localPath);
-        if (localHandle < 0) { vfsLock.Release(); return -1; }
-
-        int globalHandle = AllocHandle();
-        if (globalHandle < 0) {
-            vfsLock.Release();
-            return -1;
-        }
-
-        handleTable[globalHandle].inUse = true;
-        handleTable[globalHandle].driveNumber = drive;
-        handleTable[globalHandle].localHandle = localHandle;
-
         vfsLock.Release();
-        return globalHandle;
+        if (localHandle < 0) return -1;
+
+        outFile.driveNumber = drive;
+        outFile.localHandle = localHandle;
+        return 0;
     }
 
     int VfsDelete(const char* path) {

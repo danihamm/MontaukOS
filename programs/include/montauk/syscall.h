@@ -223,6 +223,62 @@ namespace montauk {
                              (uint64_t)maxLen, (uint64_t)srcIp, (uint64_t)srcPort);
     }
 
+    // Generic IPC
+    inline int dup_handle(int handle) {
+        return (int)syscall1(Montauk::SYS_DUPHANDLE, (uint64_t)handle);
+    }
+    inline uint32_t wait_handle(int handle, uint32_t wantedSignals, uint64_t timeoutMs = ~0ULL) {
+        return (uint32_t)syscall3(Montauk::SYS_WAIT_HANDLE, (uint64_t)handle,
+                                  (uint64_t)wantedSignals, timeoutMs);
+    }
+    inline int stream_create(int* outReadHandle, int* outWriteHandle, uint32_t capacity = 0) {
+        return (int)syscall3(Montauk::SYS_STREAM_CREATE, (uint64_t)outReadHandle,
+                             (uint64_t)outWriteHandle, (uint64_t)capacity);
+    }
+    inline int stream_read(int handle, void* buf, int maxLen) {
+        return (int)syscall3(Montauk::SYS_STREAM_READ, (uint64_t)handle, (uint64_t)buf, (uint64_t)maxLen);
+    }
+    inline int stream_write(int handle, const void* data, int len) {
+        return (int)syscall3(Montauk::SYS_STREAM_WRITE, (uint64_t)handle, (uint64_t)data, (uint64_t)len);
+    }
+    inline int mailbox_create(int* outSendHandle, int* outRecvHandle) {
+        return (int)syscall2(Montauk::SYS_MAILBOX_CREATE, (uint64_t)outSendHandle, (uint64_t)outRecvHandle);
+    }
+    inline int mailbox_send(int handle, uint32_t msgType, const void* data, uint16_t len, int attachHandle = -1) {
+        return (int)syscall5(Montauk::SYS_MAILBOX_SEND, (uint64_t)handle, (uint64_t)msgType,
+                             (uint64_t)data, (uint64_t)len, (uint64_t)(int64_t)attachHandle);
+    }
+    inline int mailbox_recv(int handle, uint32_t* outMsgType, void* data,
+                            uint16_t* inOutLen, int* outAttachHandle = nullptr) {
+        return (int)syscall5(Montauk::SYS_MAILBOX_RECV, (uint64_t)handle, (uint64_t)outMsgType,
+                             (uint64_t)data, (uint64_t)inOutLen, (uint64_t)outAttachHandle);
+    }
+    inline int waitset_create() {
+        return (int)syscall0(Montauk::SYS_WAITSET_CREATE);
+    }
+    inline int waitset_add(int waitsetHandle, int targetHandle, uint32_t signals) {
+        return (int)syscall3(Montauk::SYS_WAITSET_ADD, (uint64_t)waitsetHandle,
+                             (uint64_t)targetHandle, (uint64_t)signals);
+    }
+    inline int waitset_remove(int waitsetHandle, int index) {
+        return (int)syscall2(Montauk::SYS_WAITSET_REMOVE, (uint64_t)waitsetHandle, (uint64_t)index);
+    }
+    inline int waitset_wait(int waitsetHandle, Montauk::IpcWaitResult* outReady, uint64_t timeoutMs = ~0ULL) {
+        return (int)syscall3(Montauk::SYS_WAITSET_WAIT, (uint64_t)waitsetHandle, (uint64_t)outReady, timeoutMs);
+    }
+    inline int proc_open(int pid) {
+        return (int)syscall1(Montauk::SYS_PROC_OPEN, (uint64_t)pid);
+    }
+    inline int surface_create(uint64_t byteSize) {
+        return (int)syscall1(Montauk::SYS_SURFACE_CREATE, byteSize);
+    }
+    inline void* surface_map(int handle) {
+        return (void*)syscall1(Montauk::SYS_SURFACE_MAP, (uint64_t)handle);
+    }
+    inline int surface_resize(int handle, uint64_t newSize) {
+        return (int)syscall2(Montauk::SYS_SURFACE_RESIZE, (uint64_t)handle, newSize);
+    }
+
     // Process management
     inline void waitpid(int pid) { syscall1(Montauk::SYS_WAITPID, (uint64_t)pid); }
 
@@ -434,6 +490,9 @@ namespace montauk {
     }
     inline uint64_t win_map(int id) {
         return (uint64_t)syscall1(Montauk::SYS_WINMAP, (uint64_t)id);
+    }
+    inline int win_unmap(int id) {
+        return (int)syscall1(Montauk::SYS_WINUNMAP, (uint64_t)id);
     }
     inline int win_sendevent(int id, const Montauk::WinEvent* event) {
         return (int)syscall2(Montauk::SYS_WINSENDEVENT, (uint64_t)id, (uint64_t)event);

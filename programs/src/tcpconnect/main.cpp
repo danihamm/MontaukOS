@@ -187,8 +187,7 @@ extern "C" void _start() {
                 montauk::putchar(ev.ascii);
             }
         } else {
-            // No key and no data -- yield to avoid busy-spinning
-            montauk::yield();
+            montauk::wait_handle(fd, Montauk::IPC_SIGNAL_READABLE | Montauk::IPC_SIGNAL_PEER_CLOSED, 10);
         }
     }
 

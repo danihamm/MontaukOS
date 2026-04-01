@@ -15,10 +15,12 @@ namespace Montauk {
     static void Sys_Print(const char* text) {
         auto* proc = Sched::GetCurrentProcessPtr();
         if (proc && proc->redirected) {
-            auto* target = GetRedirTarget(proc);
-            if (target && target->outBuf) {
-                for (int i = 0; text[i]; i++) {
-                    RingWrite(target->outBuf, target->outHead, target->outTail, Sched::Process::IoBufSize, (uint8_t)text[i]);
+            Ipc::Stream* stream = GetRedirOutStream(proc);
+            if (stream != nullptr) {
+                int len = 0;
+                while (text[len]) len++;
+                if (len > 0) {
+                    WriteAllToStream(stream, (const uint8_t*)text, len);
                 }
                 return;
             }
@@ -31,9 +33,10 @@ namespace Montauk {
     static void Sys_Putchar(char c) {
         auto* proc = Sched::GetCurrentProcessPtr();
         if (proc && proc->redirected) {
-            auto* target = GetRedirTarget(proc);
-            if (target && target->outBuf) {
-                RingWrite(target->outBuf, target->outHead, target->outTail, Sched::Process::IoBufSize, (uint8_t)c);
+            Ipc::Stream* stream = GetRedirOutStream(proc);
+            if (stream != nullptr) {
+                uint8_t byte = (uint8_t)c;
+                WriteAllToStream(stream, &byte, 1);
                 return;
             }
         }

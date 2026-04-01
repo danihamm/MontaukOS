@@ -397,7 +397,9 @@ extern "C" void _start() {
                 }
             }
         }
-        montauk::yield();
+        uint64_t now = montauk::get_milliseconds();
+        if (now >= startMs + 10000) break;
+        montauk::wait_handle(fd, Montauk::IPC_SIGNAL_READABLE, startMs + 10000 - now);
     }
 
     if (!gotOffer) {
@@ -447,7 +449,9 @@ extern "C" void _start() {
                 }
             }
         }
-        montauk::yield();
+        uint64_t now = montauk::get_milliseconds();
+        if (now >= startMs + 10000) break;
+        montauk::wait_handle(fd, Montauk::IPC_SIGNAL_READABLE, startMs + 10000 - now);
     }
 
     montauk::closesocket(fd);

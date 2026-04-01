@@ -66,6 +66,9 @@ namespace Montauk {
         // If the process is redirected to a GUI terminal, return those dimensions
         auto* proc = Sched::GetCurrentProcessPtr();
         if (proc && proc->redirected) {
+            if (proc->termCols > 0 && proc->termRows > 0) {
+                return ((uint64_t)proc->termRows << 32) | ((uint64_t)proc->termCols & 0xFFFFFFFF);
+            }
             auto* target = GetRedirTarget(proc);
             if (target && target->termCols > 0 && target->termRows > 0) {
                 return ((uint64_t)target->termRows << 32) | ((uint64_t)target->termCols & 0xFFFFFFFF);

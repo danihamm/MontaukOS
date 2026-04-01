@@ -7,28 +7,23 @@
 #pragma once
 #include "Syscall.hpp"
 #include <cstdint>
+#include <Ipc/Ipc.hpp>
 
 namespace WinServer {
 
     static constexpr int MaxWindows = 8;
-    static constexpr int MaxEvents = 64;
-    static constexpr int MaxPixelPages = 8192; // up to 3840x2160 @ 32bpp = 32MB
 
     struct WindowSlot {
         bool used;
         int ownerPid;
         char title[64];
         int width, height;
-        uint64_t pixelPhysPages[MaxPixelPages];     // live buffer (app writes here)
-        uint64_t snapshotPhysPages[MaxPixelPages];   // snapshot (compositor reads here)
-        int pixelNumPages;
-        uint64_t ownerVa;      // VA in owner's address space
-        uint64_t desktopVa;    // VA in desktop's address space (0 = not yet mapped)
-        int desktopPid;        // PID of the process that mapped it
-        Montauk::WinEvent events[MaxEvents];
-        int eventHead, eventTail;
+        Ipc::Surface* liveSurface;      // app writes here
+        Ipc::Surface* snapshotSurface;  // compositor/viewers read here
+        Ipc::Mailbox* eventMailbox;     // input/control events for the app
+        uint64_t ownerVa;               // mapped VA of liveSurface in owner
         bool dirty;
-        uint8_t cursor;     // cursor style requested by app (0=arrow, 1=resize_h, 2=resize_v)
+        uint8_t cursor;                 // 0=arrow, 1=resize_h, 2=resize_v
     };
 
     int Create(int ownerPid, uint64_t ownerPml4, const char* title, int w, int h,
@@ -38,6 +33,7 @@ namespace WinServer {
     int Poll(int windowId, int callerPid, Montauk::WinEvent* outEvent);
     int Enumerate(Montauk::WinInfo* outArray, int maxCount);
     uint64_t Map(int windowId, int callerPid, uint64_t callerPml4, uint64_t& heapNext);
+    int Unmap(int windowId, int callerPid, uint64_t callerPml4);
     int SendEvent(int windowId, const Montauk::WinEvent* event);
     int Resize(int windowId, int callerPid, uint64_t ownerPml4, int newW, int newH,
                uint64_t& heapNext, uint64_t& outVa);

@@ -14,6 +14,7 @@
 #include <Fs/Vfs.hpp>
 
 #include "Syscall.hpp"
+#include "Common.hpp"
 #include "WinServer.hpp"
 #include "Path.hpp"
 
@@ -44,22 +45,32 @@ namespace Montauk {
         if (!ResolveProcessPath(path, resolved, sizeof(resolved))) return -1;
 
         auto* parent = Sched::GetCurrentProcessPtr();
+        int parentSlot = Ipc::CurrentSlot();
         int childPid = Sched::Spawn(resolved, args);
         if (childPid < 0) return childPid;
 
-            // Inherit I/O redirection: if the parent is redirected, the child
-            // is marked redirected too. It stores a parentPid pointing to the
-            // process that owns the actual ring buffers (the one spawned via
-            // spawn_redir). The child does NOT get its own buffers — Sys_Print
-            // et al. look up the buffer owner at write time.
         if (parent && parent->redirected) {
             auto* child = Sched::GetProcessByPid(childPid);
-            if (child) {
-                child->redirected = true;
-                // Point to the buffer owner: if parent owns buffers, target parent;
-                // if parent itself inherited, follow the chain.
-                child->parentPid = parent->outBuf ? parent->pid : parent->parentPid;
+            int childSlot = Ipc::SlotForPid(childPid);
+            if (child == nullptr || childSlot < 0 || parentSlot < 0) {
+                Sched::KillProcess(childPid);
+                return -1;
             }
+
+            child->ioOutHandle = DuplicateHandleBetweenSlots(parentSlot, parent->ioOutHandle, childSlot);
+            child->ioInHandle = DuplicateHandleBetweenSlots(parentSlot, parent->ioInHandle, childSlot);
+            child->ioKeyHandle = DuplicateHandleBetweenSlots(parentSlot, parent->ioKeyHandle, childSlot);
+
+            if (child->ioOutHandle < 0 || child->ioInHandle < 0 || child->ioKeyHandle < 0 ||
+                !ConfigureRedirWaitsetForSlot(childSlot, child)) {
+                Sched::KillProcess(childPid);
+                return -1;
+            }
+
+            child->redirected = true;
+            child->parentPid = parent->pid;
+            child->termCols = parent->termCols;
+            child->termRows = parent->termRows;
         }
 
         return childPid;
@@ -157,9 +168,9 @@ namespace Montauk {
             const char* entries[1];
             if (Fs::Vfs::VfsReadDir(resolved, entries, 1) < 0) return -1;
         } else {
-            int handle = Fs::Vfs::VfsOpen(resolved);
-            if (handle < 0) return -1;
-            Fs::Vfs::VfsClose(handle);
+            Fs::Vfs::BackendFile file = {-1, -1};
+            if (Fs::Vfs::OpenBackendFile(resolved, file) < 0) return -1;
+            Fs::Vfs::CloseBackendFile(file);
         }
 
         int i = 0;
