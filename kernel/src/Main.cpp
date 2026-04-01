@@ -32,11 +32,7 @@
 #include <Graphics/Cursor.hpp>
 #include <Hal/MSR.hpp>
 #include <Hal/Cpu.hpp>
-#include <Fs/Ramdisk.hpp>
-#include <Fs/Vfs.hpp>
-#include <Fs/Fat32.hpp>
-#include <Fs/Ext2.hpp>
-#include <Fs/FsProbe.hpp>
+#include <Fs/Boot.hpp>
 #include <Sched/Scheduler.hpp>
 #include <Ipc/Ipc.hpp>
 #include <Api/Syscall.hpp>
@@ -178,51 +174,7 @@ extern "C" void kmain() {
     Efi::SystemTable* ST = (Efi::SystemTable*)Memory::HHDM(system_table_request.response->address);
     Efi::Init(ST, efi_memmap_request.response);
 
-    // Initialize ramdisk from Limine modules
-    bool hasRamdisk = false;
-    if (module_request.response != nullptr && module_request.response->module_count > 0) {
-        Kt::KernelLogStream(OK, "Modules") << "Found " << (uint64_t)module_request.response->module_count << " module(s)";
-        for (uint64_t i = 0; i < module_request.response->module_count; i++) {
-            limine_file* mod = module_request.response->modules[i];
-            const char* modString = mod->string;
-
-            // Find "ramdisk" module by its string
-            if (modString != nullptr &&
-                modString[0] == 'r' && modString[1] == 'a' && modString[2] == 'm' &&
-                modString[3] == 'd' && modString[4] == 'i' && modString[5] == 's' &&
-                modString[6] == 'k' && modString[7] == '\0') {
-                Kt::KernelLogStream(OK, "Modules") << "Ramdisk module at " << kcp::hex << (uint64_t)mod->address << kcp::dec << ", size=" << mod->size;
-                Fs::Ramdisk::Initialize(mod->address, mod->size);
-                hasRamdisk = true;
-            }
-        }
-    } else {
-        Kt::KernelLogStream(WARNING, "Modules") << "No modules loaded (ramdisk unavailable)";
-    }
-
-    // Initialize VFS and register ramdisk as drive 0 only if present
-    Fs::Vfs::Initialize();
-
-    if (hasRamdisk) {
-        static Fs::Vfs::FsDriver ramdiskDriver = {
-            Fs::Ramdisk::Open,
-            Fs::Ramdisk::Read,
-            Fs::Ramdisk::GetSize,
-            Fs::Ramdisk::Close,
-            Fs::Ramdisk::ReadDir,
-            Fs::Ramdisk::Write,
-            Fs::Ramdisk::Create,
-            Fs::Ramdisk::Delete,
-            Fs::Ramdisk::Mkdir
-        };
-        Fs::Vfs::RegisterDrive(0, &ramdiskDriver);
-    }
-
-    // Register filesystem probes and auto-mount partitions.
-    // When no ramdisk, disk partitions start at drive 0 so init.elf is found there.
-    Fs::Fat32::RegisterProbe();
-    Fs::Ext2::RegisterProbe();
-    Fs::FsProbe::MountPartitions(hasRamdisk ? 1 : 0);
+    Fs::InitializeBootFilesystems(module_request.response);
 
     Hal::LoadTSS();
     Montauk::InitializeSyscalls();
