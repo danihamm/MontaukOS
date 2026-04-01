@@ -155,6 +155,9 @@ namespace montauk {
     inline int fmkdir(const char* path) {
         return (int)syscall1(Montauk::SYS_FMKDIR, (uint64_t)path);
     }
+    inline int frename(const char* oldPath, const char* newPath) {
+        return (int)syscall2(Montauk::SYS_FRENAME, (uint64_t)oldPath, (uint64_t)newPath);
+    }
     inline int drivelist(int* outDrives, int max) {
         return (int)syscall2(Montauk::SYS_DRIVELIST, (uint64_t)outDrives, (uint64_t)max);
     }

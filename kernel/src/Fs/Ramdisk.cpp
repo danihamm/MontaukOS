@@ -47,6 +47,36 @@ namespace Fs::Ramdisk {
         return true;
     }
 
+    static int NormalizePath(const char* path, char* out, int outMax) {
+        if (path == nullptr || out == nullptr || outMax <= 1) return -1;
+        if (path[0] == '/') path++;
+
+        int len = 0;
+        while (path[len] != '\0' && len < outMax - 1) {
+            out[len] = path[len];
+            len++;
+        }
+        out[len] = '\0';
+
+        while (len > 1 && out[len - 1] == '/') {
+            out[--len] = '\0';
+        }
+        return len;
+    }
+
+    static int FindEntryByPath(const char* path) {
+        char normalized[MaxNameLen];
+        int normLen = NormalizePath(path, normalized, MaxNameLen);
+        if (normLen < 0) return -1;
+
+        for (int i = 0; i < fileCount; i++) {
+            char entryPath[MaxNameLen];
+            NormalizePath(fileTable[i].name, entryPath, MaxNameLen);
+            if (StrEqual(entryPath, normalized)) return i;
+        }
+        return -1;
+    }
+
     void Initialize(void* moduleData, uint64_t moduleSize) {
         Kt::KernelLogStream(Kt::OK, "Ramdisk") << "Parsing USTAR archive (" << moduleSize << " bytes)";
 
@@ -402,6 +432,76 @@ namespace Fs::Ramdisk {
         entry.heapAllocated = false;
 
         fileCount++;
+        return 0;
+    }
+
+    int Rename(const char* oldPath, const char* newPath) {
+        char oldNorm[MaxNameLen];
+        char newNorm[MaxNameLen];
+        int oldLen = NormalizePath(oldPath, oldNorm, MaxNameLen);
+        int newLen = NormalizePath(newPath, newNorm, MaxNameLen);
+        if (oldLen <= 0 || newLen <= 0) return -1;
+
+        int src = FindEntryByPath(oldNorm);
+        if (src < 0) return -1;
+
+        int dst = FindEntryByPath(newNorm);
+        if (dst >= 0 && dst != src) {
+            if (Delete(newNorm) < 0) return -1;
+            if (dst < src) src--;
+        }
+
+        const bool isDirectory = fileTable[src].isDirectory;
+
+        if (!isDirectory) {
+            if (newLen >= MaxNameLen) return -1;
+            for (int i = 0; i <= newLen; i++) fileTable[src].name[i] = newNorm[i];
+            return 0;
+        }
+
+        char oldPrefix[MaxNameLen];
+        if (oldLen + 1 >= MaxNameLen || newLen + 1 >= MaxNameLen) return -1;
+
+        for (int i = 0; i < oldLen; i++) oldPrefix[i] = oldNorm[i];
+        oldPrefix[oldLen] = '/';
+        oldPrefix[oldLen + 1] = '\0';
+
+        for (int i = 0; i < fileCount; i++) {
+            char normalized[MaxNameLen];
+            int normalizedLen = NormalizePath(fileTable[i].name, normalized, MaxNameLen);
+            if (normalizedLen < 0) return -1;
+
+            bool exactMatch = StrEqual(normalized, oldNorm);
+            bool childMatch = StartsWith(fileTable[i].name, oldPrefix);
+            if (!exactMatch && !childMatch) continue;
+
+            char updated[MaxNameLen];
+            if (exactMatch) {
+                for (int j = 0; j <= newLen; j++) updated[j] = newNorm[j];
+            } else {
+                int suffixLen = StrLen(fileTable[i].name) - (oldLen + 1);
+                if (newLen + 1 + suffixLen >= MaxNameLen) return -1;
+
+                int pos = 0;
+                for (int j = 0; j < newLen; j++) updated[pos++] = newNorm[j];
+                updated[pos++] = '/';
+                const char* suffix = fileTable[i].name + oldLen + 1;
+                while (*suffix && pos < MaxNameLen - 1) updated[pos++] = *suffix++;
+                updated[pos] = '\0';
+            }
+
+            int pos = 0;
+            while (updated[pos] != '\0' && pos < MaxNameLen - 1) {
+                fileTable[i].name[pos] = updated[pos];
+                pos++;
+            }
+            if (fileTable[i].isDirectory) {
+                if (pos >= MaxNameLen - 1) return -1;
+                fileTable[i].name[pos++] = '/';
+            }
+            fileTable[i].name[pos] = '\0';
+        }
+
         return 0;
     }
 

@@ -34,6 +34,7 @@ APPS=(
     "klog|apps/scalable/utilities-terminal.svg"
     "procmgr|apps/scalable/system-monitor.svg"
     "calculator|apps/scalable/accessories-calculator.svg"
+    "printers|devices/scalable/preferences-devices-printer.svg"
     "rpgdemo|apps/scalable/utilities-terminal.svg"
     "paint|apps/scalable/kolourpaint.svg"
     "screenshot|apps/scalable/gnome-screenshot.svg"

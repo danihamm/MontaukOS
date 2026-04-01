@@ -1,0 +1,12 @@
+.TH PRINTD 1
+.SH NAME
+printd \- MontaukOS userspace print spooler daemon
+.SH SYNOPSIS
+.B printd
+.SH DESCRIPTION
+.B printd
+monitors the print spool directories, claims queued jobs, and delivers them to IPP printers.
+
+It is normally launched automatically by
+.BR init (1)
+and does not require direct user interaction.

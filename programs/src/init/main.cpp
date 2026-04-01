@@ -156,6 +156,7 @@ extern "C" void _start() {
 
     // ---- Stage 1: Network configuration (non-blocking) ----
     run_service("0:/os/dhcp.elf", "dhcp", false);
+    run_service("0:/os/printd.elf", "print spooler", false);
 
     // ---- Stage 2: Login screen -> desktop (falls back to desktop, then shell) ----
     if (!run_service("0:/os/login.elf", "login")) {

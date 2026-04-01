@@ -34,6 +34,7 @@ namespace Fs::Ramdisk {
     int ReadDir(const char* path, const char** outNames, int maxEntries);
     int Delete(const char* path);
     int Mkdir(const char* path);
+    int Rename(const char* oldPath, const char* newPath);
     int GetFileCount();
 
 }

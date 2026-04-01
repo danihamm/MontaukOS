@@ -64,7 +64,7 @@ namespace Fs {
             Ramdisk::Create,
             Ramdisk::Delete,
             Ramdisk::Mkdir,
-            nullptr,
+            Ramdisk::Rename,
         };
 
     }

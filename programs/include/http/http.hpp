@@ -27,7 +27,64 @@ struct Response {
     int raw_len;
 };
 
+inline const char* find_header_block_end(const char* start, const char* end) {
+    if (!start || !end || start >= end) return nullptr;
+
+    for (const char* s = start; s < end - 3; s++) {
+        if (s[0] == '\r' && s[1] == '\n' && s[2] == '\r' && s[3] == '\n')
+            return s + 4;
+    }
+    for (const char* s = start; s < end - 1; s++) {
+        if (s[0] == '\n' && s[1] == '\n')
+            return s + 2;
+    }
+    return nullptr;
+}
+
+inline int parse_status_code(const char* start, const char* end) {
+    if (!start || !end || end - start < 12) return -1;
+
+    const char* p = start;
+    while (p < end && *p && *p != ' ') p++;
+    if (p >= end || *p != ' ') return -1;
+    p++;
+
+    int code = 0;
+    int digits = 0;
+    while (digits < 3 && p < end && *p >= '0' && *p <= '9') {
+        code = code * 10 + (*p - '0');
+        p++;
+        digits++;
+    }
+    return digits == 3 ? code : -1;
+}
+
+inline const char* find_final_response_start(const char* buf, int len) {
+    if (!buf || len <= 0) return nullptr;
+
+    const char* start = buf;
+    const char* end = buf + len;
+    for (;;) {
+        int code = parse_status_code(start, end);
+        if (code < 0) return nullptr;
+        if (code < 100 || code >= 200) return start;
+
+        const char* next = find_header_block_end(start, end);
+        if (!next || next >= end) return nullptr;
+        if (end - next < 5) return nullptr;
+        if (!(next[0] == 'H' && next[1] == 'T' && next[2] == 'T' && next[3] == 'P' && next[4] == '/'))
+            return nullptr;
+        start = next;
+    }
+}
+
+inline const char* skip_informational_responses(const char* buf, int len) {
+    const char* start = find_final_response_start(buf, len);
+    return start ? start : buf;
+}
+
 // Parse raw HTTP response in-place. Sets pointers into buf (does not copy).
+// Skips leading informational 1xx responses such as "100 Continue".
 // Returns status code, or -1 if unparseable.
 inline int parse_response(char* buf, int len, Response* out) {
     out->raw = buf;
@@ -38,21 +95,18 @@ inline int parse_response(char* buf, int len, Response* out) {
     out->body = nullptr;
     out->body_len = 0;
 
-    if (len < 12) return -1;  // "HTTP/1.x NNN"
+    const char* start = find_final_response_start(buf, len);
+    const char* end = buf + len;
+    if (!start || end - start < 12) return -1;  // "HTTP/1.x NNN"
 
     // Parse status code from "HTTP/1.x NNN"
-    const char* p = buf;
-    while (*p && *p != ' ') p++;
-    if (*p != ' ') return -1;
-    p++;
-    int code = 0;
-    for (int i = 0; i < 3 && *p >= '0' && *p <= '9'; i++, p++)
-        code = code * 10 + (*p - '0');
+    int code = parse_status_code(start, end);
+    if (code < 0) return -1;
     out->status = code;
 
     // Headers start after the status line
-    const char* hdr_start = buf;
-    while (hdr_start < buf + len - 1) {
+    const char* hdr_start = start;
+    while (hdr_start < end - 1) {
         if (*hdr_start == '\r' && *(hdr_start + 1) == '\n') { hdr_start += 2; break; }
         if (*hdr_start == '\n') { hdr_start++; break; }
         hdr_start++;
@@ -60,14 +114,21 @@ inline int parse_response(char* buf, int len, Response* out) {
     out->headers = hdr_start;
 
     // Find \r\n\r\n boundary between headers and body
-    for (const char* s = hdr_start; s < buf + len - 3; s++) {
-        if (s[0] == '\r' && s[1] == '\n' && s[2] == '\r' && s[3] == '\n') {
-            out->headers_len = (int)(s - hdr_start);
-            out->body = s + 4;
-            out->body_len = len - (int)(out->body - buf);
-            return code;
-        }
+    const char* body = find_header_block_end(hdr_start, end);
+    if (body) {
+        if (body >= hdr_start + 4 &&
+            body[-4] == '\r' && body[-3] == '\n' && body[-2] == '\r' && body[-1] == '\n')
+            out->headers_len = (int)((body - 4) - hdr_start);
+        else if (body >= hdr_start + 2 &&
+                 body[-2] == '\n' && body[-1] == '\n')
+            out->headers_len = (int)((body - 2) - hdr_start);
+        else
+            out->headers_len = (int)(body - hdr_start);
+        out->body = body;
+        out->body_len = len - (int)(out->body - buf);
+        return code;
     }
+
     // No body separator found — entire remainder is headers
     out->headers_len = len - (int)(hdr_start - buf);
     return code;

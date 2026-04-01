@@ -59,7 +59,7 @@ BINDIR := bin
 PROGRAMS := $(notdir $(wildcard src/*))
 
 # Programs with custom Makefiles (built separately).
-CUSTOM_BUILDS := doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator desktop login shell rpgdemo paint tcc lua screenshot texteditor mandelbrot
+CUSTOM_BUILDS := doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator desktop login shell rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl
 SYSTEM_PROGRAMS := $(filter-out $(CUSTOM_BUILDS),$(PROGRAMS))
 
 # Build targets: system programs go to bin/os/, apps go to bin/apps/<name>/.
@@ -81,9 +81,9 @@ CA_CERTS := $(BINDIR)/etc/ca-certificates.crt
 # Common shared assets (wallpapers, etc.)
 COMMONKEEP := $(BINDIR)/common/.keep
 
-.PHONY: all clean doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator login desktop shell rpgdemo paint tcc lua screenshot texteditor mandelbrot icons fonts bearssl libc tls libjpeg libjpegwrite install-apps
+.PHONY: all clean doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator login desktop shell rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl icons fonts bearssl libc tls libjpeg libjpegwrite install-apps
 
-all: bearssl libc libjpeg libjpegwrite tls $(TARGETS) fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator doom rpgdemo paint tcc lua screenshot texteditor mandelbrot login desktop shell icons fonts install-apps $(MANDST) $(WWWDST) $(CA_CERTS) $(COMMONKEEP)
+all: bearssl libc libjpeg libjpegwrite tls $(TARGETS) fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator doom rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl login desktop shell icons fonts install-apps $(MANDST) $(WWWDST) $(CA_CERTS) $(COMMONKEEP)
 
 # Build BearSSL static library (cross-compiled for freestanding x86_64).
 BEARSSL_INCLUDES := -isystem $(shell cd .. && pwd)/kernel/freestnd-c-hdrs/x86_64/include -isystem $(abspath include/libc)
@@ -192,6 +192,10 @@ procmgr: libc
 calculator: libc
 	$(MAKE) -C src/calculator
 
+# Build printers standalone GUI tool (depends on libc, bearssl, and tls).
+printers: bearssl libc tls
+	$(MAKE) -C src/printers
+
 # Build login screen via its own Makefile (depends on bearssl and libc).
 login: bearssl libc
 	$(MAKE) -C src/login
@@ -249,8 +253,16 @@ tcc: libc
 lua: libc
 	$(MAKE) -C src/lua
 
+# Build print spooler daemon (depends on libc, tls, and bearssl).
+printd: bearssl libc tls libjpegwrite
+	$(MAKE) -C src/printd
+
+# Build print control utility (depends on libc, tls, and bearssl).
+printctl: bearssl libc tls
+	$(MAKE) -C src/printctl
+
 # Install app bundles (manifests, icons, data files) into bin/apps/<name>/.
-install-apps: doom rpgdemo paint spreadsheet wordprocessor weather wikipedia imageviewer fontpreview pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator screenshot texteditor mandelbrot
+install-apps: doom rpgdemo paint spreadsheet wordprocessor weather wikipedia imageviewer fontpreview pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator screenshot texteditor mandelbrot printers
 	../scripts/install_apps.sh
 
 # Copy man pages into bin/man/ so mkramdisk.sh picks them up.
@@ -309,8 +321,11 @@ clean:
 	$(MAKE) -C src/klog clean
 	$(MAKE) -C src/procmgr clean
 	$(MAKE) -C src/calculator clean
+	$(MAKE) -C src/printers clean
 	$(MAKE) -C src/paint clean
 	$(MAKE) -C src/rpgdemo clean
 	$(MAKE) -C src/screenshot clean
 	$(MAKE) -C src/mandelbrot clean
 	$(MAKE) -C src/tcc clean
+	$(MAKE) -C src/printd clean
+	$(MAKE) -C src/printctl clean

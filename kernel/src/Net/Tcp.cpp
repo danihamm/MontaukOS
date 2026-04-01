@@ -553,11 +553,6 @@ namespace Net::Tcp {
             return -1;
         }
 
-        // Phase 1: Send data segments with interrupts disabled (lock-safe)
-        uint64_t flags;
-        asm volatile("pushfq; pop %0; cli" : "=r"(flags) :: "memory");
-        conn->Lock.Acquire();
-
         constexpr uint16_t MSS = 1460;
         uint16_t sent = 0;
 
@@ -567,6 +562,21 @@ namespace Net::Tcp {
                 segLen = MSS;
             }
 
+            uint32_t segSeq = 0;
+            uint32_t expectedAck = 0;
+            uint64_t flags;
+            asm volatile("pushfq; pop %0; cli" : "=r"(flags) :: "memory");
+            conn->Lock.Acquire();
+
+            if (conn->CurrentState != State::Established) {
+                conn->Lock.Release();
+                asm volatile("push %0; popfq" :: "r"(flags) : "memory");
+                return sent > 0 ? sent : -1;
+            }
+
+            segSeq = conn->SendNext;
+            expectedAck = segSeq + segLen;
+
             bool ok = SendSegment(conn, FLAG_ACK | FLAG_PSH, data + sent, segLen);
             if (!ok) {
                 conn->Lock.Release();
@@ -574,9 +584,8 @@ namespace Net::Tcp {
                 return sent > 0 ? sent : -1;
             }
 
-            conn->SendNext += segLen;
+            conn->SendNext = expectedAck;
 
-            // Store for retransmission
             if (segLen <= sizeof(conn->RetransmitBuffer)) {
                 memcpy(conn->RetransmitBuffer, data + sent, segLen);
                 conn->RetransmitLen = segLen;
@@ -584,44 +593,69 @@ namespace Net::Tcp {
                 conn->RetransmitCount = 0;
             }
 
-            sent += segLen;
-        }
+            conn->Lock.Release();
+            asm volatile("push %0; popfq" :: "r"(flags) : "memory");
 
-        conn->Lock.Release();
-        asm volatile("push %0; popfq" :: "r"(flags) : "memory");
-
-        // Phase 2: Wait for ACK without holding the lock (interrupts enabled)
-        uint64_t startTime = Timekeeping::GetMilliseconds();
-        while (conn->SendUnack != conn->SendNext) {
-            uint64_t now = Timekeeping::GetMilliseconds();
-            if ((now - startTime) > (RETRANSMIT_TIMEOUT_MS * MAX_RETRANSMITS)) {
-                break;
-            }
-            if ((now - conn->RetransmitTime) > RETRANSMIT_TIMEOUT_MS && conn->RetransmitLen > 0) {
-                conn->RetransmitCount++;
-                if (conn->RetransmitCount > MAX_RETRANSMITS) {
-                    break;
-                }
-                // Retransmit with brief interrupt-disabled window
+            while (true) {
                 asm volatile("pushfq; pop %0; cli" : "=r"(flags) :: "memory");
                 conn->Lock.Acquire();
-                uint32_t savedNext = conn->SendNext;
-                conn->SendNext = conn->SendUnack;
-                SendSegment(conn, FLAG_ACK | FLAG_PSH,
-                           conn->RetransmitBuffer, conn->RetransmitLen);
-                conn->SendNext = savedNext;
-                conn->RetransmitTime = Timekeeping::GetMilliseconds();
+
+                if (conn->SendUnack >= expectedAck) {
+                    conn->RetransmitLen = 0;
+                    conn->Lock.Release();
+                    asm volatile("push %0; popfq" :: "r"(flags) : "memory");
+                    sent += segLen;
+                    break;
+                }
+
+                if (conn->CurrentState != State::Established) {
+                    conn->SendNext = conn->SendUnack;
+                    conn->RetransmitLen = 0;
+                    conn->Lock.Release();
+                    asm volatile("push %0; popfq" :: "r"(flags) : "memory");
+                    return sent > 0 ? sent : -1;
+                }
+
+                uint64_t now = Timekeeping::GetMilliseconds();
+                bool shouldRetransmit =
+                    conn->RetransmitLen == segLen &&
+                    (now - conn->RetransmitTime) > RETRANSMIT_TIMEOUT_MS;
+                if (shouldRetransmit) {
+                    conn->RetransmitCount++;
+                    if (conn->RetransmitCount > MAX_RETRANSMITS) {
+                        conn->SendNext = conn->SendUnack;
+                        conn->RetransmitLen = 0;
+                        conn->Lock.Release();
+                        asm volatile("push %0; popfq" :: "r"(flags) : "memory");
+                        return sent > 0 ? sent : -1;
+                    }
+
+                    uint32_t savedNext = conn->SendNext;
+                    conn->SendNext = segSeq;
+                    bool retryOk = SendSegment(conn, FLAG_ACK | FLAG_PSH,
+                                               conn->RetransmitBuffer, conn->RetransmitLen);
+                    conn->SendNext = savedNext;
+                    conn->RetransmitTime = now;
+                    if (!retryOk) {
+                        conn->SendNext = conn->SendUnack;
+                        conn->RetransmitLen = 0;
+                        conn->Lock.Release();
+                        asm volatile("push %0; popfq" :: "r"(flags) : "memory");
+                        return sent > 0 ? sent : -1;
+                    }
+                }
+
+                uint64_t waitMs = 10;
+                if (conn->RetransmitLen == segLen && now <= conn->RetransmitTime + RETRANSMIT_TIMEOUT_MS) {
+                    waitMs = (conn->RetransmitTime + RETRANSMIT_TIMEOUT_MS) - now;
+                    if (waitMs == 0) waitMs = 1;
+                    if (waitMs > 10) waitMs = 10;
+                }
+
                 conn->Lock.Release();
                 asm volatile("push %0; popfq" :: "r"(flags) : "memory");
-                continue;
+                Sched::BlockOnObject(conn, waitMs);
             }
-
-            uint64_t waitMs = 10;
-            if (conn->RetransmitLen > 0 && now <= conn->RetransmitTime + RETRANSMIT_TIMEOUT_MS) {
-                waitMs = (conn->RetransmitTime + RETRANSMIT_TIMEOUT_MS) - now;
-                if (waitMs == 0) waitMs = 1;
-            }
-            Sched::BlockOnObject(conn, waitMs);
         }
 
         return sent;

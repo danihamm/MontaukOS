@@ -1,0 +1,32 @@
+.TH PRINTCTL 1
+.SH NAME
+printctl \- configure printers and submit print jobs
+.SH SYNOPSIS
+.B printctl
+.I command
+.RI [ options ]
+.SH DESCRIPTION
+.B printctl
+manages the MontaukOS userspace print spooler and submits print jobs to IPP printers.
+.SH COMMANDS
+.TP
+.B set-printer \fIURI\fR
+Store the default printer URI.
+.TP
+.B show-printer
+Print the configured default printer URI.
+.TP
+.B print \fIFILE\fR [\-\-printer \fIURI\fR] [\-\-name \fIJOB\fR] [\-\-wait]
+Queue a file for printing.
+.TP
+.B test-page [\-\-printer \fIURI\fR] [\-\-wait] [\-\-no-wait]
+Generate and queue a simple test page.
+.TP
+.B status [\-\-verbose]
+Show daemon state and queued, active, completed, and failed jobs.
+.TP
+.B inspect \fIJOB-ID\fR
+Show full metadata and debug details for a queued, active, completed, or failed job.
+.TP
+.B probe [\fIURI\fR]
+Probe the configured printer, print host and resolution details, and show IPP capability diagnostics.

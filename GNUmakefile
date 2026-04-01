@@ -174,6 +174,9 @@ kernel-deps:
 kernel: kernel-deps
 	$(MAKE) -C kernel
 
+.PHONY: programs
+programs:
+	$(MAKE) -C programs
 
 .PHONY: ramdisk
 ramdisk: limine/limine kernel programs

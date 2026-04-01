@@ -91,6 +91,16 @@ static bool color_eq(Color a, Color b) {
     return a.r == b.r && a.g == b.g && a.b == b.b;
 }
 
+static bool settings_status_visible(SettingsState* st) {
+    return st->status_msg[0] &&
+           (montauk::get_milliseconds() - st->status_time < 4000);
+}
+
+static void settings_set_status(SettingsState* st, const char* msg) {
+    montauk::strncpy(st->status_msg, msg ? msg : "", (int)sizeof(st->status_msg));
+    st->status_time = montauk::get_milliseconds();
+}
+
 // ============================================================================
 // Helper: find selected swatch index in a palette
 // ============================================================================
@@ -706,7 +716,6 @@ static void adduser_on_mouse(Window* win, MouseEvent& ev) {
     int my = ev.y - cr.y;
     int pad = 16;
     int sfh = system_font_height();
-    int fw = win->content_w - 2 * pad;
     int y = pad;
 
     // Username field hit
