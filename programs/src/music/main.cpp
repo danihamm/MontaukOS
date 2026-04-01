@@ -57,15 +57,9 @@ static constexpr Color TOOLBAR_BG     = Color::from_rgb(0xF5, 0xF5, 0xF5);
 static constexpr Color BORDER_COLOR   = Color::from_rgb(0xCC, 0xCC, 0xCC);
 static constexpr Color TEXT_COLOR     = Color::from_rgb(0x22, 0x22, 0x22);
 static constexpr Color DIM_TEXT       = Color::from_rgb(0x88, 0x88, 0x88);
-static constexpr Color ACCENT         = Color::from_rgb(0x36, 0x7B, 0xF0);
-static constexpr Color ACCENT_DARK    = Color::from_rgb(0x2A, 0x62, 0xC8);
 static constexpr Color TRACK_BG       = Color::from_rgb(0xDD, 0xDD, 0xDD);
 static constexpr Color WHITE          = Color::from_rgb(0xFF, 0xFF, 0xFF);
-static constexpr Color LIST_HOVER     = Color::from_rgb(0xE8, 0xF0, 0xFD);
-static constexpr Color LIST_PLAYING   = Color::from_rgb(0xD0, 0xE2, 0xFB);
-static constexpr Color LIST_SELECTED  = Color::from_rgb(0xF0, 0xF5, 0xFC);
 static constexpr Color BTN_BG         = Color::from_rgb(0xE8, 0xE8, 0xE8);
-static constexpr Color BTN_HOVER      = Color::from_rgb(0xD8, 0xD8, 0xD8);
 static constexpr Color STOP_COLOR     = Color::from_rgb(0xCC, 0x33, 0x33);
 
 // ============================================================================
@@ -172,8 +166,67 @@ struct PlayerState {
 };
 
 static PlayerState g;
+static Color g_accent = colors::ACCENT;
+static Color g_accent_dark = Color::from_rgb(0x2A, 0x62, 0xC8);
+static Color g_list_hover = Color::from_rgb(0xE8, 0xF0, 0xFD);
+static Color g_list_playing = Color::from_rgb(0xD0, 0xE2, 0xFB);
+static Color g_list_selected = Color::from_rgb(0xF0, 0xF5, 0xFC);
 
 static int visible_items();
+
+static Color shade(Color c, int delta) {
+    return Color::from_rgb(
+        (uint8_t)gui_clamp((int)c.r + delta, 0, 255),
+        (uint8_t)gui_clamp((int)c.g + delta, 0, 255),
+        (uint8_t)gui_clamp((int)c.b + delta, 0, 255));
+}
+
+static Color mix(Color a, Color b, int t) {
+    t = gui_clamp(t, 0, 255);
+    int inv = 255 - t;
+    return Color::from_rgb(
+        (uint8_t)((a.r * inv + b.r * t + 127) / 255),
+        (uint8_t)((a.g * inv + b.g * t + 127) / 255),
+        (uint8_t)((a.b * inv + b.b * t + 127) / 255));
+}
+
+static void music_set_accent(Color accent) {
+    g_accent = accent;
+    g_accent_dark = shade(accent, -28);
+    g_list_hover = mix(accent, WHITE, 220);
+    g_list_playing = mix(accent, WHITE, 196);
+    g_list_selected = mix(accent, WHITE, 236);
+}
+
+static void music_load_accent() {
+    music_set_accent(colors::ACCENT);
+
+    char user[64];
+    montauk::memset(user, 0, sizeof(user));
+    if (montauk::getuser(user, sizeof(user)) > 0 && user[0]) {
+        auto doc = montauk::config::load_user(user, "desktop");
+        int64_t accent = doc.get_int("appearance.accent_color", -1);
+        if (accent >= 0) {
+            music_set_accent(Color::from_rgb(
+                (uint8_t)((accent >> 16) & 0xFF),
+                (uint8_t)((accent >> 8) & 0xFF),
+                (uint8_t)(accent & 0xFF)));
+            doc.destroy();
+            return;
+        }
+        doc.destroy();
+    }
+
+    auto doc = montauk::config::load("desktop");
+    int64_t accent = doc.get_int("appearance.accent_color", -1);
+    if (accent >= 0) {
+        music_set_accent(Color::from_rgb(
+            (uint8_t)((accent >> 16) & 0xFF),
+            (uint8_t)((accent >> 8) & 0xFF),
+            (uint8_t)(accent & 0xFF)));
+    }
+    doc.destroy();
+}
 
 // ============================================================================
 // Pixel helpers
@@ -1042,11 +1095,11 @@ static void render(uint32_t* pixels) {
     px_icon_button(pixels, W, H, visualizer_rect.x, visualizer_rect.y,
                    visualizer_rect.w, visualizer_rect.h,
                    g.show_visualizer ? g.ico_visualizer_w : g.ico_visualizer,
-                   g.show_visualizer ? ACCENT : BTN_BG, 6);
+                   g.show_visualizer ? g_accent : BTN_BG, 6);
     px_icon_button(pixels, W, H, shuffle_rect.x, shuffle_rect.y, shuffle_rect.w, shuffle_rect.h,
                    g.shuffle_enabled ? g.ico_shuffle_w : g.ico_shuffle,
-                   g.shuffle_enabled ? ACCENT : BTN_BG, 6);
-    Color repeat_bg = (g.repeat_mode == RepeatMode::Off) ? BTN_BG : ACCENT;
+                   g.shuffle_enabled ? g_accent : BTN_BG, 6);
+    Color repeat_bg = (g.repeat_mode == RepeatMode::Off) ? BTN_BG : g_accent;
     px_icon_button(pixels, W, H, repeat_rect.x, repeat_rect.y, repeat_rect.w, repeat_rect.h,
                    (g.repeat_mode == RepeatMode::One) ? g.ico_repeat_one_w :
                    (g.repeat_mode == RepeatMode::All) ? g.ico_repeat_all_w :
@@ -1082,8 +1135,8 @@ static void render(uint32_t* pixels) {
             int pill_w = text_w(filter_label, FONT_SIZE_SM) + 14;
             int pill_x = visualizer_rect.x - TOOL_ICON_GAP - pill_w;
             int pill_y = (TOOLBAR_H - pill_h) / 2;
-            Color pill_bg = g.filter_active ? LIST_HOVER : BTN_BG;
-            Color pill_fg = g.filter_active ? ACCENT_DARK : DIM_TEXT;
+            Color pill_bg = g.filter_active ? g_list_hover : BTN_BG;
+            Color pill_fg = g.filter_active ? g_accent_dark : DIM_TEXT;
             if (pill_x > 80) {
                 px_fill_rounded(pixels, W, H, pill_x, pill_y, pill_w, pill_h, 6, pill_bg);
                 px_text(pixels, W, H, pill_x + 7, pill_y + (pill_h - fh_sm) / 2,
@@ -1115,27 +1168,27 @@ static void render(uint32_t* pixels) {
 
             Color bg = BG_COLOR;
             if (idx == g.current_track && g.play_state != PlayState::Stopped)
-                bg = LIST_PLAYING;
+                bg = g_list_playing;
             else if (idx == g.selected_item)
-                bg = LIST_SELECTED;
+                bg = g_list_selected;
             else if (idx == g.hovered_item)
-                bg = LIST_HOVER;
+                bg = g_list_hover;
 
             if (bg.r != BG_COLOR.r || bg.g != BG_COLOR.g || bg.b != BG_COLOR.b)
                 px_fill(pixels, W, H, 0, iy, W, LIST_ITEM_H, bg);
 
             if (idx == g.selected_item && !(idx == g.current_track && g.play_state != PlayState::Stopped))
-                px_fill(pixels, W, H, 0, iy, 3, LIST_ITEM_H, ACCENT);
+                px_fill(pixels, W, H, 0, iy, 3, LIST_ITEM_H, g_accent);
 
             if (idx == g.current_track && g.play_state == PlayState::Playing) {
-                px_triangle_right(pixels, W, H, 8, iy + 8, 8, 12, ACCENT);
+                px_triangle_right(pixels, W, H, 8, iy + 8, 8, 12, g_accent);
             } else if (idx == g.current_track && g.play_state == PlayState::Paused) {
-                px_fill(pixels, W, H, 8, iy + 8, 3, 12, ACCENT);
-                px_fill(pixels, W, H, 13, iy + 8, 3, 12, ACCENT);
+                px_fill(pixels, W, H, 8, iy + 8, 3, 12, g_accent);
+                px_fill(pixels, W, H, 13, iy + 8, 3, 12, g_accent);
             }
 
             Color name_color = (idx == g.current_track && g.play_state != PlayState::Stopped)
-                                ? ACCENT_DARK : TEXT_COLOR;
+                                ? g_accent_dark : TEXT_COLOR;
             px_text(pixels, W, H, 24, iy + (LIST_ITEM_H - fh_sm) / 2,
                     g.files[idx].name, name_color, FONT_SIZE_SM);
 
@@ -1169,7 +1222,7 @@ static void render(uint32_t* pixels) {
         px_fill(pixels, W, H, content_panel.x, content_panel.y, content_panel.w, content_panel.h, TOOLBAR_BG);
         Rect viz_rect = {12, content_panel.y + 12, W - 24, content_panel.h - 24};
         music_visualizer::render(pixels, W, H, viz_rect, g.visualizer,
-                                 ACCENT, ACCENT_DARK, TRACK_BG, BORDER_COLOR);
+                                 g_accent, g_accent_dark, TRACK_BG, BORDER_COLOR);
     }
 
     // ---- Now Playing info ----
@@ -1193,7 +1246,7 @@ static void render(uint32_t* pixels) {
         const char* state_str = (g.play_state == PlayState::Playing) ? "Playing" : "Paused";
         int sw = text_w(state_str, FONT_SIZE_SM);
         px_text(pixels, W, H, W - sw - 12, info_y + 8 + fh + 4,
-                state_str, ACCENT, FONT_SIZE_SM);
+                state_str, g_accent, FONT_SIZE_SM);
     } else {
         const char* msg = "No track selected";
         px_text(pixels, W, H, 12, info_y + (INFO_H - fh) / 2, msg, DIM_TEXT);
@@ -1211,9 +1264,9 @@ static void render(uint32_t* pixels) {
         int fill = (int)((g.played_samples * bar_w) / g.total_samples);
         if (fill > bar_w) fill = bar_w;
         if (fill > 0)
-            px_fill_rounded(pixels, W, H, bar_x, bar_y, fill, bar_h, 3, ACCENT);
+            px_fill_rounded(pixels, W, H, bar_x, bar_y, fill, bar_h, 3, g_accent);
         // Knob
-        px_circle(pixels, W, H, bar_x + fill, bar_y + bar_h / 2, 5, ACCENT);
+        px_circle(pixels, W, H, bar_x + fill, bar_y + bar_h / 2, 5, g_accent);
         px_circle(pixels, W, H, bar_x + fill, bar_y + bar_h / 2, 2, WHITE);
     }
 
@@ -1233,7 +1286,7 @@ static void render(uint32_t* pixels) {
     // [Play/Pause]
     {
         bool active = (g.play_state == PlayState::Playing);
-        Color bg = active ? ACCENT : BTN_BG;
+        Color bg = active ? g_accent : BTN_BG;
         const SvgIcon& ic = active ? g.ico_pause_w : g.ico_play;
         px_icon_button(pixels, W, H, bx, by, btn_w, btn_h, ic, bg, btn_r);
     }
@@ -1496,6 +1549,8 @@ extern "C" void _start() {
             set_user_home();
         }
     }
+
+    music_load_accent();
 
     // Load font
     {
