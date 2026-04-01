@@ -47,6 +47,7 @@ CXXFLAGS := \
     -mcmodel=small \
     -I $(PROG_INC) \
     -isystem $(PROG_INC)/libc \
+    -I ../../lib/bearssl/inc \
     -isystem ../../../kernel/freestnd-c-hdrs/x86_64/include \
     -isystem ../../../kernel/freestnd-cxx-hdrs/x86_64/include
 
@@ -63,7 +64,7 @@ LDFLAGS := \
 
 # ---- Source files ----
 
-SRCS := main.cpp render.cpp diskdetail.cpp stb_truetype_impl.cpp
+SRCS := main.cpp render.cpp diskdetail.cpp printers.cpp stb_truetype_impl.cpp
 OBJS := $(addprefix $(OBJDIR)/,$(SRCS:.cpp=.o))
 
 # ---- Target ----

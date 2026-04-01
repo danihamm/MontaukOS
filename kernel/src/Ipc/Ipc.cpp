@@ -118,6 +118,15 @@ namespace Ipc {
         uint32_t numPages;
     };
 
+    static inline uint32_t* SurfacePixelPtr(Surface* surface, uint64_t pixelIndex) {
+        if (surface == nullptr) return nullptr;
+        uint64_t byteOffset = pixelIndex * sizeof(uint32_t);
+        uint32_t pageIndex = (uint32_t)(byteOffset / 0x1000ULL);
+        uint32_t pageOffset = (uint32_t)(byteOffset % 0x1000ULL);
+        if (pageIndex >= surface->numPages) return nullptr;
+        return (uint32_t*)((uint8_t*)Memory::HHDM(surface->physPages[pageIndex]) + pageOffset);
+    }
+
     static HandleEntry g_handleTables[Sched::MaxProcesses][MaxHandlesPerProcess] = {};
     static SurfaceMap g_surfaceMaps[Sched::MaxProcesses][MaxSurfaceMapsPerProcess] = {};
 
@@ -1377,6 +1386,40 @@ namespace Ipc {
             void* dstPage = (void*)Memory::HHDM(dst->physPages[i]);
             memcpy(dstPage, srcPage, 0x1000);
         }
+        NotifyObjectChanged((Object*)dst);
+        return 0;
+    }
+
+    int CopySurfacePreserve(Surface* dst, int dstWidth, int dstHeight,
+                            Surface* src, int srcWidth, int srcHeight,
+                            uint32_t fillPixel) {
+        if (dst == nullptr || src == nullptr) return -1;
+        if (dstWidth <= 0 || dstHeight <= 0 || srcWidth <= 0 || srcHeight <= 0) return -1;
+
+        uint64_t dstPixels = (uint64_t)dstWidth * (uint64_t)dstHeight;
+        uint64_t srcPixels = (uint64_t)srcWidth * (uint64_t)srcHeight;
+        if (dstPixels * sizeof(uint32_t) > dst->sizeBytes) return -1;
+        if (srcPixels * sizeof(uint32_t) > src->sizeBytes) return -1;
+
+        for (uint64_t i = 0; i < dstPixels; i++) {
+            uint32_t* p = SurfacePixelPtr(dst, i);
+            if (p != nullptr) *p = fillPixel;
+        }
+
+        int copyWidth = (dstWidth < srcWidth) ? dstWidth : srcWidth;
+        int copyHeight = (dstHeight < srcHeight) ? dstHeight : srcHeight;
+        for (int y = 0; y < copyHeight; y++) {
+            uint64_t dstRow = (uint64_t)y * (uint64_t)dstWidth;
+            uint64_t srcRow = (uint64_t)y * (uint64_t)srcWidth;
+            for (int x = 0; x < copyWidth; x++) {
+                uint32_t* srcPixel = SurfacePixelPtr(src, srcRow + (uint64_t)x);
+                uint32_t* dstPixel = SurfacePixelPtr(dst, dstRow + (uint64_t)x);
+                if (srcPixel != nullptr && dstPixel != nullptr) {
+                    *dstPixel = *srcPixel;
+                }
+            }
+        }
+
         NotifyObjectChanged((Object*)dst);
         return 0;
     }

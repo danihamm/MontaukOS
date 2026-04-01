@@ -17,6 +17,21 @@ int g_win_h = INIT_H;
 DevExplorerState g_state;
 TrueTypeFont* g_font = nullptr;
 
+static void refresh_devices(DevExplorerState* de) {
+    if (de == nullptr) return;
+
+    int kernel_count = montauk::devlist(de->devs, MAX_DEVS);
+    if (kernel_count < 0) kernel_count = 0;
+    if (kernel_count > MAX_DEVS) kernel_count = MAX_DEVS;
+
+    int printer_count = append_printer_devices(
+        de->devs + kernel_count, MAX_TOTAL_DEVS - kernel_count);
+    if (printer_count < 0) printer_count = 0;
+
+    de->dev_count = kernel_count + printer_count;
+    de->last_poll_ms = montauk::get_milliseconds();
+}
+
 // ============================================================================
 // Display row building
 // ============================================================================
@@ -92,7 +107,7 @@ static bool handle_list_click(int mx, int my) {
                 bool is_double = (de.last_click_row == i)
                               && (now - de.last_click_ms < 400);
 
-                if (is_double && de.devs[di].category == 7) {
+                if (is_double && de.devs[di].category == CAT_STORAGE) {
                     int port = (int)de.devs[di]._pad[0];
                     open_disk_detail(port, de.devs[di].name);
                     de.last_click_row = -1;
@@ -201,8 +216,7 @@ extern "C" void _start() {
     }
 
     // Initial device poll
-    g_state.dev_count = montauk::devlist(g_state.devs, MAX_DEVS);
-    g_state.last_poll_ms = montauk::get_milliseconds();
+    refresh_devices(&g_state);
 
     WsWindow win;
     if (!win.create("Devices", INIT_W, INIT_H))
@@ -221,8 +235,7 @@ extern "C" void _start() {
         // Poll for device refresh
         uint64_t now = montauk::get_milliseconds();
         if (now - g_state.last_poll_ms >= POLL_MS) {
-            g_state.dev_count = montauk::devlist(g_state.devs, MAX_DEVS);
-            g_state.last_poll_ms = now;
+            refresh_devices(&g_state);
             redraw_main = true;
         }
 

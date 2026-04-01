@@ -285,6 +285,17 @@ namespace WinServer {
         }
 
         if (slot.liveSurface != nullptr) {
+            Ipc::CopySurfacePreserve(newLive, newW, newH,
+                                     slot.liveSurface, slot.width, slot.height,
+                                     0xFFFFFFFFu);
+        }
+        if (slot.snapshotSurface != nullptr) {
+            Ipc::CopySurfacePreserve(newSnapshot, newW, newH,
+                                     slot.snapshotSurface, slot.width, slot.height,
+                                     0xFFFFFFFFu);
+        }
+
+        if (slot.liveSurface != nullptr) {
             Ipc::UnmapSurfaceForPid(slot.liveSurface, callerPid, ownerPml4);
             Ipc::ReleaseSurface(slot.liveSurface);
         }

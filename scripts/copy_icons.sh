@@ -55,6 +55,8 @@ ICONS=(
     "places/scalable/user-home.svg"
     "devices/scalable/computer.svg"
     "devices/scalable/network-wired.svg"
+    "devices/scalable/printer.svg"
+    "devices/symbolic/printer-symbolic.svg"
     "mimetypes/scalable/text-x-generic.svg"
     "mimetypes/scalable/application-x-executable.svg"
     "categories/scalable/help-about.svg"

@@ -123,6 +123,9 @@ namespace Ipc {
     uint64_t GetSurfaceSize(const Surface* surface);
     int ResizeSurface(Surface* surface, uint64_t newSize);
     int CopySurface(Surface* dst, Surface* src);
+    int CopySurfacePreserve(Surface* dst, int dstWidth, int dstHeight,
+                            Surface* src, int srcWidth, int srcHeight,
+                            uint32_t fillPixel);
     uint64_t MapSurfaceHandle(int handle);
     int ResizeSurfaceHandle(int handle, uint64_t newSize);
     int MapSurfaceForPid(Surface* surface, int pid, uint64_t pml4Phys, uint64_t& heapNext, uint64_t& outVa);

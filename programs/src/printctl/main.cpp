@@ -37,6 +37,31 @@ static void print_host_details(const IppUri& uri) {
     printf("Path: %s\n", uri.path);
 }
 
+static void print_probe_state_summary(const ProbeState& probe, bool verbose) {
+    if (!probe.printer_uri[0] && !probe.message[0]) return;
+
+    printf("Last probe: %s", probe.ok ? "ok" : "failed");
+    if (probe.probed_at[0]) printf("  at %s", probe.probed_at);
+    printf("\n");
+
+    if (!verbose) return;
+
+    if (probe.ok && probe.caps.printer_name[0]) printf("Printer name: %s\n", probe.caps.printer_name);
+    else if (probe.message[0]) printf("Probe status: %s\n", probe.message);
+
+    if (probe.ok) {
+        printf("Supports PDF: %s\n", probe.caps.supports_pdf ? "yes" : "no");
+        printf("Supports JPEG: %s\n", probe.caps.supports_jpeg ? "yes" : "no");
+        printf("Supports text: %s\n", probe.caps.supports_text ? "yes" : "no");
+        if (probe.caps.preferred_format[0]) printf("Preferred format: %s\n", probe.caps.preferred_format);
+        if (probe.caps.default_format[0]) printf("Default format: %s\n", probe.caps.default_format);
+        if (probe.caps.supported_formats[0]) printf("Supported formats: %s\n", probe.caps.supported_formats);
+        if (probe.caps.status_message[0]) printf("Printer status: %s\n", probe.caps.status_message);
+    }
+
+    if (probe.detail[0]) printf("Probe detail: %s\n", probe.detail);
+}
+
 static void print_job_detail(const JobMeta& job, const char* state, bool verbose) {
     printf("  %s  %s\n", job.id, job.job_name);
     printf("    state: %s", state ? state : job.state);
@@ -94,7 +119,7 @@ static int cmd_status(const ArgList& args) {
         }
     }
 
-    char uri[MAX_PATH_LEN];
+    char uri[MAX_PATH_LEN] = {};
     if (read_default_printer_uri(uri, sizeof(uri))) {
         printf("Default printer: %s\n", uri);
         if (verbose) {
@@ -109,6 +134,12 @@ static int cmd_status(const ArgList& args) {
         }
     } else
         printf("Default printer: not configured\n");
+
+    if (uri[0]) {
+        ProbeState probe = {};
+        if (load_printer_probe_state(&probe) && strcmp(probe.printer_uri, uri) == 0)
+            print_probe_state_summary(probe, verbose);
+    }
 
     int pid = -1;
     if (daemon_is_running(&pid))
@@ -278,44 +309,39 @@ static int cmd_probe(const char* printer_uri) {
         return 1;
     }
 
+    uint32_t ip = 0;
+    if (resolve_host(normalized.host, &ip)) normalized.ip = ip;
+
     printf("Printer URI: %s\n", normalized.normalized);
     print_host_details(normalized);
-
-    uint32_t ip = 0;
-    if (!resolve_host(normalized.host, &ip)) {
+    if (!normalized.ip) {
         if (host_looks_like_mdns(normalized.host))
             printf("Resolution: unresolved (.local/mDNS not supported yet)\n");
         else
             printf("Resolution: unresolved\n");
+    } else {
+        char ip_text[20];
+        format_ipv4(ip_text, sizeof(ip_text), normalized.ip);
+        printf("Resolution: ok (%s)\n", ip_text);
+    }
+
+    ProbeState probe = {};
+    if (!probe_printer_uri(normalized.normalized, &probe, err, sizeof(err))) {
+        printf("Probe failed: %s\n", probe.message[0] ? probe.message : (err[0] ? err : "IPP probe failed"));
+        if (probe.detail[0]) printf("Detail: %s\n", probe.detail);
         return 1;
     }
 
-    normalized.ip = ip;
-    char ip_text[20];
-    format_ipv4(ip_text, sizeof(ip_text), ip);
-    printf("Resolution: ok (%s)\n", ip_text);
-
-    IppCapabilities caps = {};
-    if (!ipp_get_printer_capabilities(normalized.normalized, &caps, err, sizeof(err))) {
-        char detail[256] = {};
-        summarize_ipp_capabilities(&caps, detail, sizeof(detail));
-        printf("Probe failed: %s\n", err[0] ? err : "IPP probe failed");
-        if (detail[0]) printf("Detail: %s\n", detail);
-        return 1;
-    }
-
-    char detail[256] = {};
-    summarize_ipp_capabilities(&caps, detail, sizeof(detail));
     printf("Probe: ok\n");
-    if (caps.printer_name[0]) printf("Printer name: %s\n", caps.printer_name);
-    printf("Supports PDF: %s\n", caps.supports_pdf ? "yes" : "no");
-    printf("Supports JPEG: %s\n", caps.supports_jpeg ? "yes" : "no");
-    printf("Supports text: %s\n", caps.supports_text ? "yes" : "no");
-    if (caps.preferred_format[0]) printf("Preferred format: %s\n", caps.preferred_format);
-    if (caps.default_format[0]) printf("Default format: %s\n", caps.default_format);
-    if (caps.supported_formats[0]) printf("Supported formats: %s\n", caps.supported_formats);
-    if (caps.status_message[0]) printf("Printer status: %s\n", caps.status_message);
-    if (detail[0]) printf("Detail: %s\n", detail);
+    if (probe.caps.printer_name[0]) printf("Printer name: %s\n", probe.caps.printer_name);
+    printf("Supports PDF: %s\n", probe.caps.supports_pdf ? "yes" : "no");
+    printf("Supports JPEG: %s\n", probe.caps.supports_jpeg ? "yes" : "no");
+    printf("Supports text: %s\n", probe.caps.supports_text ? "yes" : "no");
+    if (probe.caps.preferred_format[0]) printf("Preferred format: %s\n", probe.caps.preferred_format);
+    if (probe.caps.default_format[0]) printf("Default format: %s\n", probe.caps.default_format);
+    if (probe.caps.supported_formats[0]) printf("Supported formats: %s\n", probe.caps.supported_formats);
+    if (probe.caps.status_message[0]) printf("Printer status: %s\n", probe.caps.status_message);
+    if (probe.detail[0]) printf("Detail: %s\n", probe.detail);
     return 0;
 }
 

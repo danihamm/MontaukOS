@@ -31,6 +31,7 @@ static constexpr const char* SPOOL_FAILED_DIR        = "0:/spool/print/failed";
 static constexpr const char* SPOOL_DOCS_DIR          = "0:/spool/print/docs";
 static constexpr const char* SPOOL_TMP_DIR           = "0:/spool/print/tmp";
 static constexpr const char* SPOOL_DAEMON_PID_PATH   = "0:/spool/print/daemon.pid";
+static constexpr const char* SPOOL_PROBE_STATE_PATH  = "0:/spool/print/printer-probe.state";
 static constexpr const char* PRINTD_BINARY           = "0:/os/printd.elf";
 static constexpr int MAX_PATH_LEN                    = 256;
 static constexpr int MAX_JOB_NAME_LEN                = 128;
@@ -88,6 +89,15 @@ struct IppCapabilities {
     char preferred_format[64];
 };
 
+struct ProbeState {
+    bool ok;
+    char printer_uri[MAX_PATH_LEN];
+    char probed_at[32];
+    char message[128];
+    char detail[MAX_DEBUG_LEN];
+    IppCapabilities caps;
+};
+
 struct IppPrintResult {
     bool ok;
     bool use_tls;
@@ -118,6 +128,10 @@ struct ByteBuilder {
 
 inline void zero_job(JobMeta* job) {
     if (job) memset(job, 0, sizeof(*job));
+}
+
+inline void zero_probe_state(ProbeState* state) {
+    if (state) memset(state, 0, sizeof(*state));
 }
 
 inline void safe_copy(char* dst, int dst_len, const char* src) {
@@ -695,6 +709,112 @@ inline bool load_job_from_path(const char* path, JobMeta* job) {
     }
     fclose(f);
     return job->id[0] != '\0';
+}
+
+inline bool save_probe_state_atomic(const char* path, const ProbeState* state) {
+    if (path == nullptr || state == nullptr) return false;
+    char tmp[MAX_PATH_LEN];
+    snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+
+    FILE* f = fopen(tmp, "wb");
+    if (!f) return false;
+
+    ProbeState copy = *state;
+    sanitize_field(copy.printer_uri);
+    sanitize_field(copy.probed_at);
+    sanitize_field(copy.message);
+    sanitize_field(copy.detail);
+    sanitize_field(copy.caps.host);
+    sanitize_field(copy.caps.path);
+    sanitize_field(copy.caps.printer_name);
+    sanitize_field(copy.caps.status_message);
+    sanitize_field(copy.caps.supported_formats);
+    sanitize_field(copy.caps.default_format);
+    sanitize_field(copy.caps.preferred_format);
+
+    fprintf(f, "ok=%d\n", copy.ok ? 1 : 0);
+    fprintf(f, "printer_uri=%s\n", copy.printer_uri);
+    fprintf(f, "probed_at=%s\n", copy.probed_at);
+    fprintf(f, "message=%s\n", copy.message);
+    fprintf(f, "detail=%s\n", copy.detail);
+    fprintf(f, "caps_ok=%d\n", copy.caps.ok ? 1 : 0);
+    fprintf(f, "caps_supports_pdf=%d\n", copy.caps.supports_pdf ? 1 : 0);
+    fprintf(f, "caps_supports_text=%d\n", copy.caps.supports_text ? 1 : 0);
+    fprintf(f, "caps_supports_jpeg=%d\n", copy.caps.supports_jpeg ? 1 : 0);
+    fprintf(f, "caps_use_tls=%d\n", copy.caps.use_tls ? 1 : 0);
+    fprintf(f, "caps_http_status=%d\n", copy.caps.http_status);
+    fprintf(f, "caps_ipp_status=%u\n", (unsigned)copy.caps.ipp_status);
+    fprintf(f, "caps_request_id=%d\n", copy.caps.request_id);
+    fprintf(f, "caps_resolved_ip=%u\n", (unsigned)copy.caps.resolved_ip);
+    fprintf(f, "caps_port=%u\n", (unsigned)copy.caps.port);
+    fprintf(f, "caps_host=%s\n", copy.caps.host);
+    fprintf(f, "caps_path=%s\n", copy.caps.path);
+    fprintf(f, "caps_printer_name=%s\n", copy.caps.printer_name);
+    fprintf(f, "caps_status_message=%s\n", copy.caps.status_message);
+    fprintf(f, "caps_supported_formats=%s\n", copy.caps.supported_formats);
+    fprintf(f, "caps_default_format=%s\n", copy.caps.default_format);
+    fprintf(f, "caps_preferred_format=%s\n", copy.caps.preferred_format);
+    fclose(f);
+
+    if (rename(tmp, path) != 0) {
+        remove(tmp);
+        return false;
+    }
+    return true;
+}
+
+inline bool load_probe_state(const char* path, ProbeState* state) {
+    if (path == nullptr || state == nullptr) return false;
+    zero_probe_state(state);
+
+    FILE* f = fopen(path, "rb");
+    if (!f) return false;
+
+    char line[512];
+    while (fgets(line, sizeof(line), f) != nullptr) {
+        trim_line(line);
+        char* eq = strchr(line, '=');
+        if (!eq) continue;
+        *eq++ = '\0';
+
+        if (strcmp(line, "ok") == 0) state->ok = atoi(eq) != 0;
+        else if (strcmp(line, "printer_uri") == 0) safe_copy(state->printer_uri, sizeof(state->printer_uri), eq);
+        else if (strcmp(line, "probed_at") == 0) safe_copy(state->probed_at, sizeof(state->probed_at), eq);
+        else if (strcmp(line, "message") == 0) safe_copy(state->message, sizeof(state->message), eq);
+        else if (strcmp(line, "detail") == 0) safe_copy(state->detail, sizeof(state->detail), eq);
+        else if (strcmp(line, "caps_ok") == 0) state->caps.ok = atoi(eq) != 0;
+        else if (strcmp(line, "caps_supports_pdf") == 0) state->caps.supports_pdf = atoi(eq) != 0;
+        else if (strcmp(line, "caps_supports_text") == 0) state->caps.supports_text = atoi(eq) != 0;
+        else if (strcmp(line, "caps_supports_jpeg") == 0) state->caps.supports_jpeg = atoi(eq) != 0;
+        else if (strcmp(line, "caps_use_tls") == 0) state->caps.use_tls = atoi(eq) != 0;
+        else if (strcmp(line, "caps_http_status") == 0) state->caps.http_status = atoi(eq);
+        else if (strcmp(line, "caps_ipp_status") == 0) state->caps.ipp_status = (uint16_t)atoi(eq);
+        else if (strcmp(line, "caps_request_id") == 0) state->caps.request_id = atoi(eq);
+        else if (strcmp(line, "caps_resolved_ip") == 0) state->caps.resolved_ip = (uint32_t)strtoul(eq, nullptr, 10);
+        else if (strcmp(line, "caps_port") == 0) state->caps.port = (uint16_t)atoi(eq);
+        else if (strcmp(line, "caps_host") == 0) safe_copy(state->caps.host, sizeof(state->caps.host), eq);
+        else if (strcmp(line, "caps_path") == 0) safe_copy(state->caps.path, sizeof(state->caps.path), eq);
+        else if (strcmp(line, "caps_printer_name") == 0) safe_copy(state->caps.printer_name, sizeof(state->caps.printer_name), eq);
+        else if (strcmp(line, "caps_status_message") == 0) safe_copy(state->caps.status_message, sizeof(state->caps.status_message), eq);
+        else if (strcmp(line, "caps_supported_formats") == 0) safe_copy(state->caps.supported_formats, sizeof(state->caps.supported_formats), eq);
+        else if (strcmp(line, "caps_default_format") == 0) safe_copy(state->caps.default_format, sizeof(state->caps.default_format), eq);
+        else if (strcmp(line, "caps_preferred_format") == 0) safe_copy(state->caps.preferred_format, sizeof(state->caps.preferred_format), eq);
+    }
+    fclose(f);
+    return state->printer_uri[0] != '\0' || state->message[0] != '\0';
+}
+
+inline bool save_printer_probe_state(const ProbeState* state) {
+    ensure_spool_dirs();
+    return save_probe_state_atomic(SPOOL_PROBE_STATE_PATH, state);
+}
+
+inline bool load_printer_probe_state(ProbeState* state) {
+    return load_probe_state(SPOOL_PROBE_STATE_PATH, state);
+}
+
+inline void clear_printer_probe_state() {
+    remove(SPOOL_PROBE_STATE_PATH);
 }
 
 inline bool find_job(const char* id, char* out_path, int out_path_len, char* out_state, int out_state_len) {
@@ -1321,6 +1441,18 @@ inline void summarize_ipp_capabilities(const IppCapabilities* caps, char* out, i
              caps->supports_text ? "yes" : "no");
 }
 
+inline void summarize_probe_transport(const IppUri* uri, const char* resolution, char* out, int out_len) {
+    if (out == nullptr || out_len <= 0) return;
+    out[0] = '\0';
+    if (uri == nullptr) return;
+    snprintf(out, (size_t)out_len, "host=%s ip=%s port=%u path=%s %s",
+             uri->host,
+             (resolution && *resolution) ? resolution : "unresolved",
+             (unsigned)uri->port,
+             uri->path[0] ? uri->path : "/",
+             uri->use_tls ? "tls" : "plain");
+}
+
 inline void summarize_ipp_print_result(const IppPrintResult* result, char* out, int out_len) {
     if (out == nullptr || out_len <= 0) return;
     out[0] = '\0';
@@ -1513,6 +1645,64 @@ inline bool ipp_get_printer_capabilities(const char* printer_uri,
         safe_copy(err, err_len, out ? out->status_message : "IPP capability query failed");
         return false;
     }
+    return true;
+}
+
+inline bool probe_printer_uri(const char* printer_uri, ProbeState* out, char* err, int err_len) {
+    if (out == nullptr) return false;
+    zero_probe_state(out);
+    now_string(out->probed_at, sizeof(out->probed_at));
+    if (printer_uri && *printer_uri) safe_copy(out->printer_uri, sizeof(out->printer_uri), printer_uri);
+
+    if (printer_uri == nullptr || *printer_uri == '\0') {
+        safe_copy(out->message, sizeof(out->message), "No printer configured");
+        safe_copy(err, err_len, out->message);
+        return false;
+    }
+
+    IppUri normalized = {};
+    char local_err[128] = {};
+    if (!normalize_ipp_uri(printer_uri, &normalized, local_err, sizeof(local_err))) {
+        safe_copy(out->message, sizeof(out->message), local_err);
+        safe_copy(err, err_len, local_err);
+        return false;
+    }
+
+    safe_copy(out->printer_uri, sizeof(out->printer_uri), normalized.normalized);
+
+    uint32_t ip = 0;
+    if (!resolve_host(normalized.host, &ip)) {
+        summarize_probe_transport(&normalized, "unresolved", out->detail, sizeof(out->detail));
+        if (host_looks_like_mdns(normalized.host))
+            safe_copy(out->message, sizeof(out->message), ".local/mDNS hostnames are not supported yet");
+        else
+            snprintf(out->message, sizeof(out->message), "Could not resolve %s", normalized.host);
+        safe_copy(err, err_len, out->message);
+        return false;
+    }
+
+    char ip_text[20];
+    format_ipv4(ip_text, sizeof(ip_text), ip);
+    summarize_probe_transport(&normalized, ip_text, out->detail, sizeof(out->detail));
+
+    if (!ipp_get_printer_capabilities(normalized.normalized, &out->caps, local_err, sizeof(local_err))) {
+        if (out->caps.host[0] == '\0') safe_copy(out->caps.host, sizeof(out->caps.host), normalized.host);
+        if (out->caps.path[0] == '\0') safe_copy(out->caps.path, sizeof(out->caps.path), normalized.path);
+        if (out->caps.port == 0) out->caps.port = normalized.port;
+        out->caps.resolved_ip = ip;
+        out->caps.use_tls = normalized.use_tls;
+        char summary[MAX_DEBUG_LEN] = {};
+        summarize_ipp_capabilities(&out->caps, summary, sizeof(summary));
+        if (summary[0]) safe_copy(out->detail, sizeof(out->detail), summary);
+        safe_copy(out->message, sizeof(out->message), local_err[0] ? local_err : "IPP probe failed");
+        safe_copy(err, err_len, out->message);
+        return false;
+    }
+
+    summarize_ipp_capabilities(&out->caps, out->detail, sizeof(out->detail));
+    safe_copy(out->message, sizeof(out->message), "Printer probe succeeded");
+    out->ok = true;
+    if (err && err_len > 0) err[0] = '\0';
     return true;
 }
 

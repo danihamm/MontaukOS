@@ -15,6 +15,9 @@ extern "C" {
 
 using namespace print;
 
+static constexpr uint64_t PROBE_REFRESH_OK_MS = 60000;
+static constexpr uint64_t PROBE_REFRESH_FAIL_MS = 15000;
+
 static void log_msg(const char* fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
@@ -63,6 +66,56 @@ static bool write_pid_file() {
     char pid[32];
     snprintf(pid, sizeof(pid), "%d\n", montauk::getpid());
     return write_text_file_atomic(SPOOL_DAEMON_PID_PATH, pid);
+}
+
+static void auto_probe_configured_printer(char* last_uri, int last_uri_len,
+                                          uint64_t* last_probe_ms, bool* last_probe_ok,
+                                          bool force = false) {
+    if (last_uri == nullptr || last_probe_ms == nullptr || last_probe_ok == nullptr) return;
+
+    char current_uri[MAX_PATH_LEN] = {};
+    bool have_uri = read_default_printer_uri(current_uri, sizeof(current_uri));
+    uint64_t now = montauk::get_milliseconds();
+
+    if (!have_uri || current_uri[0] == '\0') {
+        bool had_cached_uri = last_uri[0] != '\0';
+        if (had_cached_uri || file_exists(SPOOL_PROBE_STATE_PATH)) {
+            clear_printer_probe_state();
+            if (had_cached_uri) log_msg("cleared printer probe state (no default printer configured)");
+        }
+        last_uri[0] = '\0';
+        *last_probe_ms = 0;
+        *last_probe_ok = false;
+        return;
+    }
+
+    bool uri_changed = strcmp(last_uri, current_uri) != 0;
+    uint64_t refresh_ms = *last_probe_ok ? PROBE_REFRESH_OK_MS : PROBE_REFRESH_FAIL_MS;
+    if (!force && !uri_changed && *last_probe_ms != 0 && now - *last_probe_ms < refresh_ms)
+        return;
+
+    ProbeState state = {};
+    char err[128] = {};
+    bool ok = probe_printer_uri(current_uri, &state, err, sizeof(err));
+    if (!save_printer_probe_state(&state))
+        log_msg("warning: failed to persist printer probe state for %s", current_uri);
+
+    if (ok) {
+        if (state.caps.printer_name[0])
+            log_msg("auto-probed printer %s (%s)", state.printer_uri, state.caps.printer_name);
+        else
+            log_msg("auto-probed printer %s", state.printer_uri);
+        if (state.detail[0]) log_msg("probe detail: %s", state.detail);
+    } else {
+        log_msg("auto-probe failed for %s: %s",
+                state.printer_uri[0] ? state.printer_uri : current_uri,
+                state.message[0] ? state.message : (err[0] ? err : "probe failed"));
+        if (state.detail[0]) log_msg("probe detail: %s", state.detail);
+    }
+
+    safe_copy(last_uri, last_uri_len, state.printer_uri[0] ? state.printer_uri : current_uri);
+    *last_probe_ms = now;
+    *last_probe_ok = ok;
 }
 
 static void requeue_stale_active_jobs() {
@@ -260,9 +313,16 @@ extern "C" void _start() {
     }
 
     requeue_stale_active_jobs();
+    char last_probed_uri[MAX_PATH_LEN] = {};
+    uint64_t last_probe_ms = 0;
+    bool last_probe_ok = false;
+    auto_probe_configured_printer(last_probed_uri, sizeof(last_probed_uri),
+                                  &last_probe_ms, &last_probe_ok, true);
     log_msg("ready");
 
     for (;;) {
+        auto_probe_configured_printer(last_probed_uri, sizeof(last_probed_uri),
+                                      &last_probe_ms, &last_probe_ok);
         char active_path[MAX_PATH_LEN];
         if (claim_next_job(active_path, sizeof(active_path))) {
             process_job(active_path);

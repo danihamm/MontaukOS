@@ -29,11 +29,27 @@ static constexpr int TOOLBAR_H    = 36;
 static constexpr int CAT_H        = 28;
 static constexpr int ITEM_H       = 24;
 static constexpr int MAX_DEVS     = 64;
+static constexpr int MAX_VIRTUAL_DEVS = 4;
+static constexpr int MAX_TOTAL_DEVS   = MAX_DEVS + MAX_VIRTUAL_DEVS;
 static constexpr int POLL_MS      = 2000;
 static constexpr int INDENT       = 28;
 static constexpr int FONT_SIZE    = 18;
 
-static constexpr int NUM_CATEGORIES = 9;
+enum DeviceCategory {
+    CAT_CPU = 0,
+    CAT_INTERRUPT,
+    CAT_TIMER,
+    CAT_INPUT,
+    CAT_USB,
+    CAT_NETWORK,
+    CAT_DISPLAY,
+    CAT_STORAGE,
+    CAT_PCI,
+    CAT_AUDIO,
+    CAT_ACPI,
+    CAT_PRINTER,
+    NUM_CATEGORIES
+};
 
 static constexpr Color BG_COLOR       = Color::from_rgb(0xFF, 0xFF, 0xFF);
 static constexpr Color TOOLBAR_BG     = Color::from_rgb(0xF5, 0xF5, 0xF5);
@@ -48,27 +64,33 @@ static constexpr Color ACCENT_COLOR   = Color::from_rgb(0x33, 0x66, 0xCC);
 // ============================================================================
 
 static const char* category_names[] = {
-    "CPU",          // 0
-    "Interrupt",    // 1
-    "Timer",        // 2
-    "Input",        // 3
-    "USB",          // 4
-    "Network",      // 5
-    "Display",      // 6
-    "Storage",      // 7
-    "PCI",          // 8
+    "CPU",
+    "Interrupt",
+    "Timer",
+    "Input",
+    "USB",
+    "Network",
+    "Display",
+    "Storage",
+    "PCI",
+    "Audio",
+    "ACPI",
+    "Printers",
 };
 
 static const Color category_colors[] = {
-    Color::from_rgb(0x33, 0x66, 0xCC),  // CPU - blue
-    Color::from_rgb(0x88, 0x44, 0xAA),  // Interrupt - purple
-    Color::from_rgb(0x22, 0x88, 0x22),  // Timer - green
-    Color::from_rgb(0xCC, 0x88, 0x00),  // Input - amber
-    Color::from_rgb(0x00, 0x88, 0x88),  // USB - teal
-    Color::from_rgb(0xCC, 0x55, 0x22),  // Network - orange
-    Color::from_rgb(0x44, 0x66, 0xCC),  // Display - indigo
-    Color::from_rgb(0x99, 0x55, 0x00),  // Storage - brown
-    Color::from_rgb(0x66, 0x66, 0x66),  // PCI - gray
+    Color::from_rgb(0x33, 0x66, 0xCC),
+    Color::from_rgb(0x88, 0x44, 0xAA),
+    Color::from_rgb(0x22, 0x88, 0x22),
+    Color::from_rgb(0xCC, 0x88, 0x00),
+    Color::from_rgb(0x00, 0x88, 0x88),
+    Color::from_rgb(0xCC, 0x55, 0x22),
+    Color::from_rgb(0x44, 0x66, 0xCC),
+    Color::from_rgb(0x99, 0x55, 0x00),
+    Color::from_rgb(0x66, 0x66, 0x66),
+    Color::from_rgb(0x8A, 0x5A, 0xCC),
+    Color::from_rgb(0x55, 0x77, 0x88),
+    Color::from_rgb(0x2F, 0x8B, 0x57),
 };
 
 // ============================================================================
@@ -83,7 +105,7 @@ struct DisplayRow {
     int dev_index;
 };
 
-static constexpr int MAX_DISPLAY_ROWS = MAX_DEVS + NUM_CATEGORIES;
+static constexpr int MAX_DISPLAY_ROWS = MAX_TOTAL_DEVS + NUM_CATEGORIES;
 
 // ============================================================================
 // Disk detail window
@@ -110,7 +132,7 @@ struct DiskDetailState {
 // ============================================================================
 
 struct DevExplorerState {
-    Montauk::DevInfo devs[MAX_DEVS];
+    Montauk::DevInfo devs[MAX_TOTAL_DEVS];
     int dev_count;
     bool collapsed[NUM_CATEGORIES];
     int selected_row;
@@ -142,6 +164,7 @@ void render(uint32_t* pixels);
 // ============================================================================
 
 int build_display_rows(DevExplorerState* de, DisplayRow* rows);
+int append_printer_devices(Montauk::DevInfo* out, int max_count);
 
 // ============================================================================
 // Function declarations — diskdetail.cpp
