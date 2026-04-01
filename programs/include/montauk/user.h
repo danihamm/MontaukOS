@@ -297,10 +297,10 @@ namespace user {
         return false;
     }
 
-    // ---- Session (current logged-in user) ----
+    // ---- Session state and current user helpers ----
 
-    // Write the current session after successful login.
-    // Stores username in 0:/config/session.toml so any app can query it.
+    // Persist login session state after successful login.
+    // Current processes should use getuser() for their active username.
     inline void set_session(const char* username) {
         montauk::toml::Doc doc;
         doc.init();
@@ -314,19 +314,14 @@ namespace user {
         montauk::fdelete("0:/config/session.toml");
     }
 
-    // Read the current username into buf. Returns true if a session exists.
+    // Read the current process username into buf. Returns true if one is set.
     inline bool get_session_username(char* buf, int bufSz) {
-        auto doc = config::load("session");
-        const char* name = doc.get_string("session.username", "");
-        bool found = (name[0] != '\0');
-        if (found) {
-            montauk::strncpy(buf, name, bufSz);
-        }
-        doc.destroy();
-        return found;
+        if (buf == nullptr || bufSz <= 0) return false;
+        int len = montauk::getuser(buf, (uint64_t)bufSz);
+        return len > 0 && buf[0] != '\0';
     }
 
-    // Get the current user's home directory. Returns true if a session exists.
+    // Get the current process user's home directory. Returns true if a user is set.
     inline bool get_home_dir(char* buf, int bufSz) {
         char username[32];
         if (!get_session_username(username, sizeof(username))) return false;

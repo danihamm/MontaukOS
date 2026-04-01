@@ -7,7 +7,6 @@
 #include <montauk/syscall.h>
 #include <montauk/string.h>
 #include <montauk/heap.h>
-#include <montauk/config.h>
 #include <gui/gui.hpp>
 #include <gui/standalone.hpp>
 #include <gui/truetype.hpp>
@@ -1255,19 +1254,17 @@ static bool handle_key(const Montauk::KeyEvent& key, bool& quit) {
 }
 
 static void set_default_dir() {
-    auto doc = montauk::config::load("session");
-    const char* name = doc.get_string("session.username", "");
-    if (name[0]) {
-        snprintf(g.dir_path, sizeof(g.dir_path), "0:/users/%s/Videos", name);
+    char username[32] = {};
+    if (montauk::getuser(username, sizeof(username)) > 0 && username[0]) {
+        snprintf(g.dir_path, sizeof(g.dir_path), "0:/users/%s/Videos", username);
         const char* probe[1];
         int ok = montauk::readdir(g.dir_path, probe, 1);
         if (ok < 0) {
-            snprintf(g.dir_path, sizeof(g.dir_path), "0:/users/%s", name);
+            snprintf(g.dir_path, sizeof(g.dir_path), "0:/users/%s", username);
         }
     } else {
         montauk::strncpy(g.dir_path, "0:/home", (int)sizeof(g.dir_path));
     }
-    doc.destroy();
 }
 
 static void parse_args(char* auto_file, int auto_file_cap) {

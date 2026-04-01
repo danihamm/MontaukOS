@@ -509,7 +509,7 @@ static bool try_login(LoginState* ls) {
         return false;
     }
 
-    // Write session so any app can query the current user
+    // Persist login session state for the active desktop session.
     montauk::user::set_session(ls->username);
     return true;
 }

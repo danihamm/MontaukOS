@@ -8,7 +8,6 @@
 #include <montauk/syscall.h>
 #include <montauk/string.h>
 #include <montauk/heap.h>
-#include <montauk/config.h>
 
 extern "C" {
 #include <string.h>
@@ -114,17 +113,10 @@ extern "C" void _start() {
 
     // Build output path: 0:/users/<username>/Pictures/screenshot_YYYYMMDD_HHMMSS.jpg
     char username[32] = {};
-    {
-        auto doc = montauk::config::load("session");
-        const char* name = doc.get_string("session.username", "");
-        if (name[0] == '\0') {
-            doc.destroy();
-            montauk::mfree(jpeg.data);
-            montauk::print("screenshot: no user session\n");
-            montauk::exit(1);
-        }
-        montauk::strncpy(username, name, sizeof(username) - 1);
-        doc.destroy();
+    if (montauk::getuser(username, sizeof(username)) <= 0 || username[0] == '\0') {
+        montauk::mfree(jpeg.data);
+        montauk::print("screenshot: no user session\n");
+        montauk::exit(1);
     }
 
     char home[128];

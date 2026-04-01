@@ -519,11 +519,11 @@ bool config::unset(toml::Doc* doc, const char* key);
 ### Example
 
 ```cpp
-auto doc = montauk::config::load("session");
-const char* user = doc.get_string("session.username", "guest");
+auto doc = montauk::config::load("desktop");
+const char* theme = doc.get_string("appearance.theme", "light");
 
-montauk::config::set_string(&doc, "session.theme", "dark");
-montauk::config::save("session", &doc);
+montauk::config::set_string(&doc, "appearance.theme", "dark");
+montauk::config::save("desktop", &doc);
 ```
 
 ---
@@ -543,8 +543,8 @@ bool user::change_password(const char* username, const char* new_password);
 
 void user::set_session(const char* username);         // Log in
 void user::clear_session();                           // Log out
-bool user::get_session_username(char* buf, int sz);   // Get current user
-bool user::get_home_dir(char* buf, int sz);           // Get user's home directory
+bool user::get_session_username(char* buf, int sz);   // Get current process user
+bool user::get_home_dir(char* buf, int sz);           // Get current process home directory
 ```
 
 ---

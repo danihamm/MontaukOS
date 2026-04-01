@@ -1500,20 +1500,14 @@ extern "C" void _start() {
     music_visualizer::reset(g.visualizer);
 
     // Parse arguments: accept a directory path or a file path
-    // Helper: set dir_path to current user's home via session config
+    // Helper: set dir_path to current user's home directory
     auto set_user_home = [&]() {
-        auto doc = montauk::config::load("session");
-        const char* name = doc.get_string("session.username", "");
-        if (name[0]) {
-            int p = 0;
-            const char* pfx = "0:/users/";
-            while (*pfx && p < (int)sizeof(g.dir_path) - 1) g.dir_path[p++] = *pfx++;
-            while (*name && p < (int)sizeof(g.dir_path) - 1) g.dir_path[p++] = *name++;
-            g.dir_path[p] = '\0';
+        char username[32] = {};
+        if (montauk::getuser(username, sizeof(username)) > 0 && username[0]) {
+            snprintf(g.dir_path, sizeof(g.dir_path), "0:/users/%s", username);
         } else {
             memcpy(g.dir_path, "0:/home", 8);
         }
-        doc.destroy();
     };
 
     char arg_file[128] = {};

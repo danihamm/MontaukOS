@@ -7,7 +7,6 @@
 #include <montauk/syscall.h>
 #include <montauk/string.h>
 #include <montauk/heap.h>
-#include <montauk/config.h>
 
 // ==== ANSI color codes ====
 
@@ -81,8 +80,11 @@ extern "C" void _start() {
     Montauk::SysInfo sysinfo;
     montauk::get_info(&sysinfo);
 
-    auto doc = montauk::config::load("session");
-    const char* username = doc.get_string("session.username", "user");
+    const char* username = "user";
+    char username_buf[32] = {};
+    if (montauk::getuser(username_buf, sizeof(username_buf)) > 0 && username_buf[0]) {
+        username = username_buf;
+    }
 
     uint64_t ms = montauk::get_milliseconds();
     uint64_t total_secs = ms / 1000;
@@ -259,8 +261,6 @@ extern "C" void _start() {
         }
         p = app(p, RST);
     }
-
-    doc.destroy();
 
     // ==== Print output ====
 
