@@ -59,7 +59,7 @@ BINDIR := bin
 PROGRAMS := $(notdir $(wildcard src/*))
 
 # Programs with custom Makefiles (built separately).
-CUSTOM_BUILDS := doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator desktop login shell rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl
+CUSTOM_BUILDS := doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator desktop login shell rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl dialogs
 SYSTEM_PROGRAMS := $(filter-out $(CUSTOM_BUILDS),$(PROGRAMS))
 
 # Build targets: system programs go to bin/os/, apps go to bin/apps/<name>/.
@@ -81,9 +81,9 @@ CA_CERTS := $(BINDIR)/etc/ca-certificates.crt
 # Common shared assets (wallpapers, etc.)
 COMMONKEEP := $(BINDIR)/common/.keep
 
-.PHONY: all clean doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator login desktop shell rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl icons fonts bearssl libc tls libjpeg libjpegwrite install-apps
+.PHONY: all clean doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator login desktop shell rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl dialogs icons fonts bearssl libc tls libjpeg libjpegwrite install-apps
 
-all: bearssl libc libjpeg libjpegwrite tls $(TARGETS) fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator doom rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl login desktop shell icons fonts install-apps $(MANDST) $(WWWDST) $(CA_CERTS) $(COMMONKEEP)
+all: bearssl libc libjpeg libjpegwrite tls $(TARGETS) fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator doom rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl dialogs login desktop shell icons fonts install-apps $(MANDST) $(WWWDST) $(CA_CERTS) $(COMMONKEEP)
 
 # Build BearSSL static library (cross-compiled for freestanding x86_64).
 BEARSSL_INCLUDES := -isystem $(shell cd .. && pwd)/kernel/freestnd-c-hdrs/x86_64/include -isystem $(abspath include/libc)
@@ -261,8 +261,12 @@ printd: bearssl libc tls libjpegwrite
 printctl: bearssl libc tls
 	$(MAKE) -C src/printctl
 
+# Build shared dialogs app (depends on libc, bearssl, and tls through print helpers).
+dialogs: bearssl libc tls
+	$(MAKE) -C src/dialogs
+
 # Install app bundles (manifests, icons, data files) into bin/apps/<name>/.
-install-apps: doom rpgdemo paint spreadsheet wordprocessor weather wikipedia imageviewer fontpreview pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator screenshot texteditor mandelbrot printers
+install-apps: doom rpgdemo paint spreadsheet wordprocessor weather wikipedia imageviewer fontpreview pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator screenshot texteditor mandelbrot printers dialogs
 	../scripts/install_apps.sh
 
 # Copy man pages into bin/man/ so mkramdisk.sh picks them up.
@@ -329,3 +333,4 @@ clean:
 	$(MAKE) -C src/tcc clean
 	$(MAKE) -C src/printd clean
 	$(MAKE) -C src/printctl clean
+	$(MAKE) -C src/dialogs clean

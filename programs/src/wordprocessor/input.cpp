@@ -5,14 +5,15 @@
  */
 
 #include "wordprocessor.hpp"
+#include <gui/dialogs.hpp>
 
 static void wp_open_pathbar_for_open(WordProcessorState* wp) {
-    wp->show_pathbar = !wp->show_pathbar;
-    wp->pathbar_save_mode = false;
-    if (wp->show_pathbar) {
-        montauk::strncpy(wp->pathbar_text, wp->filepath, 255);
-        wp->pathbar_len = montauk::slen(wp->pathbar_text);
-        wp->pathbar_cursor = wp->pathbar_len;
+    char path[256] = {};
+    char msg[160] = {};
+    if (dialogs::open_file("Open Document", wp->filepath, path, sizeof(path), msg, sizeof(msg))) {
+        wp_load_file(wp, path);
+    } else if (msg[0]) {
+        wp_start_pathbar(wp, false, wp->filepath);
     }
 }
 

@@ -346,6 +346,7 @@ int  wp_wrap_line_start(WordProcessorState* wp, int line_idx);
 void wp_ensure_cursor_visible(WordProcessorState* wp, int view_h);
 
 void wp_set_filepath(WordProcessorState* wp, const char* path);
+void wp_start_pathbar(WordProcessorState* wp, bool save_mode, const char* initial_text);
 void wp_open_save_pathbar(WordProcessorState* wp);
 void wp_save_file(WordProcessorState* wp);
 void wp_load_file(WordProcessorState* wp, const char* path);

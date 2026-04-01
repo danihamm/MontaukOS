@@ -5,6 +5,7 @@
  */
 
 #include "spreadsheet.h"
+#include <gui/dialogs.hpp>
 #include <gui/standalone.hpp>
 
 // ============================================================================
@@ -131,6 +132,41 @@ bool hit_fill_handle(int mx, int my) {
            my >= fhy - 3 && my <= fhy + FILL_HANDLE_SIZE + 3;
 }
 
+static void open_inline_pathbar(bool save_mode, const char* initial_text) {
+    g_pathbar_open = true;
+    g_pathbar_save = save_mode;
+    if (!initial_text) initial_text = "";
+    str_cpy(g_pathbar_text, initial_text, sizeof(g_pathbar_text));
+    g_pathbar_len = str_len(g_pathbar_text);
+    g_pathbar_cursor = g_pathbar_len;
+}
+
+static void open_file_dialog() {
+    char path[256] = {};
+    char msg[128] = {};
+    if (dialogs::open_file("Open Spreadsheet", g_filepath, path, sizeof(path), msg, sizeof(msg))) {
+        load_file(path);
+    } else if (msg[0]) {
+        open_inline_pathbar(false, g_filepath);
+    }
+}
+
+static void save_file_dialog() {
+    if (g_filepath[0]) {
+        save_file();
+        return;
+    }
+
+    char path[256] = {};
+    char msg[128] = {};
+    if (dialogs::save_file("Save Spreadsheet", "", "untitled.mss", path, sizeof(path), msg, sizeof(msg))) {
+        str_cpy(g_filepath, path, 256);
+        save_file();
+    } else if (msg[0]) {
+        open_inline_pathbar(true, "untitled.mss");
+    }
+}
+
 bool handle_toolbar_click(int mx, int my) {
     if (my >= TOOLBAR_H || my < TB_BTN_Y || my >= TB_BTN_Y + TB_BTN_SIZE) return false;
 
@@ -140,22 +176,10 @@ bool handle_toolbar_click(int mx, int my) {
 
     if (mx >= TB_OPEN_X0 && mx < TB_OPEN_X1) {
         if (g_editing) commit_edit();
-        g_pathbar_open = true;
-        g_pathbar_save = false;
-        g_pathbar_text[0] = '\0';
-        g_pathbar_len = 0;
-        g_pathbar_cursor = 0;
+        open_file_dialog();
     } else if (mx >= TB_SAVE_X0 && mx < TB_SAVE_X1) {
         if (g_editing) commit_edit();
-        if (g_filepath[0]) {
-            save_file();
-        } else {
-            g_pathbar_open = true;
-            g_pathbar_save = true;
-            str_cpy(g_pathbar_text, "0:/", 256);
-            g_pathbar_len = str_len(g_pathbar_text);
-            g_pathbar_cursor = g_pathbar_len;
-        }
+        save_file_dialog();
     } else if (mx >= TB_CUT_X0 && mx < TB_CUT_X1) {
         if (!g_editing) cut_selection();
     } else if (mx >= TB_COPY_X0 && mx < TB_COPY_X1) {
@@ -556,24 +580,12 @@ extern "C" void _start() {
             // Ctrl+S: save (or Save As if no path)
             else if (key.ctrl && (key.ascii == 's' || key.ascii == 'S' || key.ascii == 19)) {
                 if (g_editing) commit_edit();
-                if (g_filepath[0]) {
-                    save_file();
-                } else {
-                    g_pathbar_open = true;
-                    g_pathbar_save = true;
-                    str_cpy(g_pathbar_text, "0:/", 256);
-                    g_pathbar_len = str_len(g_pathbar_text);
-                    g_pathbar_cursor = g_pathbar_len;
-                }
+                save_file_dialog();
                 redraw = true;
             }
             // Ctrl+O: open
             else if (key.ctrl && (key.ascii == 'o' || key.ascii == 'O' || key.ascii == 15) && !g_editing) {
-                g_pathbar_open = true;
-                g_pathbar_save = false;
-                g_pathbar_text[0] = '\0';
-                g_pathbar_len = 0;
-                g_pathbar_cursor = 0;
+                open_file_dialog();
                 redraw = true;
             }
             // Printable character: start editing or insert

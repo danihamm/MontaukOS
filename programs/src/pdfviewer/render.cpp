@@ -180,8 +180,9 @@ void render(uint32_t* pixels) {
         bx += 8;
     };
 
-    // Open
+    // Open / Print
     tb_btn(36, false, "Open");
+    tb_btn(36, false, "Print");
     tb_sep();
 
     // Navigation

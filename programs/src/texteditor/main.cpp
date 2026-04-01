@@ -12,6 +12,7 @@
 #include <gui/gui.hpp>
 #include <gui/truetype.hpp>
 #include <gui/svg.hpp>
+#include <gui/dialogs.hpp>
 #include <gui/stb_math.h>
 
 extern "C" {
@@ -87,6 +88,7 @@ int g_scroll_y = 0;      // first visible line
 int g_scroll_x = 0;      // horizontal scroll in pixels
 bool g_modified = false;
 bool g_cursor_moved = true;
+char g_status_msg[128] = {};
 
 // File
 char g_filepath[256] = {};
@@ -434,24 +436,76 @@ static void ensure_cursor_visible(int visible_lines, int text_area_w) {
 // File I/O
 // ============================================================================
 
-static void load_file(const char* path) {
+static void set_status(const char* msg) {
+    if (!msg) msg = "";
+    montauk::strncpy(g_status_msg, msg, sizeof(g_status_msg) - 1);
+    g_status_msg[sizeof(g_status_msg) - 1] = '\0';
+}
+
+static bool looks_binary(const char* data, int len) {
+    if (!data || len <= 0) return false;
+
+    int control_count = 0;
+    for (int i = 0; i < len; i++) {
+        unsigned char ch = (unsigned char)data[i];
+        if (ch == 0) return true;
+        if (ch < 32 && ch != '\n' && ch != '\r' && ch != '\t' && ch != '\f')
+            control_count++;
+    }
+
+    return control_count * 20 > len;
+}
+
+static bool load_file(const char* path) {
     int fd = montauk::open(path);
-    if (fd < 0) return;
+    if (fd < 0) {
+        set_status("Failed to open file");
+        return false;
+    }
 
     uint64_t size = montauk::getsize(fd);
-    if (size > (uint64_t)MAX_CAP) size = MAX_CAP;
+    if (size > (uint64_t)MAX_CAP) {
+        montauk::close(fd);
+        set_status("File is too large for Text Editor");
+        return false;
+    }
 
-    if ((int)size >= g_buf_cap) {
-        int new_cap = (int)size + 1024;
+    int read_len = (int)size;
+    int temp_cap = read_len + 1;
+    if (temp_cap < 1024) temp_cap = 1024;
+    char* temp = (char*)montauk::malloc(temp_cap);
+    if (!temp) {
+        montauk::close(fd);
+        set_status("Out of memory while opening file");
+        return false;
+    }
+
+    int got = montauk::read(fd, (uint8_t*)temp, 0, size);
+    montauk::close(fd);
+    if (got < 0) {
+        montauk::mfree(temp);
+        set_status("Failed to read file");
+        return false;
+    }
+
+    temp[got] = '\0';
+    if (looks_binary(temp, got)) {
+        montauk::mfree(temp);
+        set_status("Binary files cannot be opened in Text Editor");
+        return false;
+    }
+
+    if (got >= g_buf_cap) {
+        int new_cap = got + 1024;
         if (new_cap > MAX_CAP) new_cap = MAX_CAP;
         g_buffer = (char*)montauk::realloc(g_buffer, new_cap);
         g_buf_cap = new_cap;
     }
 
-    montauk::read(fd, (uint8_t*)g_buffer, 0, size);
-    montauk::close(fd);
+    montauk::memcpy(g_buffer, temp, (uint64_t)(got + 1));
+    montauk::mfree(temp);
 
-    g_buf_len = (int)size;
+    g_buf_len = got;
     g_cursor_pos = 0;
     g_scroll_y = 0;
     g_scroll_x = 0;
@@ -468,21 +522,28 @@ static void load_file(const char* path) {
         montauk::strncpy(g_filename, path, 63);
 
     g_syntax_language = syn_detect_language(g_filepath);
+    clear_selection();
+    set_status("");
 
     recompute_lines();
     update_cursor_pos();
+    return true;
 }
 
 static void save_file() {
     if (g_filepath[0] == '\0') return;
 
     int fd = montauk::fcreate(g_filepath);
-    if (fd < 0) return;
+    if (fd < 0) {
+        set_status("Failed to save file");
+        return;
+    }
 
     montauk::fwrite(fd, (const uint8_t*)g_buffer, 0, g_buf_len);
     montauk::close(fd);
 
     g_modified = false;
+    set_status("");
 }
 
 // ============================================================================
@@ -734,10 +795,16 @@ static void render(uint32_t* pixels) {
 
     // Left: filename
     char status_left[128];
-    if (g_filename[0])
+    if (g_status_msg[0]) {
+        if (g_filename[0])
+            snprintf(status_left, 128, " %s%s | %s", g_filename, g_modified ? " [modified]" : "", g_status_msg);
+        else
+            snprintf(status_left, 128, " Untitled%s | %s", g_modified ? " [modified]" : "", g_status_msg);
+    } else if (g_filename[0]) {
         snprintf(status_left, 128, " %s%s", g_filename, g_modified ? " [modified]" : "");
-    else
+    } else {
         snprintf(status_left, 128, " Untitled%s", g_modified ? " [modified]" : "");
+    }
     if (g_font)
         g_font->draw_to_buffer(pixels, W, H, 4, sty, status_left, STATUS_TEXT, FONT_SIZE);
 
@@ -778,20 +845,41 @@ static void pathbar_confirm(int win_id) {
     g_pathbar_open = false;
 }
 
-static void open_pathbar_open() {
+static void open_inline_pathbar(bool save_mode, const char* initial_text) {
     g_pathbar_open = true;
-    g_pathbar_save = false;
-    montauk::strncpy(g_pathbar_text, g_filepath, 255);
+    g_pathbar_save = save_mode;
+    if (!initial_text) initial_text = "";
+    montauk::strncpy(g_pathbar_text, initial_text, 255);
     g_pathbar_len = montauk::slen(g_pathbar_text);
     g_pathbar_cursor = g_pathbar_len;
 }
 
+static void open_pathbar_open() {
+    char path[256] = {};
+    char msg[128] = {};
+    if (dialogs::open_file("Open File", g_filepath, path, sizeof(path), msg, sizeof(msg))) {
+        load_file(path);
+    } else if (msg[0]) {
+        open_inline_pathbar(false, g_filepath);
+    }
+}
+
 static void open_pathbar_save() {
-    g_pathbar_open = true;
-    g_pathbar_save = true;
-    g_pathbar_text[0] = '\0';
-    g_pathbar_len = 0;
-    g_pathbar_cursor = 0;
+    char path[256] = {};
+    const char* initial_path = g_filepath[0] ? g_filepath : "";
+    const char* suggested_name = g_filename[0] ? g_filename : "untitled.txt";
+    char msg[128] = {};
+    if (dialogs::save_file("Save File", initial_path, suggested_name, path, sizeof(path), msg, sizeof(msg))) {
+        montauk::strncpy(g_filepath, path, 255);
+        const char* name = path;
+        for (int i = 0; path[i]; i++)
+            if (path[i] == '/') name = path + i + 1;
+        montauk::strncpy(g_filename, name, 63);
+        g_syntax_language = syn_detect_language(g_filepath);
+        save_file();
+    } else if (msg[0]) {
+        open_inline_pathbar(true, initial_path[0] ? initial_path : suggested_name);
+    }
 }
 
 // ============================================================================

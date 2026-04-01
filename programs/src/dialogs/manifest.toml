@@ -1,0 +1,8 @@
+[app]
+name = "Dialogs"
+binary = "dialogs.elf"
+icon = "system-file-manager.svg"
+
+[menu]
+category = "System"
+visible = false

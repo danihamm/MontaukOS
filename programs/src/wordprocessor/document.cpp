@@ -5,6 +5,7 @@
  */
 
 #include "wordprocessor.hpp"
+#include <gui/dialogs.hpp>
 
 static inline int wp_min_int(int a, int b) {
     return a < b ? a : b;
@@ -1203,12 +1204,27 @@ void wp_set_filepath(WordProcessorState* wp, const char* path) {
         montauk::strncpy(wp->filename, path, 63);
 }
 
-void wp_open_save_pathbar(WordProcessorState* wp) {
+void wp_start_pathbar(WordProcessorState* wp, bool save_mode, const char* initial_text) {
+    if (!initial_text) initial_text = "";
     wp->show_pathbar = true;
-    wp->pathbar_save_mode = true;
-    montauk::strncpy(wp->pathbar_text, wp->filepath, 255);
+    wp->pathbar_save_mode = save_mode;
+    montauk::strncpy(wp->pathbar_text, initial_text, 255);
+    wp->pathbar_text[255] = '\0';
     wp->pathbar_len = montauk::slen(wp->pathbar_text);
     wp->pathbar_cursor = wp->pathbar_len;
+}
+
+void wp_open_save_pathbar(WordProcessorState* wp) {
+    char path[256] = {};
+    const char* initial_path = wp->filepath[0] ? wp->filepath : "";
+    const char* suggested_name = wp->filename[0] ? wp->filename : "document.mwp";
+    char msg[160] = {};
+    if (dialogs::save_file("Save Document", initial_path, suggested_name, path, sizeof(path), msg, sizeof(msg))) {
+        wp_set_filepath(wp, path);
+        wp_save_file(wp);
+    } else if (msg[0]) {
+        wp_start_pathbar(wp, true, initial_path[0] ? initial_path : suggested_name);
+    }
 }
 
 static int wp_serialized_size(WordProcessorState* wp) {
