@@ -213,54 +213,163 @@ static bool load_login_wallpaper(LoginState* ls) {
 // Drawing helpers
 // ============================================================================
 
-static constexpr Color BG_COLOR = Color::from_rgb(0x2B, 0x3E, 0x50);
-static constexpr Color CARD_BG = Color::from_rgb(0xFF, 0xFF, 0xFF);
-static constexpr Color FIELD_BG = Color::from_rgb(0xF5, 0xF5, 0xF5);
-static constexpr Color FIELD_BORDER = Color::from_rgb(0xCC, 0xCC, 0xCC);
-static constexpr Color FIELD_ACTIVE = Color::from_rgb(0x36, 0x7B, 0xF0);
-static constexpr Color BTN_COLOR = Color::from_rgb(0x36, 0x7B, 0xF0);
-static constexpr Color BTN_TEXT = Color::from_rgb(0xFF, 0xFF, 0xFF);
-static constexpr Color TEXT_COLOR = Color::from_rgb(0x33, 0x33, 0x33);
+static constexpr Color BG_COLOR = Color::from_rgb(0x00, 0x00, 0x00);
+static constexpr Color CARD_BG = colors::WINDOW_BG;
+static constexpr Color CARD_BORDER = colors::BORDER;
+static constexpr Color TITLEBAR_BG = colors::TITLEBAR_BG;
+static constexpr Color FOOTER_BG = Color::from_rgb(0xF7, 0xF7, 0xF7);
+static constexpr Color FIELD_BG = colors::WHITE;
+static constexpr Color FIELD_BG_ACTIVE = Color::from_rgb(0xFA, 0xFC, 0xFF);
+static constexpr Color FIELD_BORDER = colors::BORDER;
+static constexpr Color FIELD_HOVER = Color::from_rgb(0xB7, 0xC7, 0xE8);
+static constexpr Color FIELD_ACTIVE = colors::ACCENT;
+static constexpr Color BTN_COLOR = colors::ACCENT;
+static constexpr Color BTN_HOVER = Color::from_rgb(0x2B, 0x6B, 0xE0);
+static constexpr Color BTN_TEXT = colors::WHITE;
+static constexpr Color SECONDARY_BTN_BG = Color::from_rgb(0xE8, 0xE8, 0xE8);
+static constexpr Color SECONDARY_BTN_HOVER = Color::from_rgb(0xDC, 0xDC, 0xDC);
+static constexpr Color SECONDARY_BTN_BORDER = colors::BORDER;
+static constexpr Color TEXT_COLOR = colors::TEXT_COLOR;
 static constexpr Color LABEL_COLOR = Color::from_rgb(0x66, 0x66, 0x66);
-static constexpr Color ERROR_COLOR = Color::from_rgb(0xE0, 0x40, 0x40);
-static constexpr Color TITLE_COLOR = Color::from_rgb(0xFF, 0xFF, 0xFF);
+static constexpr Color ERROR_COLOR = Color::from_rgb(0xC0, 0x33, 0x33);
 
-static constexpr int CARD_W = 360;
-static constexpr int FIELD_H = 36;
+static constexpr int CARD_W = 432;
+static constexpr int TITLEBAR_H = 30;
+static constexpr int FOOTER_H = 58;
+static constexpr int FIELD_H = 34;
 static constexpr int FIELD_PAD = 10;
-static constexpr int BTN_H = 40;
+static constexpr int BTN_H = 30;
 static constexpr int LABEL_GAP = 4;
-static constexpr int POWER_ICON_SZ = 32;
-static constexpr int POWER_GAP = 48;     // horizontal spacing between icon centers
-static constexpr int POWER_TOP_PAD = 24; // padding below error message area
+static constexpr int CONTENT_PAD_X = 24;
+static constexpr int CONTENT_TOP_PAD = 18;
+static constexpr int BODY_BOTTOM_PAD = 18;
+static constexpr int FIELD_GAP = 12;
+static constexpr int POWER_ICON_SZ = 16;
+static constexpr int POWER_BTN_W = 104;
+static constexpr int POWER_BTN_GAP = 8;
+static constexpr int FOOTER_PAD = 16;
 
-static void draw_field(Framebuffer& fb, int x, int y, int w, const char* text,
-                        bool is_password, bool active) {
-    // Background
-    fb.fill_rect(x, y, w, FIELD_H, FIELD_BG);
+struct LoginLayout {
+    Rect card;
+    Rect titlebar;
+    Rect footer;
+    Rect username_field;
+    Rect display_name_field;
+    Rect password_field;
+    Rect confirm_field;
+    Rect submit_button;
+    Rect shutdown_button;
+    Rect reboot_button;
+    int content_x;
+    int content_w;
+    int heading_y;
+    int subtitle_y;
+    int error_y;
+    const char* window_title;
+    const char* heading;
+    const char* subtitle;
+    const char* submit_label;
+};
 
-    // Border
-    Color border = active ? FIELD_ACTIVE : FIELD_BORDER;
-    // Top
-    for (int i = 0; i < w; i++) fb.put_pixel(x + i, y, border);
-    // Bottom
-    for (int i = 0; i < w; i++) fb.put_pixel(x + i, y + FIELD_H - 1, border);
-    // Left
-    for (int i = 0; i < FIELD_H; i++) fb.put_pixel(x, y + i, border);
-    // Right
-    for (int i = 0; i < FIELD_H; i++) fb.put_pixel(x + w - 1, y + i, border);
+static Rect offset_rect(Rect rect, int dx, int dy) {
+    rect.x += dx;
+    rect.y += dy;
+    return rect;
+}
 
-    if (active) {
-        // Draw 2px border for active field
-        for (int i = 0; i < w; i++) fb.put_pixel(x + i, y + 1, border);
-        for (int i = 0; i < w; i++) fb.put_pixel(x + i, y + FIELD_H - 2, border);
-        for (int i = 0; i < FIELD_H; i++) fb.put_pixel(x + 1, y + i, border);
-        for (int i = 0; i < FIELD_H; i++) fb.put_pixel(x + w - 2, y + i, border);
+static void draw_rounded_frame(Framebuffer& fb, const Rect& rect, int radius,
+                               Color border, Color fill) {
+    fill_rounded_rect(fb, rect.x, rect.y, rect.w, rect.h, radius, border);
+    if (rect.w > 2 && rect.h > 2) {
+        int inner_radius = radius > 0 ? radius - 1 : 0;
+        fill_rounded_rect(fb, rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2,
+                          inner_radius, fill);
+    }
+}
+
+static LoginLayout layout_login_screen(LoginState* ls) {
+    LoginLayout lo = {};
+    int sfh = system_font_height();
+
+    lo.window_title = ls->mode == MODE_FIRST_BOOT ? "MontaukOS Setup" : "MontaukOS";
+    lo.heading = ls->mode == MODE_FIRST_BOOT ? "Create Administrator Account" : "Log In";
+    lo.subtitle = ls->mode == MODE_FIRST_BOOT
+        ? "Create the first administrator account."
+        : "Sign in to continue to the desktop.";
+    lo.submit_label = ls->mode == MODE_FIRST_BOOT ? "Create Account" : "Log In";
+
+    lo.content_x = CONTENT_PAD_X;
+    lo.content_w = CARD_W - CONTENT_PAD_X * 2;
+
+    int y = TITLEBAR_H + CONTENT_TOP_PAD;
+    lo.heading_y = y;
+    y += sfh + 6;
+    lo.subtitle_y = y;
+    y += sfh + 18;
+
+    lo.username_field = {lo.content_x, y + sfh + LABEL_GAP, lo.content_w, FIELD_H};
+    y = lo.username_field.y + FIELD_H + FIELD_GAP;
+
+    if (ls->mode == MODE_FIRST_BOOT) {
+        lo.display_name_field = {lo.content_x, y + sfh + LABEL_GAP, lo.content_w, FIELD_H};
+        y = lo.display_name_field.y + FIELD_H + FIELD_GAP;
+
+        lo.password_field = {lo.content_x, y + sfh + LABEL_GAP, lo.content_w, FIELD_H};
+        y = lo.password_field.y + FIELD_H + FIELD_GAP;
+
+        lo.confirm_field = {lo.content_x, y + sfh + LABEL_GAP, lo.content_w, FIELD_H};
+        y = lo.confirm_field.y + FIELD_H + FIELD_GAP;
+    } else {
+        lo.password_field = {lo.content_x, y + sfh + LABEL_GAP, lo.content_w, FIELD_H};
+        y = lo.password_field.y + FIELD_H + FIELD_GAP;
     }
 
-    // Text (clipped to field width, showing trailing portion)
-    int ty = y + (FIELD_H - system_font_height()) / 2;
-    int max_text_w = w - FIELD_PAD * 2 - 2; // left pad, right pad, cursor
+    if (ls->show_error) {
+        lo.error_y = y;
+        y += sfh + 12;
+    } else {
+        lo.error_y = -1;
+    }
+
+    int footer_y = y + BODY_BOTTOM_PAD;
+    int card_h = footer_y + FOOTER_H;
+    int card_x = (ls->screen_w - CARD_W) / 2;
+    int card_y = (ls->screen_h - card_h) / 2;
+
+    lo.card = {card_x, card_y, CARD_W, card_h};
+    lo.titlebar = {card_x, card_y, CARD_W, TITLEBAR_H};
+    lo.footer = {card_x, card_y + footer_y, CARD_W, FOOTER_H};
+
+    int submit_w = text_width(lo.submit_label) + 32;
+    if (submit_w < 100) submit_w = 100;
+    int footer_btn_y = footer_y + (FOOTER_H - BTN_H) / 2;
+    lo.shutdown_button = {FOOTER_PAD, footer_btn_y, POWER_BTN_W, BTN_H};
+    lo.reboot_button = {FOOTER_PAD + POWER_BTN_W + POWER_BTN_GAP, footer_btn_y, POWER_BTN_W, BTN_H};
+    lo.submit_button = {CARD_W - FOOTER_PAD - submit_w, footer_btn_y, submit_w, BTN_H};
+
+    lo.username_field = offset_rect(lo.username_field, card_x, card_y);
+    lo.display_name_field = offset_rect(lo.display_name_field, card_x, card_y);
+    lo.password_field = offset_rect(lo.password_field, card_x, card_y);
+    lo.confirm_field = offset_rect(lo.confirm_field, card_x, card_y);
+    lo.shutdown_button = offset_rect(lo.shutdown_button, card_x, card_y);
+    lo.reboot_button = offset_rect(lo.reboot_button, card_x, card_y);
+    lo.submit_button = offset_rect(lo.submit_button, card_x, card_y);
+
+    lo.content_x += card_x;
+    lo.heading_y += card_y;
+    lo.subtitle_y += card_y;
+    if (lo.error_y >= 0) lo.error_y += card_y;
+    return lo;
+}
+
+static void draw_field(Framebuffer& fb, const Rect& rect, const char* text,
+                       bool is_password, bool active, bool hovered) {
+    Color border = active ? FIELD_ACTIVE : (hovered ? FIELD_HOVER : FIELD_BORDER);
+    Color bg = active ? FIELD_BG_ACTIVE : FIELD_BG;
+    draw_rounded_frame(fb, rect, 6, border, bg);
+
+    int ty = rect.y + (rect.h - system_font_height()) / 2;
+    int max_text_w = rect.w - FIELD_PAD * 2 - 2;
     if (is_password) {
         int len = montauk::slen(text);
         if (len > 64) len = 64;
@@ -274,32 +383,65 @@ static void draw_field(Framebuffer& fb, int x, int y, int w, const char* text,
         char masked[65];
         for (int i = 0; i < vis; i++) masked[i] = '*';
         masked[vis] = '\0';
-        draw_text(fb, x + FIELD_PAD, ty, masked, TEXT_COLOR);
+        draw_text(fb, rect.x + FIELD_PAD, ty, masked, TEXT_COLOR);
         if (active) {
-            int cx = x + FIELD_PAD + text_width(masked);
+            int cx = rect.x + FIELD_PAD + text_width(masked);
             fb.fill_rect(cx, ty, 2, system_font_height(), FIELD_ACTIVE);
         }
     } else {
         int len = montauk::slen(text);
-        // Show only trailing portion that fits
         int offset = 0;
         while (text_width(text + offset) > max_text_w && offset < len)
             offset++;
-        draw_text(fb, x + FIELD_PAD, ty, text + offset, TEXT_COLOR);
+        draw_text(fb, rect.x + FIELD_PAD, ty, text + offset, TEXT_COLOR);
         if (active) {
-            int cx = x + FIELD_PAD + text_width(text + offset);
+            int cx = rect.x + FIELD_PAD + text_width(text + offset);
             fb.fill_rect(cx, ty, 2, system_font_height(), FIELD_ACTIVE);
         }
     }
 }
 
-static void draw_button(Framebuffer& fb, int x, int y, int w, int h,
-                          const char* label, Color bg) {
-    fb.fill_rect(x, y, w, h, bg);
+static void draw_labeled_field(Framebuffer& fb, const Rect& rect, const char* label,
+                               const char* text, bool is_password,
+                               bool active, bool hovered) {
+    draw_text(fb, rect.x, rect.y - LABEL_GAP - system_font_height(), label, LABEL_COLOR);
+    draw_field(fb, rect, text, is_password, active, hovered);
+}
+
+static void draw_button(Framebuffer& fb, const Rect& rect, const char* label,
+                        bool hovered, bool primary) {
+    if (primary) {
+        fill_rounded_rect(fb, rect.x, rect.y, rect.w, rect.h, 4,
+                          hovered ? BTN_HOVER : BTN_COLOR);
+    } else {
+        draw_rounded_frame(fb, rect, 4,
+                           hovered ? FIELD_HOVER : SECONDARY_BTN_BORDER,
+                           hovered ? SECONDARY_BTN_HOVER : SECONDARY_BTN_BG);
+    }
     int tw = text_width(label);
-    int tx = x + (w - tw) / 2;
-    int ty = y + (h - system_font_height()) / 2;
-    draw_text(fb, tx, ty, label, BTN_TEXT);
+    int tx = rect.x + (rect.w - tw) / 2;
+    int ty = rect.y + (rect.h - system_font_height()) / 2;
+    draw_text(fb, tx, ty, label, primary ? BTN_TEXT : TEXT_COLOR);
+}
+
+static void draw_power_button(Framebuffer& fb, const Rect& rect, const SvgIcon& icon,
+                              const char* label, bool hovered) {
+    draw_rounded_frame(fb, rect, 4,
+                       hovered ? FIELD_HOVER : SECONDARY_BTN_BORDER,
+                       hovered ? SECONDARY_BTN_HOVER : SECONDARY_BTN_BG);
+
+    int icon_w = icon.pixels ? icon.width : 0;
+    int gap = icon_w > 0 ? 8 : 0;
+    int tw = text_width(label);
+    int total_w = icon_w + gap + tw;
+    int sx = rect.x + (rect.w - total_w) / 2;
+    if (icon.pixels) {
+        int iy = rect.y + (rect.h - icon.height) / 2;
+        fb.blit_alpha(sx, iy, icon.width, icon.height, icon.pixels);
+        sx += icon.width + gap;
+    }
+    int ty = rect.y + (rect.h - system_font_height()) / 2;
+    draw_text(fb, sx, ty, label, TEXT_COLOR);
 }
 
 // ============================================================================
@@ -308,130 +450,60 @@ static void draw_button(Framebuffer& fb, int x, int y, int w, int h,
 
 static void draw_login_screen(LoginState* ls) {
     Framebuffer& fb = ls->fb;
+    LoginLayout lo = layout_login_screen(ls);
+    int sfh = system_font_height();
 
     // Background
     if (ls->has_wallpaper) {
         fb.blit(0, 0, ls->bg_wallpaper_w, ls->bg_wallpaper_h, ls->bg_wallpaper);
+        fb.fill_rect_alpha(0, 0, ls->screen_w, ls->screen_h, Color::from_rgba(0, 0, 0, 0x38));
     } else {
         fb.clear(BG_COLOR);
     }
 
-    int card_h;
-    const char* title;
-    int sfh = system_font_height();
-    int power_section_h = POWER_ICON_SZ + sfh + 6 + 4; // icon + label + gap + padding
-    int error_section_h = ls->show_error ? sfh + 8 : 0;  // error text + padding
+    draw_shadow(fb, lo.card.x, lo.card.y, lo.card.w, lo.card.h, 4, colors::SHADOW);
+    fb.fill_rect(lo.card.x, lo.card.y, lo.card.w, lo.card.h, CARD_BG);
+    fb.fill_rect(lo.titlebar.x, lo.titlebar.y, lo.titlebar.w, lo.titlebar.h, TITLEBAR_BG);
+    fb.fill_rect(lo.footer.x, lo.footer.y, lo.footer.w, lo.footer.h, FOOTER_BG);
+    draw_rect(fb, lo.card.x, lo.card.y, lo.card.w, lo.card.h, CARD_BORDER);
+    draw_hline(fb, lo.titlebar.x, lo.titlebar.y + lo.titlebar.h - 1, lo.titlebar.w, CARD_BORDER);
+    draw_hline(fb, lo.footer.x, lo.footer.y, lo.footer.w, CARD_BORDER);
+
+    int window_tw = text_width(lo.window_title);
+    draw_text(fb, lo.titlebar.x + (lo.titlebar.w - window_tw) / 2,
+              lo.titlebar.y + (TITLEBAR_H - sfh) / 2, lo.window_title, TEXT_COLOR);
+    draw_text(fb, lo.content_x, lo.heading_y, lo.heading, TEXT_COLOR);
+    draw_text(fb, lo.content_x, lo.subtitle_y, lo.subtitle, LABEL_COLOR);
+
+    draw_labeled_field(fb, lo.username_field, "Username", ls->username, false,
+                       ls->active_field == 0,
+                       lo.username_field.contains(ls->mouse.x, ls->mouse.y));
     if (ls->mode == MODE_FIRST_BOOT) {
-        card_h = 420 + error_section_h + power_section_h;
-        title = "Create Administrator Account";
+        draw_labeled_field(fb, lo.display_name_field, "Display Name", ls->display_name, false,
+                           ls->active_field == 1,
+                           lo.display_name_field.contains(ls->mouse.x, ls->mouse.y));
+        draw_labeled_field(fb, lo.password_field, "Password", ls->password, true,
+                           ls->active_field == 2,
+                           lo.password_field.contains(ls->mouse.x, ls->mouse.y));
+        draw_labeled_field(fb, lo.confirm_field, "Confirm Password", ls->confirm, true,
+                           ls->active_field == 3,
+                           lo.confirm_field.contains(ls->mouse.x, ls->mouse.y));
     } else {
-        card_h = 284 + error_section_h + power_section_h;
-        title = "Log In";
+        draw_labeled_field(fb, lo.password_field, "Password", ls->password, true,
+                           ls->active_field == 1,
+                           lo.password_field.contains(ls->mouse.x, ls->mouse.y));
     }
 
-    int card_x = (ls->screen_w - CARD_W) / 2;
-    int card_y = (ls->screen_h - card_h) / 2;
-
-    // Card background
-    fb.fill_rect(card_x, card_y, CARD_W, card_h, CARD_BG);
-
-    int x = card_x + 24;
-    int content_w = CARD_W - 48;
-    int y = card_y + 20;
-
-    // Card title
-    {
-        int tw = text_width(title);
-        draw_text(fb, card_x + (CARD_W - tw) / 2, y, title, TEXT_COLOR);
-        y += sfh + 16;
+    if (ls->show_error && lo.error_y >= 0) {
+        draw_text(fb, lo.content_x, lo.error_y, ls->error_msg, ERROR_COLOR);
     }
 
-    if (ls->mode == MODE_FIRST_BOOT) {
-        // Username field
-        draw_text(fb, x, y, "Username", LABEL_COLOR);
-        y += sfh + LABEL_GAP;
-        draw_field(fb, x, y, content_w, ls->username, false, ls->active_field == 0);
-        y += FIELD_H + 12;
-
-        // Display name field
-        draw_text(fb, x, y, "Display Name", LABEL_COLOR);
-        y += sfh + LABEL_GAP;
-        draw_field(fb, x, y, content_w, ls->display_name, false, ls->active_field == 1);
-        y += FIELD_H + 12;
-
-        // Password field
-        draw_text(fb, x, y, "Password", LABEL_COLOR);
-        y += sfh + LABEL_GAP;
-        draw_field(fb, x, y, content_w, ls->password, true, ls->active_field == 2);
-        y += FIELD_H + 12;
-
-        // Confirm password field
-        draw_text(fb, x, y, "Confirm Password", LABEL_COLOR);
-        y += sfh + LABEL_GAP;
-        draw_field(fb, x, y, content_w, ls->confirm, true, ls->active_field == 3);
-        y += FIELD_H + 16;
-
-        // Create button
-        draw_button(fb, x, y, content_w, BTN_H, "Create Account", BTN_COLOR);
-        y += BTN_H;
-    } else {
-        // Username field
-        draw_text(fb, x, y, "Username", LABEL_COLOR);
-        y += sfh + LABEL_GAP;
-        draw_field(fb, x, y, content_w, ls->username, false, ls->active_field == 0);
-        y += FIELD_H + 12;
-
-        // Password field
-        draw_text(fb, x, y, "Password", LABEL_COLOR);
-        y += sfh + LABEL_GAP;
-        draw_field(fb, x, y, content_w, ls->password, true, ls->active_field == 1);
-        y += FIELD_H + 16;
-
-        // Login button
-        draw_button(fb, x, y, content_w, BTN_H, "Log In", BTN_COLOR);
-        y += BTN_H;
-    }
-
-    // Error message (inside card, between button and separator)
-    if (ls->show_error) {
-        y += 8;
-        int tw = text_width(ls->error_msg);
-        draw_text(fb, card_x + (CARD_W - tw) / 2, y, ls->error_msg, ERROR_COLOR);
-        y += sfh;
-    }
-
-    // Separator line
-    y += 16;
-    fb.fill_rect(x, y, content_w, 1, FIELD_BORDER);
-    y += 16;
-
-    // Power options (inside card, centered)
-    {
-        int total_w = POWER_ICON_SZ + POWER_GAP + POWER_ICON_SZ;
-        int start_x = card_x + (CARD_W - total_w) / 2;
-
-        // Shutdown icon
-        if (ls->icon_shutdown.pixels) {
-            int ix = start_x;
-            fb.blit_alpha(ix, y, ls->icon_shutdown.width, ls->icon_shutdown.height,
-                          ls->icon_shutdown.pixels);
-            const char* lbl = "Shut Down";
-            int lw = text_width(lbl);
-            draw_text(fb, ix + (POWER_ICON_SZ - lw) / 2, y + POWER_ICON_SZ + 6,
-                      lbl, LABEL_COLOR);
-        }
-
-        // Reboot icon
-        if (ls->icon_reboot.pixels) {
-            int ix = start_x + POWER_ICON_SZ + POWER_GAP;
-            fb.blit_alpha(ix, y, ls->icon_reboot.width, ls->icon_reboot.height,
-                          ls->icon_reboot.pixels);
-            const char* lbl = "Restart";
-            int lw = text_width(lbl);
-            draw_text(fb, ix + (POWER_ICON_SZ - lw) / 2, y + POWER_ICON_SZ + 6,
-                      lbl, LABEL_COLOR);
-        }
-    }
+    draw_power_button(fb, lo.shutdown_button, ls->icon_shutdown, "Shut Down",
+                      lo.shutdown_button.contains(ls->mouse.x, ls->mouse.y));
+    draw_power_button(fb, lo.reboot_button, ls->icon_reboot, "Restart",
+                      lo.reboot_button.contains(ls->mouse.x, ls->mouse.y));
+    draw_button(fb, lo.submit_button, lo.submit_label,
+                lo.submit_button.contains(ls->mouse.x, ls->mouse.y), true);
 
     // Mouse cursor (shared with desktop)
     draw_cursor(fb, ls->mouse.x, ls->mouse.y);
@@ -603,60 +675,27 @@ static void handle_mouse(LoginState* ls) {
     bool left_pressed = (buttons & 0x01) && !(prev & 0x01);
 
     if (!left_pressed) return;
+    LoginLayout lo = layout_login_screen(ls);
 
-    int sfh = system_font_height();
-    int power_section_h = POWER_ICON_SZ + sfh + 6 + 8;
-    int error_section_h = ls->show_error ? sfh + 8 : 0;
-    int card_h;
-    if (ls->mode == MODE_FIRST_BOOT) {
-        card_h = 420 + error_section_h + power_section_h;
-    } else {
-        card_h = 284 + error_section_h + power_section_h;
+    if (lo.username_field.contains(mx, my)) {
+        ls->active_field = 0;
+        return;
     }
-    int card_x = (ls->screen_w - CARD_W) / 2;
-    int card_y = (ls->screen_h - card_h) / 2;
-    int x = card_x + 24;
-    int content_w = CARD_W - 48;
-    int y = card_y + 20;
-
-    // Skip title
-    y += sfh + 16;
 
     if (ls->mode == MODE_FIRST_BOOT) {
-        // Username label + field
-        y += sfh + LABEL_GAP;
-        if (mx >= x && mx < x + content_w && my >= y && my < y + FIELD_H) {
-            ls->active_field = 0;
-            return;
-        }
-        y += FIELD_H + 12;
-
-        // Display name label + field
-        y += sfh + LABEL_GAP;
-        if (mx >= x && mx < x + content_w && my >= y && my < y + FIELD_H) {
+        if (lo.display_name_field.contains(mx, my)) {
             ls->active_field = 1;
             return;
         }
-        y += FIELD_H + 12;
-
-        // Password label + field
-        y += sfh + LABEL_GAP;
-        if (mx >= x && mx < x + content_w && my >= y && my < y + FIELD_H) {
+        if (lo.password_field.contains(mx, my)) {
             ls->active_field = 2;
             return;
         }
-        y += FIELD_H + 12;
-
-        // Confirm label + field
-        y += sfh + LABEL_GAP;
-        if (mx >= x && mx < x + content_w && my >= y && my < y + FIELD_H) {
+        if (lo.confirm_field.contains(mx, my)) {
             ls->active_field = 3;
             return;
         }
-        y += FIELD_H + 16;
-
-        // Create button
-        if (mx >= x && mx < x + content_w && my >= y && my < y + BTN_H) {
+        if (lo.submit_button.contains(mx, my)) {
             if (try_first_boot_submit(ls)) {
                 ls->mode = MODE_LOGIN;
                 ls->active_field = 0;
@@ -666,26 +705,12 @@ static void handle_mouse(LoginState* ls) {
             }
             return;
         }
-        y += BTN_H;
     } else {
-        // Username label + field
-        y += sfh + LABEL_GAP;
-        if (mx >= x && mx < x + content_w && my >= y && my < y + FIELD_H) {
-            ls->active_field = 0;
-            return;
-        }
-        y += FIELD_H + 12;
-
-        // Password label + field
-        y += sfh + LABEL_GAP;
-        if (mx >= x && mx < x + content_w && my >= y && my < y + FIELD_H) {
+        if (lo.password_field.contains(mx, my)) {
             ls->active_field = 1;
             return;
         }
-        y += FIELD_H + 16;
-
-        // Login button
-        if (mx >= x && mx < x + content_w && my >= y && my < y + BTN_H) {
+        if (lo.submit_button.contains(mx, my)) {
             if (try_login(ls)) {
                 int pid = montauk::spawn("0:/os/desktop.elf", ls->username);
                 if (pid >= 0) {
@@ -699,31 +724,14 @@ static void handle_mouse(LoginState* ls) {
             }
             return;
         }
-        y += BTN_H;
     }
 
-    // Skip error section if visible
-    if (ls->show_error) y += error_section_h;
-
-    // Power options (inside card, after separator)
-    y += 16 + 1 + 16; // padding + separator + padding
-    {
-        int total_w = POWER_ICON_SZ + POWER_GAP + POWER_ICON_SZ;
-        int start_x = card_x + (CARD_W - total_w) / 2;
-        int hit_h = POWER_ICON_SZ + sfh + 6;
-
-        // Shutdown
-        if (mx >= start_x && mx < start_x + POWER_ICON_SZ &&
-            my >= y && my < y + hit_h) {
-            montauk::shutdown();
-        }
-
-        // Reboot
-        int rx = start_x + POWER_ICON_SZ + POWER_GAP;
-        if (mx >= rx && mx < rx + POWER_ICON_SZ &&
-            my >= y && my < y + hit_h) {
-            montauk::reset();
-        }
+    if (lo.shutdown_button.contains(mx, my)) {
+        montauk::shutdown();
+        return;
+    }
+    if (lo.reboot_button.contains(mx, my)) {
+        montauk::reset();
     }
 }
 
@@ -746,7 +754,7 @@ extern "C" void _start() {
     montauk::set_mouse_bounds(ls->screen_w - 1, ls->screen_h - 1);
 
     // Load power option icons
-    Color icon_color = Color::from_rgb(0x66, 0x66, 0x66);
+    Color icon_color = colors::ICON_COLOR;
     ls->icon_shutdown = svg_load("0:/icons/system-shutdown.svg", POWER_ICON_SZ, POWER_ICON_SZ, icon_color);
     ls->icon_reboot = svg_load("0:/icons/system-reboot.svg", POWER_ICON_SZ, POWER_ICON_SZ, icon_color);
 

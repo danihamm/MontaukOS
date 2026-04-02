@@ -289,7 +289,11 @@ static int _path_is_directory(const char *path) {
     return (int)_zos_syscall3(SYS_READDIR, (long)path, (long)names, 1L) >= 0;
 }
 
-static int _path_prefix_skip(const char *path) {
+static int _path_local_prefix(const char *path, char *buf, size_t size) {
+    if (buf == NULL || size == 0) return 0;
+    buf[0] = '\0';
+    if (path == NULL) return 0;
+
     const char *local = path;
     for (int i = 0; local[i]; i++) {
         if (local[i] == ':') {
@@ -299,9 +303,15 @@ static int _path_prefix_skip(const char *path) {
         }
     }
 
-    int prefix_len = (int)strlen(local);
-    if (prefix_len > 0 && local[prefix_len - 1] != '/') prefix_len++;
-    return prefix_len;
+    size_t len = strlen(local);
+    while (len > 0 && local[len - 1] == '/') len--;
+    if (len == 0) return 0;
+
+    if (len >= size - 1) len = size - 2;
+    memcpy(buf, local, len);
+    buf[len++] = '/';
+    buf[len] = '\0';
+    return (int)len;
 }
 
 static int _find_env_slot(const char *name) {
@@ -2076,10 +2086,12 @@ DIR *opendir(const char *name) {
     dir->count = count;
     dir->index = 0;
 
-    int prefix_len = _path_prefix_skip(name);
+    char local_prefix[256];
+    int prefix_len = _path_local_prefix(name, local_prefix, sizeof(local_prefix));
     for (int i = 0; i < count && i < 256; i++) {
         const char *entry = raw_names[i];
-        if ((int)strlen(entry) >= prefix_len) {
+        if (prefix_len > 0 &&
+            strncmp(entry, local_prefix, (size_t)prefix_len) == 0) {
             entry += prefix_len;
         }
         strncpy(dir->names[i], entry, NAME_MAX);
