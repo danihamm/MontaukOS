@@ -70,6 +70,7 @@ extern "C" void _start() {
     for (;;) {
         bool mouse_changed = false;
         bool key_changed = false;
+        bool fast_mouse_path = false;
 
         int prev_mouse_x = ls->mouse.x;
         int prev_mouse_y = ls->mouse.y;
@@ -80,6 +81,7 @@ extern "C" void _start() {
                      || ls->mouse.y != prev_mouse_y
                      || ls->mouse.buttons != prev_mouse_buttons
                      || ls->mouse.scrollDelta != 0;
+        fast_mouse_path = mouse_changed || ls->mouse.buttons != 0;
 
         while (montauk::is_key_available()) {
             Montauk::KeyEvent key;
@@ -93,7 +95,7 @@ extern "C" void _start() {
         if (first_frame || mouse_changed || key_changed) {
             draw_login_screen(ls);
             first_frame = false;
-            montauk::sleep_ms(4);
+            montauk::sleep_ms(fast_mouse_path ? 1 : 4);
         } else {
             montauk::sleep_ms(16);
         }

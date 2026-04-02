@@ -10,6 +10,23 @@ using namespace gui;
 
 namespace {
 
+void draw_login_background(LoginState* ls) {
+    Framebuffer& fb = ls->fb;
+    if (!ls->has_wallpaper) {
+        fb.clear(BG_COLOR);
+        return;
+    }
+
+    uint32_t* dst = fb.buffer();
+    int pitch = fb.pitch();
+    int row_bytes = ls->screen_w * (int)sizeof(uint32_t);
+    for (int y = 0; y < ls->screen_h; y++) {
+        uint32_t* dst_row = (uint32_t*)((uint8_t*)dst + y * pitch);
+        const uint32_t* src_row = ls->bg_wallpaper + y * ls->bg_wallpaper_w;
+        montauk::memcpy(dst_row, src_row, row_bytes);
+    }
+}
+
 Rect offset_rect(Rect rect, int dx, int dy) {
     rect.x += dx;
     rect.y += dy;
@@ -295,13 +312,7 @@ void draw_login_screen(LoginState* ls) {
     LoginLayout lo = layout_login_screen(ls);
     int sfh = system_font_height();
 
-    if (ls->has_wallpaper) {
-        fb.blit(0, 0, ls->bg_wallpaper_w, ls->bg_wallpaper_h, ls->bg_wallpaper);
-        fb.fill_rect_alpha(0, 0, ls->screen_w, ls->screen_h,
-                           Color::from_rgba(0, 0, 0, 0x38));
-    } else {
-        fb.clear(BG_COLOR);
-    }
+    draw_login_background(ls);
 
     draw_shadow(fb, lo.card.x, lo.card.y, lo.card.w, lo.card.h, 4, colors::SHADOW);
     fb.fill_rect(lo.card.x, lo.card.y, lo.card.w, lo.card.h, CARD_BG);

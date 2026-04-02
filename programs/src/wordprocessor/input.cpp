@@ -46,16 +46,28 @@ static int wp_special_char_flyout_x() {
     return dx < 0 ? 0 : dx;
 }
 
+static int wp_divider_flyout_x() {
+    int dx = WP_BTN_DIVIDER_X + 24 - WP_DIVIDER_FLYOUT_W;
+    if (dx + WP_DIVIDER_FLYOUT_W > g_win_w) dx = g_win_w - WP_DIVIDER_FLYOUT_W;
+    return dx < 0 ? 0 : dx;
+}
+
 static void wp_close_dropdowns(WordProcessorState* wp) {
     wp->font_dropdown_open = false;
     wp->size_dropdown_open = false;
     wp->line_spacing_dropdown_open = false;
+    wp->divider_flyout_open = false;
     wp->special_char_flyout_open = false;
 }
 
 static void wp_insert_special_char(WordProcessorState* wp, uint8_t ch) {
     if (wp->has_selection) wp_delete_selection(wp);
     wp_insert_char(wp, (char)ch);
+    wp_history_checkpoint(wp);
+}
+
+static void wp_insert_divider_choice(WordProcessorState* wp, uint8_t divider_type) {
+    wp_insert_divider(wp, divider_type);
     wp_history_checkpoint(wp);
 }
 
@@ -72,6 +84,9 @@ static int wp_hit_test_text(WordProcessorState* wp, int local_x, int local_y, in
     }
 
     WrapLine* wl = &wp->wrap_lines[target_line];
+    if (wl->divider_type != PARA_DIVIDER_NONE)
+        return wp_wrap_line_start(wp, target_line);
+
     int click_x = local_x - wl->x;
     int ri = wl->run_idx;
     int ro = wl->run_offset;
@@ -90,7 +105,7 @@ static int wp_hit_test_text(WordProcessorState* wp, int local_x, int local_y, in
             continue;
         }
 
-        GlyphCache* gc = font->get_cache(r->size);
+        GlyphCache* gc = font->get_cache(wp_screen_font_pixels(r->size));
         int avail = r->len - ro;
         int to_check = avail < chars_left ? avail : chars_left;
 
@@ -173,6 +188,19 @@ void wp_handle_mouse(const Montauk::WinEvent& ev) {
         return;
     }
 
+    if (wp->divider_flyout_open && wp_left_pressed(ev.mouse.buttons, ev.mouse.prev_buttons)) {
+        int dx = wp_divider_flyout_x();
+        int dy = WP_TOOLBAR_H;
+        int dh = WP_DIVIDER_OPTION_COUNT * WP_DIVIDER_ROW_H + 4;
+        if (local_x >= dx && local_x < dx + WP_DIVIDER_FLYOUT_W && local_y >= dy && local_y < dy + dh) {
+            int idx = (local_y - dy - 2) / WP_DIVIDER_ROW_H;
+            if (idx >= 0 && idx < WP_DIVIDER_OPTION_COUNT)
+                wp_insert_divider_choice(wp, WP_DIVIDER_OPTIONS[idx].type);
+        }
+        wp->divider_flyout_open = false;
+        return;
+    }
+
     if (wp->special_char_flyout_open && wp_left_pressed(ev.mouse.buttons, ev.mouse.prev_buttons)) {
         int dx = wp_special_char_flyout_x();
         int dy = WP_TOOLBAR_H;
@@ -222,15 +250,15 @@ void wp_handle_mouse(const Montauk::WinEvent& ev) {
             return;
         }
         if (local_x >= WP_FONT_DD_X && local_x < WP_FONT_DD_X + WP_FONT_DD_W && local_y >= 6 && local_y < 30) {
-            wp->font_dropdown_open = !wp->font_dropdown_open;
-            wp->size_dropdown_open = false;
-            wp->line_spacing_dropdown_open = false;
+            bool open = !wp->font_dropdown_open;
+            wp_close_dropdowns(wp);
+            wp->font_dropdown_open = open;
             return;
         }
         if (local_x >= WP_SIZE_DD_X && local_x < WP_SIZE_DD_X + WP_SIZE_DD_W && local_y >= 6 && local_y < 30) {
-            wp->size_dropdown_open = !wp->size_dropdown_open;
-            wp->font_dropdown_open = false;
-            wp->line_spacing_dropdown_open = false;
+            bool open = !wp->size_dropdown_open;
+            wp_close_dropdowns(wp);
+            wp->size_dropdown_open = open;
             return;
         }
         if (local_x >= WP_BTN_ALIGN_L_X && local_x < WP_BTN_ALIGN_L_X + 24 && local_y >= 6 && local_y < 30) {
@@ -276,10 +304,15 @@ void wp_handle_mouse(const Montauk::WinEvent& ev) {
             return;
         }
         if (local_x >= WP_LINE_DD_X && local_x < WP_LINE_DD_X + WP_LINE_DD_W && local_y >= 6 && local_y < 30) {
-            wp->line_spacing_dropdown_open = !wp->line_spacing_dropdown_open;
-            wp->font_dropdown_open = false;
-            wp->size_dropdown_open = false;
-            wp->special_char_flyout_open = false;
+            bool open = !wp->line_spacing_dropdown_open;
+            wp_close_dropdowns(wp);
+            wp->line_spacing_dropdown_open = open;
+            return;
+        }
+        if (local_x >= WP_BTN_DIVIDER_X && local_x < WP_BTN_DIVIDER_X + 24 && local_y >= 6 && local_y < 30) {
+            bool open = !wp->divider_flyout_open;
+            wp_close_dropdowns(wp);
+            wp->divider_flyout_open = open;
             return;
         }
         if (local_x >= WP_BTN_SECTION_X && local_x < WP_BTN_SECTION_X + 24 && local_y >= 6 && local_y < 30) {
@@ -303,7 +336,7 @@ void wp_handle_mouse(const Montauk::WinEvent& ev) {
         return;
     }
 
-    wp_recompute_wrap(wp, g_win_w);
+    wp_recompute_wrap(wp, g_win_w, WP_SCREEN_DPI);
 
     if (wp_left_pressed(ev.mouse.buttons, ev.mouse.prev_buttons) &&
         local_y >= edit_y && local_y < edit_y + text_area_h) {
@@ -382,7 +415,7 @@ void wp_handle_key(const Montauk::KeyEvent& key) {
     }
 
     wp_close_dropdowns(wp);
-    wp_recompute_wrap(wp, g_win_w);
+    wp_recompute_wrap(wp, g_win_w, WP_SCREEN_DPI);
 
     if (key.ctrl && (key.ascii == 's' || key.ascii == 'S')) {
         wp_save_file(wp);

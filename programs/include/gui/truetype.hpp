@@ -41,6 +41,41 @@
 
 namespace gui {
 
+inline int decode_single_byte_codepoint(int codepoint) {
+    if (codepoint < 0 || codepoint > 255) return codepoint;
+
+    switch (codepoint) {
+    case 0x80: return 0x20AC; // Euro Sign
+    case 0x82: return 0x201A; // Single Low-9 Quotation Mark
+    case 0x83: return 0x0192; // Latin Small Letter F With Hook
+    case 0x84: return 0x201E; // Double Low-9 Quotation Mark
+    case 0x85: return 0x2026; // Horizontal Ellipsis
+    case 0x86: return 0x2020; // Dagger
+    case 0x87: return 0x2021; // Double Dagger
+    case 0x88: return 0x02C6; // Modifier Letter Circumflex Accent
+    case 0x89: return 0x2030; // Per Mille Sign
+    case 0x8A: return 0x0160; // Latin Capital Letter S With Caron
+    case 0x8B: return 0x2039; // Single Left-Pointing Angle Quotation Mark
+    case 0x8C: return 0x0152; // Latin Capital Ligature OE
+    case 0x8E: return 0x017D; // Latin Capital Letter Z With Caron
+    case 0x91: return 0x2018; // Left Single Quotation Mark
+    case 0x92: return 0x2019; // Right Single Quotation Mark
+    case 0x93: return 0x201C; // Left Double Quotation Mark
+    case 0x94: return 0x201D; // Right Double Quotation Mark
+    case 0x95: return 0x2022; // Bullet
+    case 0x96: return 0x2013; // En Dash
+    case 0x97: return 0x2014; // Em Dash
+    case 0x98: return 0x02DC; // Small Tilde
+    case 0x99: return 0x2122; // Trade Mark Sign
+    case 0x9A: return 0x0161; // Latin Small Letter S With Caron
+    case 0x9B: return 0x203A; // Single Right-Pointing Angle Quotation Mark
+    case 0x9C: return 0x0153; // Latin Small Ligature OE
+    case 0x9E: return 0x017E; // Latin Small Letter Z With Caron
+    case 0x9F: return 0x0178; // Latin Capital Letter Y With Diaeresis
+    default: return codepoint;
+    }
+}
+
 struct CachedGlyph {
     uint8_t* bitmap;
     int width, height;
@@ -50,7 +85,7 @@ struct CachedGlyph {
 };
 
 struct GlyphCache {
-    CachedGlyph glyphs[256];  // Latin-1 Supplement (U+0080..U+00FF) included
+    CachedGlyph glyphs[256];  // Single-byte text with Windows-1252 punctuation mapping
     int pixel_size;
     float scale;
     int ascent, descent, line_gap;
@@ -155,12 +190,13 @@ struct TrueTypeFont {
         if (g->loaded) return g;
 
         g->loaded = true;
+        int font_codepoint = decode_single_byte_codepoint(codepoint);
         int advance, lsb;
-        stbtt_GetCodepointHMetrics(&info, codepoint, &advance, &lsb);
+        stbtt_GetCodepointHMetrics(&info, font_codepoint, &advance, &lsb);
         g->advance = (int)(advance * gc->scale);
 
         int x0, y0, x1, y1;
-        stbtt_GetCodepointBitmapBox(&info, codepoint, gc->scale, gc->scale,
+        stbtt_GetCodepointBitmapBox(&info, font_codepoint, gc->scale, gc->scale,
                                      &x0, &y0, &x1, &y1);
         g->width = x1 - x0;
         g->height = y1 - y0;
@@ -172,7 +208,7 @@ struct TrueTypeFont {
             if (!g->bitmap)
                 return g;
             stbtt_MakeCodepointBitmap(&info, g->bitmap, g->width, g->height,
-                                      g->width, gc->scale, gc->scale, codepoint);
+                                      g->width, gc->scale, gc->scale, font_codepoint);
         }
 
         return g;

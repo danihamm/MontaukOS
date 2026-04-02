@@ -11,6 +11,10 @@ static inline int wp_min_int(int a, int b) {
     return a < b ? a : b;
 }
 
+static bool wp_valid_divider_type(uint8_t divider_type) {
+    return divider_type >= PARA_DIVIDER_SINGLE && divider_type <= PARA_DIVIDER_THICK_THIN;
+}
+
 static void wp_init_run(StyledRun* r, uint8_t font_id, uint8_t size, uint8_t flags) {
     r->cap = 64;
     r->text = (char*)montauk::malloc(r->cap);
@@ -44,18 +48,67 @@ void wp_init_paragraph_style(ParagraphStyle* para) {
     para->align = PARA_ALIGN_LEFT;
     para->list_type = PARA_LIST_NONE;
     para->line_spacing = 100;
-    para->_pad = 0;
+    para->divider_type = PARA_DIVIDER_NONE;
     para->left_indent = 0;
     para->first_line_indent = 0;
     para->space_before = 0;
     para->space_after = 0;
 }
 
-static void wp_font_at(WordProcessorState* wp, int abs_pos,
+static ParagraphStyle wp_make_divider_style(const ParagraphStyle* src, uint8_t divider_type) {
+    ParagraphStyle style = *src;
+    style.align = PARA_ALIGN_LEFT;
+    style.list_type = PARA_LIST_NONE;
+    style.divider_type = divider_type;
+    style.left_indent = 0;
+    style.first_line_indent = 0;
+    style.space_before = 0;
+    style.space_after = 0;
+    return style;
+}
+
+static void wp_paragraph_bounds(WordProcessorState* wp, int para_idx,
+                                int* out_start, int* out_end, bool* out_has_newline) {
+    if (out_start) *out_start = 0;
+    if (out_end) *out_end = 0;
+    if (out_has_newline) *out_has_newline = false;
+
+    if (para_idx < 0) para_idx = 0;
+    if (para_idx >= wp->paragraph_count) para_idx = wp->paragraph_count - 1;
+    if (para_idx < 0) return;
+
+    int start = 0;
+    int cur_para = 0;
+    while (cur_para < para_idx && start < wp->total_text_len) {
+        while (start < wp->total_text_len && wp_char_at(wp, start) != '\n')
+            start++;
+        if (start < wp->total_text_len && wp_char_at(wp, start) == '\n')
+            start++;
+        cur_para++;
+    }
+
+    int end = start;
+    bool has_newline = false;
+    while (end < wp->total_text_len) {
+        if (wp_char_at(wp, end) == '\n') {
+            has_newline = true;
+            break;
+        }
+        end++;
+    }
+
+    if (out_start) *out_start = start;
+    if (out_end) *out_end = end;
+    if (out_has_newline) *out_has_newline = has_newline;
+}
+
+static void wp_font_at(WordProcessorState* wp, int abs_pos, int layout_dpi,
                        TrueTypeFont** out_font, GlyphCache** out_gc) {
     if (wp->run_count <= 0) {
         *out_font = wp_get_font(wp->cur_font_id, wp->cur_flags);
-        *out_gc = (*out_font && (*out_font)->valid) ? (*out_font)->get_cache(wp->cur_size) : nullptr;
+        *out_gc = (*out_font && (*out_font)->valid)
+            ? (*out_font)->get_cache(wp_points_to_pixels(wp->cur_size, layout_dpi))
+            : nullptr;
         return;
     }
 
@@ -65,7 +118,9 @@ static void wp_font_at(WordProcessorState* wp, int abs_pos,
     if (r < 0) r = 0;
     StyledRun* run = &wp->runs[r];
     *out_font = wp_get_font(run->font_id, run->flags);
-    *out_gc = (*out_font && (*out_font)->valid) ? (*out_font)->get_cache(run->size) : nullptr;
+    *out_gc = (*out_font && (*out_font)->valid)
+        ? (*out_font)->get_cache(wp_points_to_pixels(run->size, layout_dpi))
+        : nullptr;
 }
 
 static void wp_free_runs(WordProcessorState* wp) {
@@ -145,6 +200,7 @@ static void wp_on_insert_newline(WordProcessorState* wp, int abs_pos) {
     if (para < 0) para = 0;
     if (para >= wp->paragraph_count) para = wp->paragraph_count - 1;
     ParagraphStyle style = wp->paragraphs[para];
+    style.divider_type = PARA_DIVIDER_NONE;
     wp_insert_paragraph_style(wp, para + 1, &style);
 }
 
@@ -154,42 +210,43 @@ static void wp_on_delete_newline(WordProcessorState* wp, int abs_pos) {
         wp_remove_paragraph_style(wp, para + 1);
 }
 
-static void wp_default_line_metrics(WordProcessorState* wp, int abs_pos, int* out_height, int* out_ascent) {
+static void wp_default_line_metrics(WordProcessorState* wp, int abs_pos, int layout_dpi,
+                                    int* out_height, int* out_ascent) {
     TrueTypeFont* font = nullptr;
     GlyphCache* gc = nullptr;
     if (wp->total_text_len > 0) {
         int pos = abs_pos;
         if (pos >= wp->total_text_len) pos = wp->total_text_len - 1;
         if (pos < 0) pos = 0;
-        wp_font_at(wp, pos, &font, &gc);
+        wp_font_at(wp, pos, layout_dpi, &font, &gc);
     } else {
         font = wp_get_font(wp->cur_font_id, wp->cur_flags);
-        gc = (font && font->valid) ? font->get_cache(wp->cur_size) : nullptr;
+        gc = (font && font->valid) ? font->get_cache(wp_points_to_pixels(wp->cur_size, layout_dpi)) : nullptr;
     }
 
     if (gc) {
         *out_height = gc->line_height;
         *out_ascent = gc->ascent;
     } else {
-        *out_height = WP_DEFAULT_SIZE;
-        *out_ascent = WP_DEFAULT_SIZE;
+        *out_height = wp_points_to_pixels(WP_DEFAULT_SIZE, layout_dpi);
+        *out_ascent = *out_height;
     }
 }
 
-static int wp_char_advance_at(WordProcessorState* wp, int abs_pos, char ch) {
+static int wp_char_advance_at(WordProcessorState* wp, int abs_pos, int layout_dpi, char ch) {
     if (ch == '\n') return 0;
     if (!(ch >= 32 || ch < 0)) return 0;
 
     TrueTypeFont* font = nullptr;
     GlyphCache* gc = nullptr;
-    wp_font_at(wp, abs_pos, &font, &gc);
-    if (!font || !gc) return 8;
+    wp_font_at(wp, abs_pos, layout_dpi, &font, &gc);
+    if (!font || !gc) return wp_points_to_pixels(6, layout_dpi);
 
     CachedGlyph* g = font->get_glyph(gc, (unsigned char)ch);
-    return g ? g->advance : 8;
+    return g ? g->advance : wp_points_to_pixels(6, layout_dpi);
 }
 
-static void wp_measure_line_range(WordProcessorState* wp, int start, int count,
+static void wp_measure_line_range(WordProcessorState* wp, int start, int count, int layout_dpi,
                                   int* out_width, int* out_height, int* out_ascent) {
     int width = 0;
     int height = 0;
@@ -198,11 +255,11 @@ static void wp_measure_line_range(WordProcessorState* wp, int start, int count,
     for (int i = 0; i < count; i++) {
         char ch = wp_char_at(wp, start + i);
         if (ch != '\n')
-            width += wp_char_advance_at(wp, start + i, ch);
+            width += wp_char_advance_at(wp, start + i, layout_dpi, ch);
 
         TrueTypeFont* font = nullptr;
         GlyphCache* gc = nullptr;
-        wp_font_at(wp, start + i, &font, &gc);
+        wp_font_at(wp, start + i, layout_dpi, &font, &gc);
         if (gc) {
             if (gc->line_height > height) height = gc->line_height;
             if (gc->ascent > ascent) ascent = gc->ascent;
@@ -210,7 +267,7 @@ static void wp_measure_line_range(WordProcessorState* wp, int start, int count,
     }
 
     if (height == 0)
-        wp_default_line_metrics(wp, start, &height, &ascent);
+        wp_default_line_metrics(wp, start, layout_dpi, &height, &ascent);
 
     *out_width = width;
     *out_height = height;
@@ -222,13 +279,41 @@ static int wp_line_spacing_advance(int height, int spacing_percent) {
     return advance < height ? height : advance;
 }
 
-static int wp_effective_text_indent(const ParagraphStyle* para, bool first_line) {
+static int wp_divider_height(uint8_t divider_type, int layout_dpi) {
+    int base = 14;
+    if (divider_type == PARA_DIVIDER_DOUBLE) base = 18;
+    else if (divider_type == PARA_DIVIDER_HEAVY) base = 16;
+    else if (divider_type == PARA_DIVIDER_THIN_THICK || divider_type == PARA_DIVIDER_THICK_THIN) base = 18;
+    int scaled = wp_scale_layout_units(base, layout_dpi);
+    return scaled > 0 ? scaled : 1;
+}
+
+static int wp_effective_text_indent(const ParagraphStyle* para, bool first_line, int layout_dpi) {
     int indent = para->left_indent;
     if (indent < 0) indent = 0;
     if (first_line && para->list_type == PARA_LIST_NONE)
         indent += para->first_line_indent;
     if (indent < 0) indent = 0;
-    return indent;
+    return wp_scale_layout_units(indent, layout_dpi);
+}
+
+static void wp_prepare_paragraph_for_text_insert(WordProcessorState* wp, int abs_pos, char c) {
+    if (c == '\n' || wp->paragraph_count <= 0) return;
+
+    int para = wp_find_paragraph_at(wp, abs_pos);
+    if (para < 0 || para >= wp->paragraph_count) return;
+
+    ParagraphStyle* style = &wp->paragraphs[para];
+    if (style->divider_type == PARA_DIVIDER_NONE) return;
+
+    int para_start = 0;
+    int para_end = 0;
+    wp_paragraph_bounds(wp, para, &para_start, &para_end, nullptr);
+    if (para_start != para_end) return;
+
+    style->divider_type = PARA_DIVIDER_NONE;
+    wp->modified = true;
+    wp->wrap_dirty = true;
 }
 
 static bool wp_ensure_wrap_capacity(WordProcessorState* wp, int needed) {
@@ -412,6 +497,7 @@ void wp_init_empty_document(WordProcessorState* wp) {
     wp->wrap_line_cap = 0;
     wp->wrap_dirty = true;
     wp->last_wrap_width = 0;
+    wp->last_wrap_dpi = 0;
 
     wp->paragraph_count = 1;
     wp_init_paragraph_style(&wp->paragraphs[0]);
@@ -433,6 +519,7 @@ void wp_init_empty_document(WordProcessorState* wp) {
     wp->font_dropdown_open = false;
     wp->size_dropdown_open = false;
     wp->line_spacing_dropdown_open = false;
+    wp->divider_flyout_open = false;
     wp->special_char_flyout_open = false;
 
     wp->undo_count = 0;
@@ -531,6 +618,7 @@ void wp_insert_char(WordProcessorState* wp, char c) {
     if (c == '\n' && wp->paragraph_count >= WP_MAX_PARAGRAPHS) return;
 
     int insert_abs = wp_abs_pos(wp, wp->cursor_run, wp->cursor_offset);
+    wp_prepare_paragraph_for_text_insert(wp, insert_abs, c);
 
     StyledRun* cur = &wp->runs[wp->cursor_run];
     if (wp_same_style(cur, wp->cur_font_id, wp->cur_size, wp->cur_flags)) {
@@ -893,16 +981,23 @@ void wp_toggle_list(WordProcessorState* wp, uint8_t list_type) {
     wp_selected_paragraph_range(wp, &para_s, &para_e);
 
     bool turn_off = true;
+    bool has_target = false;
     for (int i = para_s; i <= para_e && i < wp->paragraph_count; i++) {
+        if (wp->paragraphs[i].divider_type != PARA_DIVIDER_NONE)
+            continue;
+        has_target = true;
         if (wp->paragraphs[i].list_type != list_type) {
             turn_off = false;
             break;
         }
     }
+    if (!has_target) return;
 
     bool changed = false;
     for (int i = para_s; i <= para_e && i < wp->paragraph_count; i++) {
         ParagraphStyle* para = &wp->paragraphs[i];
+        if (para->divider_type != PARA_DIVIDER_NONE)
+            continue;
         if (turn_off) {
             if (para->list_type != PARA_LIST_NONE) {
                 para->list_type = PARA_LIST_NONE;
@@ -934,6 +1029,74 @@ void wp_toggle_list(WordProcessorState* wp, uint8_t list_type) {
     }
 }
 
+void wp_insert_divider(WordProcessorState* wp, uint8_t divider_type) {
+    if (!wp_valid_divider_type(divider_type)) return;
+
+    if (wp->has_selection)
+        wp_delete_selection(wp);
+
+    int abs = wp_abs_pos(wp, wp->cursor_run, wp->cursor_offset);
+    int para = wp_find_paragraph_at(wp, abs);
+    if (para < 0) para = 0;
+    if (para >= wp->paragraph_count) para = wp->paragraph_count - 1;
+
+    int para_start = 0;
+    int para_end = 0;
+    bool has_newline = false;
+    wp_paragraph_bounds(wp, para, &para_start, &para_end, &has_newline);
+
+    int needed_newlines = 0;
+    if (para_start == para_end) {
+        needed_newlines = has_newline ? 0 : 1;
+    } else if (abs == para_start) {
+        needed_newlines = 1;
+    } else if (abs == para_end) {
+        needed_newlines = has_newline ? 1 : 2;
+    } else {
+        needed_newlines = 2;
+    }
+
+    if (wp->paragraph_count + needed_newlines > WP_MAX_PARAGRAPHS)
+        return;
+    if (wp->total_text_len + needed_newlines > WP_MAX_TEXT - 1)
+        return;
+
+    ParagraphStyle divider_style = wp_make_divider_style(&wp->paragraphs[para], divider_type);
+
+    if (para_start == para_end) {
+        wp->paragraphs[para] = divider_style;
+        wp->modified = true;
+        wp->wrap_dirty = true;
+
+        if (!has_newline) {
+            wp_insert_char(wp, '\n');
+        } else {
+            wp_pos_to_run(wp, para_end + 1, &wp->cursor_run, &wp->cursor_offset);
+        }
+        return;
+    }
+
+    if (abs == para_start) {
+        wp_insert_char(wp, '\n');
+        wp->paragraphs[para] = divider_style;
+        wp_pos_to_run(wp, para_start + 1, &wp->cursor_run, &wp->cursor_offset);
+    } else if (abs == para_end) {
+        wp_insert_char(wp, '\n');
+        if (!has_newline)
+            wp_insert_char(wp, '\n');
+        wp->paragraphs[para + 1] = divider_style;
+        wp_pos_to_run(wp, abs + 2, &wp->cursor_run, &wp->cursor_offset);
+    } else {
+        wp_insert_char(wp, '\n');
+        wp_insert_char(wp, '\n');
+        wp->paragraphs[para + 1] = divider_style;
+        wp_pos_to_run(wp, abs + 2, &wp->cursor_run, &wp->cursor_offset);
+    }
+
+    wp->modified = true;
+    wp->wrap_dirty = true;
+}
+
 void wp_delete_selection(WordProcessorState* wp) {
     if (!wp->has_selection) return;
 
@@ -952,13 +1115,14 @@ void wp_delete_selection(WordProcessorState* wp) {
     wp_clear_selection(wp);
 }
 
-void wp_recompute_wrap(WordProcessorState* wp, int content_w) {
+void wp_recompute_wrap(WordProcessorState* wp, int content_w, int layout_dpi) {
     int wrap_width = content_w - WP_MARGIN * 2 - WP_SCROLLBAR_W;
     if (wrap_width < 50) wrap_width = 50;
 
-    if (wrap_width != wp->last_wrap_width) {
+    if (wrap_width != wp->last_wrap_width || layout_dpi != wp->last_wrap_dpi) {
         wp->wrap_dirty = true;
         wp->last_wrap_width = wrap_width;
+        wp->last_wrap_dpi = layout_dpi;
     }
 
     if (!wp->wrap_dirty && wp->wrap_lines) return;
@@ -991,7 +1155,8 @@ void wp_recompute_wrap(WordProcessorState* wp, int content_w) {
             para_content_end++;
         }
 
-        y += para->space_before;
+        bool is_divider = (para->divider_type != PARA_DIVIDER_NONE && para_start == para_content_end);
+        y += wp_scale_layout_units(para->space_before, layout_dpi);
 
         bool first_line = true;
         int line_start = para_start;
@@ -999,7 +1164,7 @@ void wp_recompute_wrap(WordProcessorState* wp, int content_w) {
             if (wp->wrap_line_count >= WP_MAX_WRAP_LINES) break;
             if (!wp_ensure_wrap_capacity(wp, wp->wrap_line_count + 1)) break;
 
-            int text_indent = wp_effective_text_indent(para, first_line);
+            int text_indent = wp_effective_text_indent(para, first_line, layout_dpi);
             int avail_width = wrap_width - text_indent;
             if (avail_width < 40) avail_width = 40;
 
@@ -1010,7 +1175,7 @@ void wp_recompute_wrap(WordProcessorState* wp, int content_w) {
 
             while (scan < para_content_end) {
                 char ch = wp_char_at(wp, scan);
-                int cw = wp_char_advance_at(wp, scan, ch);
+                int cw = wp_char_advance_at(wp, scan, layout_dpi, ch);
                 if (width + cw > avail_width && scan > line_start) {
                     if (last_space >= line_start) {
                         scan = last_space + 1;
@@ -1028,7 +1193,7 @@ void wp_recompute_wrap(WordProcessorState* wp, int content_w) {
             }
 
             if (scan == line_start && scan < para_content_end) {
-                width += wp_char_advance_at(wp, scan, wp_char_at(wp, scan));
+                width += wp_char_advance_at(wp, scan, layout_dpi, wp_char_at(wp, scan));
                 scan++;
             }
 
@@ -1039,7 +1204,8 @@ void wp_recompute_wrap(WordProcessorState* wp, int content_w) {
             int line_width = 0;
             int line_height = 0;
             int line_ascent = 0;
-            wp_measure_line_range(wp, line_start, char_count, &line_width, &line_height, &line_ascent);
+            wp_measure_line_range(wp, line_start, char_count, layout_dpi,
+                                  &line_width, &line_height, &line_ascent);
 
             WrapLine* line = &wp->wrap_lines[wp->wrap_line_count];
             wp_pos_to_run(wp, line_start, &line->run_idx, &line->run_offset);
@@ -1050,6 +1216,7 @@ void wp_recompute_wrap(WordProcessorState* wp, int content_w) {
             line->width = line_width;
             line->paragraph_idx = para_idx;
             line->list_number = (first_line && para->list_type == PARA_LIST_NUMBER) ? list_number : 0;
+            line->divider_type = PARA_DIVIDER_NONE;
             line->first_in_paragraph = first_line;
 
             int extra = wrap_width - text_indent - line_width;
@@ -1075,25 +1242,35 @@ void wp_recompute_wrap(WordProcessorState* wp, int content_w) {
             wp_pos_to_run(wp, para_start, &line->run_idx, &line->run_offset);
             line->char_count = has_newline ? 1 : 0;
             line->y = y;
-            wp_default_line_metrics(wp, para_start, &line->height, &line->baseline);
-            line->width = 0;
             line->paragraph_idx = para_idx;
-            line->list_number = (para->list_type == PARA_LIST_NUMBER) ? list_number : 0;
+            line->list_number = (is_divider || para->list_type != PARA_LIST_NUMBER) ? 0 : list_number;
+            line->divider_type = is_divider ? para->divider_type : (uint8_t)PARA_DIVIDER_NONE;
             line->first_in_paragraph = true;
 
-            int text_indent = wp_effective_text_indent(para, true);
-            int extra = wrap_width - text_indent;
-            if (extra < 0) extra = 0;
-            int x = WP_MARGIN + text_indent;
-            if (para->align == PARA_ALIGN_CENTER) x += extra / 2;
-            else if (para->align == PARA_ALIGN_RIGHT) x += extra;
-            line->x = x;
+            int text_indent = wp_effective_text_indent(para, true, layout_dpi);
+            if (is_divider) {
+                line->height = wp_divider_height(para->divider_type, layout_dpi);
+                line->baseline = line->height / 2;
+                line->x = WP_MARGIN + text_indent;
+                line->width = wrap_width - text_indent;
+                if (line->width < 24) line->width = 24;
+            } else {
+                wp_default_line_metrics(wp, para_start, layout_dpi, &line->height, &line->baseline);
+                line->width = 0;
+
+                int extra = wrap_width - text_indent;
+                if (extra < 0) extra = 0;
+                int x = WP_MARGIN + text_indent;
+                if (para->align == PARA_ALIGN_CENTER) x += extra / 2;
+                else if (para->align == PARA_ALIGN_RIGHT) x += extra;
+                line->x = x;
+            }
 
             wp->wrap_line_count++;
             y = line->y + line->height;
         }
 
-        y += para->space_after;
+        y += wp_scale_layout_units(para->space_after, layout_dpi);
 
         pos = para_content_end;
         if (has_newline) pos++;
@@ -1112,11 +1289,12 @@ void wp_recompute_wrap(WordProcessorState* wp, int content_w) {
         line->run_offset = 0;
         line->char_count = 0;
         line->y = WP_MARGIN;
-        wp_default_line_metrics(wp, 0, &line->height, &line->baseline);
+        wp_default_line_metrics(wp, 0, layout_dpi, &line->height, &line->baseline);
         line->x = WP_MARGIN;
         line->width = 0;
         line->paragraph_idx = 0;
         line->list_number = 0;
+        line->divider_type = PARA_DIVIDER_NONE;
         line->first_in_paragraph = true;
 
         wp->wrap_line_count = 1;
@@ -1285,7 +1463,7 @@ static bool wp_serialize_document(WordProcessorState* wp, uint8_t** out_buf, int
         buf[off++] = para->align;
         buf[off++] = para->list_type;
         buf[off++] = para->line_spacing;
-        buf[off++] = 0;
+        buf[off++] = para->divider_type;
         wp_write_u16(buf, &off, (uint16_t)para->left_indent);
         wp_write_u16(buf, &off, (uint16_t)para->first_line_indent);
         wp_write_u16(buf, &off, (uint16_t)para->space_before);
@@ -1403,7 +1581,7 @@ static bool wp_deserialize_document(WordProcessorState* wp, const uint8_t* buf, 
             para->align = buf[off++];
             para->list_type = buf[off++];
             para->line_spacing = buf[off++];
-            off++;
+            para->divider_type = buf[off++];
             para->left_indent = (int16_t)wp_read_u16(buf, &off);
             para->first_line_indent = (int16_t)wp_read_u16(buf, &off);
             para->space_before = (int16_t)wp_read_u16(buf, &off);
@@ -1411,6 +1589,7 @@ static bool wp_deserialize_document(WordProcessorState* wp, const uint8_t* buf, 
 
             if (para->align > PARA_ALIGN_RIGHT) para->align = PARA_ALIGN_LEFT;
             if (para->list_type > PARA_LIST_NUMBER) para->list_type = PARA_LIST_NONE;
+            if (!wp_valid_divider_type(para->divider_type)) para->divider_type = PARA_DIVIDER_NONE;
 
             bool known_spacing = false;
             for (int j = 0; j < WP_LINE_SPACING_OPTION_COUNT; j++) {
@@ -1433,6 +1612,8 @@ static bool wp_deserialize_document(WordProcessorState* wp, const uint8_t* buf, 
     wp->scrollbar.scroll_offset = 0;
     wp->modified = false;
     wp->wrap_dirty = true;
+    wp->last_wrap_width = 0;
+    wp->last_wrap_dpi = 0;
     wp->sel_anchor = 0;
     wp->sel_end = 0;
     wp->has_selection = false;
@@ -1440,6 +1621,8 @@ static bool wp_deserialize_document(WordProcessorState* wp, const uint8_t* buf, 
     wp->font_dropdown_open = false;
     wp->size_dropdown_open = false;
     wp->line_spacing_dropdown_open = false;
+    wp->divider_flyout_open = false;
+    wp->special_char_flyout_open = false;
     wp->show_pathbar = false;
     return true;
 }

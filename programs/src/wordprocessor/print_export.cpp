@@ -64,6 +64,43 @@ static int wp_print_layout_width() {
     return (WP_PRINT_PAGE_W - WP_PRINT_MARGIN_X * 2) + WP_MARGIN * 2 + WP_SCROLLBAR_W;
 }
 
+static void wp_draw_print_divider(Canvas& c, int x, int y, int w, int h,
+                                  uint8_t divider_type, Color color) {
+    if (w <= 0 || h <= 0 || divider_type == PARA_DIVIDER_NONE) return;
+
+    int cy = y + h / 2;
+    switch (divider_type) {
+    case PARA_DIVIDER_SINGLE:
+        c.fill_rect(x, cy, w, 1, color);
+        break;
+    case PARA_DIVIDER_DOUBLE:
+        c.fill_rect(x, cy - 2, w, 1, color);
+        c.fill_rect(x, cy + 2, w, 1, color);
+        break;
+    case PARA_DIVIDER_DOTTED:
+        for (int dx = x; dx < x + w; dx += 5)
+            c.fill_rect(dx, cy, 2, 1, color);
+        break;
+    case PARA_DIVIDER_DASHED:
+        for (int dx = x; dx < x + w; dx += 11) {
+            int dash_w = (x + w - dx) < 7 ? (x + w - dx) : 7;
+            if (dash_w > 0) c.fill_rect(dx, cy, dash_w, 1, color);
+        }
+        break;
+    case PARA_DIVIDER_HEAVY:
+        c.fill_rect(x, cy - 1, w, 3, color);
+        break;
+    case PARA_DIVIDER_THIN_THICK:
+        c.fill_rect(x, cy - 3, w, 1, color);
+        c.fill_rect(x, cy, w, 3, color);
+        break;
+    case PARA_DIVIDER_THICK_THIN:
+        c.fill_rect(x, cy - 3, w, 3, color);
+        c.fill_rect(x, cy + 2, w, 1, color);
+        break;
+    }
+}
+
 static void wp_make_base_print_name(WordProcessorState* wp, char* out, int out_len) {
     const char* src = wp->filename[0] ? wp->filename : "document";
     int last_dot = -1;
@@ -109,7 +146,7 @@ static bool wp_build_print_page_map(WordProcessorState* wp,
     if (out_line_y) *out_line_y = nullptr;
     if (out_page_count) *out_page_count = 0;
 
-    wp_recompute_wrap(wp, wp_print_layout_width());
+    wp_recompute_wrap(wp, wp_print_layout_width(), WP_PRINT_DPI);
     if (wp->wrap_line_count <= 0) {
         wp_status_copy(err, err_len, "failed to paginate document");
         return false;
@@ -164,14 +201,17 @@ static void wp_draw_print_list_marker(Canvas& c, WordProcessorState* wp, WrapLin
         return;
 
     ParagraphStyle* para = &wp->paragraphs[wl->paragraph_idx];
-    if (para->list_type == PARA_LIST_NONE) return;
+    if (para->divider_type != PARA_DIVIDER_NONE || para->list_type == PARA_LIST_NONE) return;
 
-    int marker_x = WP_PRINT_MARGIN_X + para->left_indent + para->first_line_indent;
+    int marker_x = WP_PRINT_MARGIN_X + wp_scale_layout_units(para->left_indent + para->first_line_indent, WP_PRINT_DPI);
     int min_x = WP_PRINT_MARGIN_X - WP_MARGIN + 4;
     if (marker_x < min_x) marker_x = min_x;
 
     if (para->list_type == PARA_LIST_BULLET) {
-        fill_circle(c, marker_x + 7, py + wl->height / 2, 3, colors::BLACK);
+        int bullet_x = marker_x + wp_scale_layout_units(7, WP_PRINT_DPI);
+        int bullet_r = wp_scale_layout_units(3, WP_PRINT_DPI);
+        if (bullet_r < 2) bullet_r = 2;
+        fill_circle(c, bullet_x, py + wl->height / 2, bullet_r, colors::BLACK);
         return;
     }
 
@@ -180,8 +220,9 @@ static void wp_draw_print_list_marker(Canvas& c, WordProcessorState* wp, WrapLin
     TrueTypeFont* font = wp_get_font(run->font_id, run->flags);
     char label[16];
     snprintf(label, sizeof(label), "%d.", wl->list_number > 0 ? wl->list_number : 1);
-    int top_y = py + (wl->height - run->size) / 2;
-    draw_text(c, font ? font : g_ui_font, marker_x, top_y, label, colors::BLACK, run->size);
+    int font_px = wp_print_font_pixels(run->size);
+    int top_y = py + (wl->height - font_px) / 2;
+    draw_text(c, font ? font : g_ui_font, marker_x, top_y, label, colors::BLACK, font_px);
 }
 
 static bool wp_encode_print_page(WordProcessorState* wp,
@@ -210,6 +251,10 @@ static bool wp_encode_print_page(WordProcessorState* wp,
         WrapLine* wl = &wp->wrap_lines[li];
         int py = line_y[li];
         wp_draw_print_list_marker(c, wp, wl, py);
+        if (wl->divider_type != PARA_DIVIDER_NONE) {
+            int divider_x = WP_PRINT_MARGIN_X + (wl->x - WP_MARGIN);
+            wp_draw_print_divider(c, divider_x, py, wl->width, wl->height, wl->divider_type, colors::BLACK);
+        }
 
         int chars_left = wl->char_count;
         int ri = wl->run_idx;
@@ -228,7 +273,7 @@ static bool wp_encode_print_page(WordProcessorState* wp,
                 continue;
             }
 
-            GlyphCache* gc = font->get_cache(r->size);
+            GlyphCache* gc = font->get_cache(wp_print_font_pixels(r->size));
             int baseline = py + wl->baseline;
 
             int avail = r->len - ro;

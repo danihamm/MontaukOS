@@ -41,6 +41,49 @@ static int wp_special_char_flyout_x() {
     return dx < 0 ? 0 : dx;
 }
 
+static int wp_divider_flyout_x() {
+    int dx = WP_BTN_DIVIDER_X + 24 - WP_DIVIDER_FLYOUT_W;
+    if (dx + WP_DIVIDER_FLYOUT_W > g_win_w) dx = g_win_w - WP_DIVIDER_FLYOUT_W;
+    return dx < 0 ? 0 : dx;
+}
+
+static void wp_draw_divider_sample(Canvas& c, int x, int y, int w, int h,
+                                   uint8_t divider_type, Color color) {
+    if (w <= 0 || h <= 0 || divider_type == PARA_DIVIDER_NONE) return;
+
+    int cy = y + h / 2;
+    switch (divider_type) {
+    case PARA_DIVIDER_SINGLE:
+        c.fill_rect(x, cy, w, 1, color);
+        break;
+    case PARA_DIVIDER_DOUBLE:
+        c.fill_rect(x, cy - 2, w, 1, color);
+        c.fill_rect(x, cy + 2, w, 1, color);
+        break;
+    case PARA_DIVIDER_DOTTED:
+        for (int dx = x; dx < x + w; dx += 5)
+            c.fill_rect(dx, cy, 2, 1, color);
+        break;
+    case PARA_DIVIDER_DASHED:
+        for (int dx = x; dx < x + w; dx += 11) {
+            int dash_w = (x + w - dx) < 7 ? (x + w - dx) : 7;
+            if (dash_w > 0) c.fill_rect(dx, cy, dash_w, 1, color);
+        }
+        break;
+    case PARA_DIVIDER_HEAVY:
+        c.fill_rect(x, cy - 1, w, 3, color);
+        break;
+    case PARA_DIVIDER_THIN_THICK:
+        c.fill_rect(x, cy - 3, w, 1, color);
+        c.fill_rect(x, cy, w, 3, color);
+        break;
+    case PARA_DIVIDER_THICK_THIN:
+        c.fill_rect(x, cy - 3, w, 3, color);
+        c.fill_rect(x, cy + 2, w, 1, color);
+        break;
+    }
+}
+
 static void wp_fit_ui_text(const char* src, char* out, int out_len, int max_w) {
     if (!src || !src[0]) {
         if (out_len > 0) out[0] = '\0';
@@ -71,7 +114,7 @@ static void wp_fit_ui_text(const char* src, char* out, int out_len, int max_w) {
 
 static ParagraphStyle* wp_current_paragraph_style(WordProcessorState* wp) {
     if (wp->paragraph_count <= 0) {
-        static ParagraphStyle fallback = { PARA_ALIGN_LEFT, PARA_LIST_NONE, 100, 0, 0, 0, 0, 0 };
+        static ParagraphStyle fallback = { PARA_ALIGN_LEFT, PARA_LIST_NONE, 100, PARA_DIVIDER_NONE, 0, 0, 0, 0 };
         return &fallback;
     }
     int para = wp_find_paragraph_at(wp, wp_abs_pos(wp, wp->cursor_run, wp->cursor_offset));
@@ -96,18 +139,34 @@ static const char* wp_list_label(uint8_t list_type) {
     }
 }
 
+static const char* wp_divider_label(uint8_t divider_type) {
+    switch (divider_type) {
+    case PARA_DIVIDER_SINGLE: return "Single";
+    case PARA_DIVIDER_DOUBLE: return "Double";
+    case PARA_DIVIDER_DOTTED: return "Dotted";
+    case PARA_DIVIDER_DASHED: return "Dashed";
+    case PARA_DIVIDER_HEAVY: return "Heavy";
+    case PARA_DIVIDER_THIN_THICK: return "Thin/Thick";
+    case PARA_DIVIDER_THICK_THIN: return "Thick/Thin";
+    default: return "None";
+    }
+}
+
 static void wp_draw_list_marker(Canvas& c, WordProcessorState* wp, WrapLine* wl, int py) {
     if (!wl->first_in_paragraph || wl->paragraph_idx < 0 || wl->paragraph_idx >= wp->paragraph_count)
         return;
 
     ParagraphStyle* para = &wp->paragraphs[wl->paragraph_idx];
-    if (para->list_type == PARA_LIST_NONE) return;
+    if (para->divider_type != PARA_DIVIDER_NONE || para->list_type == PARA_LIST_NONE) return;
 
-    int marker_x = WP_MARGIN + para->left_indent + para->first_line_indent;
+    int marker_x = WP_MARGIN + wp_scale_layout_units(para->left_indent + para->first_line_indent, WP_SCREEN_DPI);
     if (marker_x < 4) marker_x = 4;
 
     if (para->list_type == PARA_LIST_BULLET) {
-        fill_circle(c, marker_x + 7, py + wl->height / 2, 3, colors::TEXT_COLOR);
+        int bullet_x = marker_x + wp_scale_layout_units(7, WP_SCREEN_DPI);
+        int bullet_r = wp_scale_layout_units(3, WP_SCREEN_DPI);
+        if (bullet_r < 2) bullet_r = 2;
+        fill_circle(c, bullet_x, py + wl->height / 2, bullet_r, colors::TEXT_COLOR);
         return;
     }
 
@@ -116,8 +175,9 @@ static void wp_draw_list_marker(Canvas& c, WordProcessorState* wp, WrapLine* wl,
     if (wp->run_count <= 0) return;
     StyledRun* run = &wp->runs[wl->run_idx < wp->run_count ? wl->run_idx : 0];
     TrueTypeFont* font = wp_get_font(run->font_id, run->flags);
-    int top_y = py + (wl->height - run->size) / 2;
-    draw_text(c, font ? font : g_ui_font, marker_x, top_y, label, colors::TEXT_COLOR, run->size);
+    int font_px = wp_screen_font_pixels(run->size);
+    int top_y = py + (wl->height - font_px) / 2;
+    draw_text(c, font ? font : g_ui_font, marker_x, top_y, label, colors::TEXT_COLOR, font_px);
 }
 
 void wp_render() {
@@ -203,6 +263,17 @@ void wp_render() {
         wp_draw_ui_text(c, WP_LINE_DD_X + 8, (WP_TOOLBAR_H - sfh) / 2, spacing, colors::TEXT_COLOR);
     }
 
+    c.vline(WP_BTN_DIVIDER_X - 4, 4, 28, colors::BORDER);
+
+    Color divider_bg = (wp->divider_flyout_open || cur_para->divider_type != PARA_DIVIDER_NONE) ? btn_active : btn_bg;
+    c.fill_rounded_rect(WP_BTN_DIVIDER_X, 6, 24, 24, 3, divider_bg);
+    uint8_t divider_preview = cur_para->divider_type != PARA_DIVIDER_NONE
+        ? cur_para->divider_type
+        : (uint8_t)PARA_DIVIDER_SINGLE;
+    wp_draw_divider_sample(c, WP_BTN_DIVIDER_X + 4, 6, 16, 24,
+                           divider_preview,
+                           colors::TEXT_COLOR);
+
     c.vline(WP_BTN_SECTION_X - 4, 4, 28, colors::BORDER);
 
     Color special_bg = wp->special_char_flyout_open ? btn_active : btn_bg;
@@ -250,7 +321,7 @@ void wp_render() {
     }
 
     int text_area_h = c.h - edit_y - WP_STATUS_H;
-    wp_recompute_wrap(wp, c.w);
+    wp_recompute_wrap(wp, c.w, WP_SCREEN_DPI);
 
     wp->scrollbar.bounds = {c.w - WP_SCROLLBAR_W, edit_y, WP_SCROLLBAR_W, text_area_h};
     wp->scrollbar.content_height = wp->content_height;
@@ -278,6 +349,8 @@ void wp_render() {
         if (py >= edit_y + text_area_h) break;
 
         wp_draw_list_marker(c, wp, wl, py);
+        if (wl->divider_type != PARA_DIVIDER_NONE)
+            wp_draw_divider_sample(c, wl->x, py, wl->width, wl->height, wl->divider_type, colors::TEXT_COLOR);
 
         int chars_left = wl->char_count;
         int ri = wl->run_idx;
@@ -295,7 +368,7 @@ void wp_render() {
                 continue;
             }
 
-            GlyphCache* gc = font->get_cache(r->size);
+            GlyphCache* gc = font->get_cache(wp_screen_font_pixels(r->size));
             int baseline = py + wl->baseline;
 
             int avail = r->len - ro;
@@ -369,11 +442,18 @@ void wp_render() {
 
     char status_left[320];
     const char* name = wp->filename[0] ? wp->filename : "Untitled";
-    snprintf(status_left, sizeof(status_left), " %s%s | %s %dpt | %s | %s | %d%%",
-             name, wp->modified ? " *" : "",
-             WP_FONT_NAMES[wp->cur_font_id < FONT_COUNT ? wp->cur_font_id : 0], (int)wp->cur_size,
-             wp_align_label(cur_para->align), wp_list_label(cur_para->list_type),
-             (int)cur_para->line_spacing);
+    if (cur_para->divider_type != PARA_DIVIDER_NONE) {
+        snprintf(status_left, sizeof(status_left), " %s%s | %s %dpt | Divider: %s | %d%%",
+                 name, wp->modified ? " *" : "",
+                 WP_FONT_NAMES[wp->cur_font_id < FONT_COUNT ? wp->cur_font_id : 0], (int)wp->cur_size,
+                 wp_divider_label(cur_para->divider_type), (int)cur_para->line_spacing);
+    } else {
+        snprintf(status_left, sizeof(status_left), " %s%s | %s %dpt | %s | %s | %d%%",
+                 name, wp->modified ? " *" : "",
+                 WP_FONT_NAMES[wp->cur_font_id < FONT_COUNT ? wp->cur_font_id : 0], (int)wp->cur_size,
+                 wp_align_label(cur_para->align), wp_list_label(cur_para->list_type),
+                 (int)cur_para->line_spacing);
+    }
 
     char status_right[32];
     snprintf(status_right, sizeof(status_right), "%d chars ", wp->total_text_len);
@@ -434,6 +514,24 @@ void wp_render() {
             char spacing[12];
             snprintf(spacing, sizeof(spacing), "%d%%", WP_LINE_SPACING_OPTIONS[i]);
             wp_draw_ui_text(c, dx + 8, iy + (24 - sfh) / 2, spacing, colors::TEXT_COLOR);
+        }
+    }
+
+    if (wp->divider_flyout_open) {
+        int dx = wp_divider_flyout_x();
+        int dy = WP_TOOLBAR_H;
+        int dw = WP_DIVIDER_FLYOUT_W;
+        int dh = WP_DIVIDER_OPTION_COUNT * WP_DIVIDER_ROW_H + 4;
+        c.fill_rect(dx, dy, dw, dh, colors::MENU_BG);
+        c.rect(dx, dy, dw, dh, colors::BORDER);
+        for (int i = 0; i < WP_DIVIDER_OPTION_COUNT; i++) {
+            int iy = dy + 2 + i * WP_DIVIDER_ROW_H;
+            if (WP_DIVIDER_OPTIONS[i].type == cur_para->divider_type)
+                c.fill_rect(dx + 2, iy, dw - 4, WP_DIVIDER_ROW_H - 2, colors::MENU_HOVER);
+            wp_draw_divider_sample(c, dx + 10, iy, 56, WP_DIVIDER_ROW_H,
+                                   WP_DIVIDER_OPTIONS[i].type, colors::TEXT_COLOR);
+            wp_draw_ui_text(c, dx + 78, iy + (WP_DIVIDER_ROW_H - sfh) / 2,
+                            WP_DIVIDER_OPTIONS[i].label, colors::TEXT_COLOR);
         }
     }
 

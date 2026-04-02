@@ -34,6 +34,8 @@ static constexpr int WP_MAX_WRAP_LINES = 4096;
 static constexpr int WP_MAX_PARAGRAPHS = 4096;
 static constexpr int WP_DEFAULT_SIZE   = 18;
 static constexpr int WP_UNDO_MAX       = 24;
+static constexpr int WP_SCREEN_DPI     = 96;
+static constexpr int WP_PRINT_DPI      = 150;
 static constexpr int WP_PARA_STEP      = 12;
 static constexpr int WP_SPACE_STEP     = 6;
 static constexpr int WP_LIST_LEFT      = 28;
@@ -59,7 +61,10 @@ static constexpr int WP_BTN_OUTDENT_X  = 496;
 static constexpr int WP_BTN_INDENT_X   = 524;
 static constexpr int WP_LINE_DD_X      = 558;
 static constexpr int WP_LINE_DD_W      = 48;
-static constexpr int WP_BTN_SECTION_X  = 614;
+static constexpr int WP_BTN_DIVIDER_X  = 614;
+static constexpr int WP_BTN_SECTION_X  = 646;
+static constexpr int WP_DIVIDER_ROW_H  = 24;
+static constexpr int WP_DIVIDER_FLYOUT_W = 216;
 static constexpr int WP_SPECIAL_CHAR_ROW_H = 24;
 static constexpr int WP_SPECIAL_CHAR_FLYOUT_W = 144;
 
@@ -82,20 +87,48 @@ static constexpr int WP_SIZE_OPTION_COUNT = 8;
 inline constexpr int WP_LINE_SPACING_OPTIONS[] = { 100, 125, 150, 200 };
 static constexpr int WP_LINE_SPACING_OPTION_COUNT = 4;
 
+inline int wp_points_to_pixels(int points, int dpi) {
+    if (points <= 0) points = 1;
+    if (dpi <= 0) dpi = WP_SCREEN_DPI;
+    int px = (points * dpi + 36) / 72;
+    return px > 0 ? px : 1;
+}
+
+inline int wp_screen_font_pixels(int points) {
+    return wp_points_to_pixels(points, WP_SCREEN_DPI);
+}
+
+inline int wp_print_font_pixels(int points) {
+    return wp_points_to_pixels(points, WP_PRINT_DPI);
+}
+
+inline int wp_scale_layout_units(int units, int dpi) {
+    if (dpi <= 0) dpi = WP_SCREEN_DPI;
+    int scaled = (units * dpi + (units >= 0 ? WP_SCREEN_DPI / 2 : -WP_SCREEN_DPI / 2)) / WP_SCREEN_DPI;
+    return scaled;
+}
+
 struct WpSpecialCharOption {
     uint8_t code;
+    const char* label;
+};
+
+struct WpDividerOption {
+    uint8_t type;
     const char* label;
 };
 
 inline constexpr WpSpecialCharOption WP_SPECIAL_CHAR_OPTIONS[] = {
     { 0xA7, "Section" },
     { 0xB6, "Pilcrow" },
+    { 0x96, "En Dash" },
+    { 0x97, "Em Dash" },
     { 0xA9, "Copyright" },
     { 0xAE, "Registered" },
     { 0xB0, "Degree" },
     { 0xB1, "Plus/Minus" },
 };
-static constexpr int WP_SPECIAL_CHAR_OPTION_COUNT = 6;
+static constexpr int WP_SPECIAL_CHAR_OPTION_COUNT = 8;
 
 enum ParagraphAlign : uint8_t {
     PARA_ALIGN_LEFT = 0,
@@ -108,6 +141,28 @@ enum ParagraphListType : uint8_t {
     PARA_LIST_BULLET = 1,
     PARA_LIST_NUMBER = 2,
 };
+
+enum ParagraphDividerType : uint8_t {
+    PARA_DIVIDER_NONE = 0,
+    PARA_DIVIDER_SINGLE = 1,
+    PARA_DIVIDER_DOUBLE = 2,
+    PARA_DIVIDER_DOTTED = 3,
+    PARA_DIVIDER_DASHED = 4,
+    PARA_DIVIDER_HEAVY = 5,
+    PARA_DIVIDER_THIN_THICK = 6,
+    PARA_DIVIDER_THICK_THIN = 7,
+};
+
+inline constexpr WpDividerOption WP_DIVIDER_OPTIONS[] = {
+    { PARA_DIVIDER_SINGLE, "Single Line" },
+    { PARA_DIVIDER_DOUBLE, "Double Line" },
+    { PARA_DIVIDER_DOTTED, "Dotted Line" },
+    { PARA_DIVIDER_DASHED, "Dashed Line" },
+    { PARA_DIVIDER_HEAVY, "Heavy Line" },
+    { PARA_DIVIDER_THIN_THICK, "Thin/Thick Rule" },
+    { PARA_DIVIDER_THICK_THIN, "Thick/Thin Rule" },
+};
+static constexpr int WP_DIVIDER_OPTION_COUNT = 7;
 
 struct WPFontTable {
     TrueTypeFont* fonts[FONT_COUNT][4];
@@ -134,6 +189,7 @@ struct WrapLine {
     int width;
     int paragraph_idx;
     int list_number;
+    uint8_t divider_type;
     bool first_in_paragraph;
 };
 
@@ -141,7 +197,7 @@ struct ParagraphStyle {
     uint8_t align;
     uint8_t list_type;
     uint8_t line_spacing;
-    uint8_t _pad;
+    uint8_t divider_type;
     int16_t left_indent;
     int16_t first_line_indent;
     int16_t space_before;
@@ -277,6 +333,7 @@ struct WordProcessorState {
     int wrap_line_cap;
     bool wrap_dirty;
     int last_wrap_width;
+    int last_wrap_dpi;
 
     ParagraphStyle paragraphs[WP_MAX_PARAGRAPHS];
     int paragraph_count;
@@ -298,6 +355,7 @@ struct WordProcessorState {
     bool font_dropdown_open;
     bool size_dropdown_open;
     bool line_spacing_dropdown_open;
+    bool divider_flyout_open;
     bool special_char_flyout_open;
 
     UndoSnapshot undo[WP_UNDO_MAX];
@@ -362,9 +420,10 @@ void wp_adjust_paragraph_spacing_after(WordProcessorState* wp, int delta);
 void wp_cycle_line_spacing(WordProcessorState* wp);
 void wp_set_line_spacing(WordProcessorState* wp, int value);
 void wp_toggle_list(WordProcessorState* wp, uint8_t list_type);
+void wp_insert_divider(WordProcessorState* wp, uint8_t divider_type);
 void wp_delete_selection(WordProcessorState* wp);
 
-void wp_recompute_wrap(WordProcessorState* wp, int content_w);
+void wp_recompute_wrap(WordProcessorState* wp, int content_w, int layout_dpi);
 int  wp_find_wrap_line(WordProcessorState* wp, int abs_pos);
 int  wp_wrap_line_start(WordProcessorState* wp, int line_idx);
 void wp_ensure_cursor_visible(WordProcessorState* wp, int view_h);

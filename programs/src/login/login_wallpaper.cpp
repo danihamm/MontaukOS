@@ -6,6 +6,18 @@
 
 #include "login.hpp"
 
+namespace {
+
+constexpr uint32_t kLoginOverlayAlpha = 0x38;
+constexpr uint32_t kLoginOverlayInvAlpha = 255 - kLoginOverlayAlpha;
+
+static uint8_t dim_component(uint8_t value) {
+    uint32_t scaled = kLoginOverlayInvAlpha * value;
+    return (uint8_t)((scaled + 1 + (scaled >> 8)) >> 8);
+}
+
+} // namespace
+
 bool load_login_wallpaper(LoginState* ls) {
     auto doc = montauk::config::load("desktop");
     const char* wp = doc.get_string("wallpaper.path", "");
@@ -69,10 +81,13 @@ bool load_login_wallpaper(LoginState* ls) {
             if (sx < 0) sx = 0;
             if (sx >= img_w) sx = img_w - 1;
             int si = (sy * img_w + sx) * 3;
+            uint8_t r = dim_component(rgb[si]);
+            uint8_t g = dim_component(rgb[si + 1]);
+            uint8_t b = dim_component(rgb[si + 2]);
             scaled[y * dst_w + x] = 0xFF000000u
-                | ((uint32_t)rgb[si] << 16)
-                | ((uint32_t)rgb[si + 1] << 8)
-                | (uint32_t)rgb[si + 2];
+                | ((uint32_t)r << 16)
+                | ((uint32_t)g << 8)
+                | (uint32_t)b;
         }
     }
 
