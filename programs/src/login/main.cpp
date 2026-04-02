@@ -13,7 +13,6 @@
 #include <gui/gui.hpp>
 #include <gui/framebuffer.hpp>
 #include <gui/draw.hpp>
-#include <gui/svg.hpp>
 #include <gui/font.hpp>
 
 // Forward-declare stb_image functions (implementation in libjpeg.a).
@@ -98,12 +97,19 @@ enum LoginMode {
     MODE_LOGIN,       // Normal login
 };
 
+struct FieldEditState {
+    int cursor;
+    int sel_anchor;
+    int sel_end;
+    bool has_selection;
+};
+
 struct LoginState {
     Framebuffer fb;
     int screen_w, screen_h;
 
     LoginMode mode;
-    int active_field;  // 0=username, 1=password, 2=confirm (first-boot only)
+    int active_field;  // depends on mode: username/password or setup fields
 
     char username[32];
     int username_len;
@@ -119,10 +125,10 @@ struct LoginState {
 
     Montauk::MouseState mouse;
     uint8_t prev_buttons;
-
-    // Power option icons (loaded once at startup)
-    SvgIcon icon_shutdown;
-    SvgIcon icon_reboot;
+    FieldEditState username_edit;
+    FieldEditState display_name_edit;
+    FieldEditState password_edit;
+    FieldEditState confirm_edit;
 
     // Background wallpaper (loaded from config)
     uint32_t* bg_wallpaper;
@@ -232,6 +238,7 @@ static constexpr Color SECONDARY_BTN_BORDER = colors::BORDER;
 static constexpr Color TEXT_COLOR = colors::TEXT_COLOR;
 static constexpr Color LABEL_COLOR = Color::from_rgb(0x66, 0x66, 0x66);
 static constexpr Color ERROR_COLOR = Color::from_rgb(0xC0, 0x33, 0x33);
+static constexpr Color FIELD_SEL_BG = Color::from_rgb(0xB0, 0xD0, 0xF0);
 
 static constexpr int CARD_W = 432;
 static constexpr int TITLEBAR_H = 30;
@@ -244,7 +251,6 @@ static constexpr int CONTENT_PAD_X = 24;
 static constexpr int CONTENT_TOP_PAD = 18;
 static constexpr int BODY_BOTTOM_PAD = 18;
 static constexpr int FIELD_GAP = 12;
-static constexpr int POWER_ICON_SZ = 16;
 static constexpr int POWER_BTN_W = 104;
 static constexpr int POWER_BTN_GAP = 8;
 static constexpr int FOOTER_PAD = 16;
@@ -275,6 +281,168 @@ static Rect offset_rect(Rect rect, int dx, int dy) {
     rect.x += dx;
     rect.y += dy;
     return rect;
+}
+
+struct LoginField {
+    char* text;
+    int* len;
+    int max_len;
+    bool is_password;
+    FieldEditState* edit;
+};
+
+static LoginField get_field(LoginState* ls, int field) {
+    if (ls->mode == MODE_FIRST_BOOT) {
+        switch (field) {
+        case 0: return {ls->username, &ls->username_len, 31, false, &ls->username_edit};
+        case 1: return {ls->display_name, &ls->display_name_len, 63, false, &ls->display_name_edit};
+        case 2: return {ls->password, &ls->password_len, 63, true, &ls->password_edit};
+        case 3: return {ls->confirm, &ls->confirm_len, 63, true, &ls->confirm_edit};
+        default: break;
+        }
+    } else {
+        switch (field) {
+        case 0: return {ls->username, &ls->username_len, 31, false, &ls->username_edit};
+        case 1: return {ls->password, &ls->password_len, 63, true, &ls->password_edit};
+        default: break;
+        }
+    }
+    return {nullptr, nullptr, 0, false, nullptr};
+}
+
+static void reset_field_edit(FieldEditState* edit) {
+    edit->cursor = 0;
+    edit->sel_anchor = 0;
+    edit->sel_end = 0;
+    edit->has_selection = false;
+}
+
+static void clear_field_selection(FieldEditState* edit) {
+    edit->has_selection = false;
+    edit->sel_anchor = edit->cursor;
+    edit->sel_end = edit->cursor;
+}
+
+static void clear_all_field_selections(LoginState* ls) {
+    clear_field_selection(&ls->username_edit);
+    clear_field_selection(&ls->display_name_edit);
+    clear_field_selection(&ls->password_edit);
+    clear_field_selection(&ls->confirm_edit);
+}
+
+static void clamp_field_edit(FieldEditState* edit, int len) {
+    if (edit->cursor < 0) edit->cursor = 0;
+    if (edit->cursor > len) edit->cursor = len;
+    if (edit->sel_anchor < 0) edit->sel_anchor = 0;
+    if (edit->sel_anchor > len) edit->sel_anchor = len;
+    if (edit->sel_end < 0) edit->sel_end = 0;
+    if (edit->sel_end > len) edit->sel_end = len;
+    if (!edit->has_selection || edit->sel_anchor == edit->sel_end) clear_field_selection(edit);
+}
+
+static void field_sel_range(const FieldEditState* edit, int* out_s, int* out_e) {
+    if (edit->sel_anchor < edit->sel_end) {
+        *out_s = edit->sel_anchor;
+        *out_e = edit->sel_end;
+    } else {
+        *out_s = edit->sel_end;
+        *out_e = edit->sel_anchor;
+    }
+}
+
+static void start_field_selection(FieldEditState* edit) {
+    if (!edit->has_selection) {
+        edit->sel_anchor = edit->cursor;
+        edit->sel_end = edit->cursor;
+        edit->has_selection = true;
+    }
+}
+
+static void update_field_selection(FieldEditState* edit) {
+    edit->sel_end = edit->cursor;
+    if (edit->sel_anchor == edit->sel_end) clear_field_selection(edit);
+}
+
+static int copy_slice(char* out, int cap, const char* text, int start, int end) {
+    if (cap <= 0) return 0;
+    if (start < 0) start = 0;
+    if (end < start) end = start;
+    int pos = 0;
+    for (int i = start; i < end && pos < cap - 1; i++) out[pos++] = text[i];
+    out[pos] = '\0';
+    return pos;
+}
+
+static int slice_width(const char* text, int start, int end) {
+    char tmp[65];
+    copy_slice(tmp, sizeof(tmp), text, start, end);
+    return text_width(tmp);
+}
+
+static int compute_view_start(const char* text, int len, int max_text_w, int cursor) {
+    if (cursor < 0) cursor = 0;
+    if (cursor > len) cursor = len;
+    int start = 0;
+    while (start < cursor && slice_width(text, start, cursor) > max_text_w) start++;
+    return start;
+}
+
+static int compute_view_end(const char* text, int len, int max_text_w, int view_start) {
+    int end = view_start;
+    while (end < len && slice_width(text, view_start, end + 1) <= max_text_w) end++;
+    return end;
+}
+
+static void build_display_text(char* out, int cap, const char* text, int len, bool is_password) {
+    if (cap <= 0) return;
+    if (len < 0) len = 0;
+    int pos = 0;
+    while (pos < len && pos < cap - 1) {
+        out[pos] = is_password ? '*' : text[pos];
+        pos++;
+    }
+    out[pos] = '\0';
+}
+
+static void draw_text_slice(Framebuffer& fb, int x, int y, const char* text,
+                            int start, int end, Color fg,
+                            bool highlight = false, Color bg = colors::TRANSPARENT) {
+    char tmp[65];
+    if (copy_slice(tmp, sizeof(tmp), text, start, end) <= 0) return;
+    if (highlight) draw_text_bg(fb, x, y, tmp, fg, bg);
+    else draw_text(fb, x, y, tmp, fg);
+}
+
+static int field_cursor_from_mouse_x(const char* text, int len, int max_text_w,
+                                     int anchor_cursor, int rel_x) {
+    int view_start = compute_view_start(text, len, max_text_w, anchor_cursor);
+    if (rel_x <= 0) return view_start;
+    int view_end = compute_view_end(text, len, max_text_w, view_start);
+    int prev_w = 0;
+    for (int i = view_start; i < view_end; i++) {
+        int next_w = slice_width(text, view_start, i + 1);
+        int mid = prev_w + (next_w - prev_w) / 2;
+        if (rel_x < mid) return i;
+        prev_w = next_w;
+    }
+    return view_end;
+}
+
+static void delete_field_range(char* buf, int* len, int start, int count) {
+    if (count <= 0 || start < 0 || start >= *len) return;
+    if (start + count > *len) count = *len - start;
+    for (int i = start; i + count < *len; i++) buf[i] = buf[i + count];
+    *len -= count;
+    buf[*len] = '\0';
+}
+
+static void delete_field_selection(char* buf, int* len, FieldEditState* edit) {
+    if (!edit->has_selection) return;
+    int ss, se;
+    field_sel_range(edit, &ss, &se);
+    delete_field_range(buf, len, ss, se - ss);
+    edit->cursor = ss;
+    clear_field_selection(edit);
 }
 
 static void draw_rounded_frame(Framebuffer& fb, const Rect& rect, int radius,
@@ -362,50 +530,55 @@ static LoginLayout layout_login_screen(LoginState* ls) {
     return lo;
 }
 
-static void draw_field(Framebuffer& fb, const Rect& rect, const char* text,
-                       bool is_password, bool active, bool hovered) {
+static void draw_field(Framebuffer& fb, const Rect& rect, const char* text, int len,
+                       const FieldEditState* edit, bool is_password,
+                       bool active, bool hovered) {
     Color border = active ? FIELD_ACTIVE : (hovered ? FIELD_HOVER : FIELD_BORDER);
     Color bg = active ? FIELD_BG_ACTIVE : FIELD_BG;
     draw_rounded_frame(fb, rect, 6, border, bg);
 
     int ty = rect.y + (rect.h - system_font_height()) / 2;
     int max_text_w = rect.w - FIELD_PAD * 2 - 2;
-    if (is_password) {
-        int len = montauk::slen(text);
-        if (len > 64) len = 64;
-        char full[65];
-        for (int i = 0; i < len; i++) full[i] = '*';
-        full[len] = '\0';
-        // Show only trailing portion that fits
-        int vis = len;
-        while (vis > 0 && text_width(full + (len - vis)) > max_text_w)
-            vis--;
-        char masked[65];
-        for (int i = 0; i < vis; i++) masked[i] = '*';
-        masked[vis] = '\0';
-        draw_text(fb, rect.x + FIELD_PAD, ty, masked, TEXT_COLOR);
-        if (active) {
-            int cx = rect.x + FIELD_PAD + text_width(masked);
-            fb.fill_rect(cx, ty, 2, system_font_height(), FIELD_ACTIVE);
+    char display[65];
+    build_display_text(display, sizeof(display), text, len, is_password);
+
+    int cursor = active && edit ? edit->cursor : len;
+    int view_start = compute_view_start(display, len, max_text_w, cursor);
+    int view_end = compute_view_end(display, len, max_text_w, view_start);
+    int text_x = rect.x + FIELD_PAD;
+
+    if (active && edit && edit->has_selection) {
+        int sel_s, sel_e;
+        field_sel_range(edit, &sel_s, &sel_e);
+        if (sel_s < view_end && sel_e > view_start) {
+            int prefix_end = sel_s < view_start ? view_start : sel_s;
+            int hi_start = sel_s > view_start ? sel_s : view_start;
+            int hi_end = sel_e < view_end ? sel_e : view_end;
+
+            draw_text_slice(fb, text_x, ty, display, view_start, prefix_end, TEXT_COLOR);
+            text_x += slice_width(display, view_start, prefix_end);
+            draw_text_slice(fb, text_x, ty, display, hi_start, hi_end, TEXT_COLOR, true, FIELD_SEL_BG);
+            text_x += slice_width(display, hi_start, hi_end);
+            draw_text_slice(fb, text_x, ty, display, hi_end, view_end, TEXT_COLOR);
+        } else {
+            draw_text_slice(fb, text_x, ty, display, view_start, view_end, TEXT_COLOR);
         }
     } else {
-        int len = montauk::slen(text);
-        int offset = 0;
-        while (text_width(text + offset) > max_text_w && offset < len)
-            offset++;
-        draw_text(fb, rect.x + FIELD_PAD, ty, text + offset, TEXT_COLOR);
-        if (active) {
-            int cx = rect.x + FIELD_PAD + text_width(text + offset);
-            fb.fill_rect(cx, ty, 2, system_font_height(), FIELD_ACTIVE);
-        }
+        draw_text_slice(fb, text_x, ty, display, view_start, view_end, TEXT_COLOR);
+    }
+
+    if (active && edit) {
+        int cx = rect.x + FIELD_PAD + slice_width(display, view_start, edit->cursor);
+        fb.fill_rect(cx, ty, 2, system_font_height(), FIELD_ACTIVE);
     }
 }
 
 static void draw_labeled_field(Framebuffer& fb, const Rect& rect, const char* label,
-                               const char* text, bool is_password,
+                               const char* text, int len, const FieldEditState* edit,
+                               bool is_password,
                                bool active, bool hovered) {
     draw_text(fb, rect.x, rect.y - LABEL_GAP - system_font_height(), label, LABEL_COLOR);
-    draw_field(fb, rect, text, is_password, active, hovered);
+    draw_field(fb, rect, text, len, edit, is_password, active, hovered);
 }
 
 static void draw_button(Framebuffer& fb, const Rect& rect, const char* label,
@@ -424,24 +597,15 @@ static void draw_button(Framebuffer& fb, const Rect& rect, const char* label,
     draw_text(fb, tx, ty, label, primary ? BTN_TEXT : TEXT_COLOR);
 }
 
-static void draw_power_button(Framebuffer& fb, const Rect& rect, const SvgIcon& icon,
-                              const char* label, bool hovered) {
+static void draw_power_button(Framebuffer& fb, const Rect& rect, const char* label,
+                              bool hovered) {
     draw_rounded_frame(fb, rect, 4,
                        hovered ? FIELD_HOVER : SECONDARY_BTN_BORDER,
                        hovered ? SECONDARY_BTN_HOVER : SECONDARY_BTN_BG);
-
-    int icon_w = icon.pixels ? icon.width : 0;
-    int gap = icon_w > 0 ? 8 : 0;
     int tw = text_width(label);
-    int total_w = icon_w + gap + tw;
-    int sx = rect.x + (rect.w - total_w) / 2;
-    if (icon.pixels) {
-        int iy = rect.y + (rect.h - icon.height) / 2;
-        fb.blit_alpha(sx, iy, icon.width, icon.height, icon.pixels);
-        sx += icon.width + gap;
-    }
+    int tx = rect.x + (rect.w - tw) / 2;
     int ty = rect.y + (rect.h - system_font_height()) / 2;
-    draw_text(fb, sx, ty, label, TEXT_COLOR);
+    draw_text(fb, tx, ty, label, TEXT_COLOR);
 }
 
 // ============================================================================
@@ -475,21 +639,26 @@ static void draw_login_screen(LoginState* ls) {
     draw_text(fb, lo.content_x, lo.heading_y, lo.heading, TEXT_COLOR);
     draw_text(fb, lo.content_x, lo.subtitle_y, lo.subtitle, LABEL_COLOR);
 
-    draw_labeled_field(fb, lo.username_field, "Username", ls->username, false,
+    draw_labeled_field(fb, lo.username_field, "Username", ls->username, ls->username_len,
+                       &ls->username_edit, false,
                        ls->active_field == 0,
                        lo.username_field.contains(ls->mouse.x, ls->mouse.y));
     if (ls->mode == MODE_FIRST_BOOT) {
-        draw_labeled_field(fb, lo.display_name_field, "Display Name", ls->display_name, false,
+        draw_labeled_field(fb, lo.display_name_field, "Display Name", ls->display_name,
+                           ls->display_name_len, &ls->display_name_edit, false,
                            ls->active_field == 1,
                            lo.display_name_field.contains(ls->mouse.x, ls->mouse.y));
-        draw_labeled_field(fb, lo.password_field, "Password", ls->password, true,
+        draw_labeled_field(fb, lo.password_field, "Password", ls->password,
+                           ls->password_len, &ls->password_edit, true,
                            ls->active_field == 2,
                            lo.password_field.contains(ls->mouse.x, ls->mouse.y));
-        draw_labeled_field(fb, lo.confirm_field, "Confirm Password", ls->confirm, true,
+        draw_labeled_field(fb, lo.confirm_field, "Confirm Password", ls->confirm,
+                           ls->confirm_len, &ls->confirm_edit, true,
                            ls->active_field == 3,
                            lo.confirm_field.contains(ls->mouse.x, ls->mouse.y));
     } else {
-        draw_labeled_field(fb, lo.password_field, "Password", ls->password, true,
+        draw_labeled_field(fb, lo.password_field, "Password", ls->password,
+                           ls->password_len, &ls->password_edit, true,
                            ls->active_field == 1,
                            lo.password_field.contains(ls->mouse.x, ls->mouse.y));
     }
@@ -498,9 +667,9 @@ static void draw_login_screen(LoginState* ls) {
         draw_text(fb, lo.content_x, lo.error_y, ls->error_msg, ERROR_COLOR);
     }
 
-    draw_power_button(fb, lo.shutdown_button, ls->icon_shutdown, "Shut Down",
+    draw_power_button(fb, lo.shutdown_button, "Shut Down",
                       lo.shutdown_button.contains(ls->mouse.x, ls->mouse.y));
-    draw_power_button(fb, lo.reboot_button, ls->icon_reboot, "Restart",
+    draw_power_button(fb, lo.reboot_button, "Restart",
                       lo.reboot_button.contains(ls->mouse.x, ls->mouse.y));
     draw_button(fb, lo.submit_button, lo.submit_label,
                 lo.submit_button.contains(ls->mouse.x, ls->mouse.y), true);
@@ -515,19 +684,36 @@ static void draw_login_screen(LoginState* ls) {
 // Input handling
 // ============================================================================
 
-static void append_char(char* buf, int* len, int max, char c) {
-    if (*len < max - 1) {
-        buf[*len] = c;
-        (*len)++;
-        buf[*len] = '\0';
-    }
+static void insert_char(char* buf, int* len, int max_len, FieldEditState* edit, char c) {
+    if (edit->has_selection) delete_field_selection(buf, len, edit);
+    if (*len >= max_len) return;
+    for (int i = *len; i > edit->cursor; i--) buf[i] = buf[i - 1];
+    buf[edit->cursor] = c;
+    (*len)++;
+    buf[*len] = '\0';
+    edit->cursor++;
+    clear_field_selection(edit);
 }
 
-static void backspace(char* buf, int* len) {
-    if (*len > 0) {
-        (*len)--;
-        buf[*len] = '\0';
+static void backspace_char(char* buf, int* len, FieldEditState* edit) {
+    if (edit->has_selection) {
+        delete_field_selection(buf, len, edit);
+        return;
     }
+    if (edit->cursor <= 0) return;
+    delete_field_range(buf, len, edit->cursor - 1, 1);
+    edit->cursor--;
+    clear_field_selection(edit);
+}
+
+static void delete_char(char* buf, int* len, FieldEditState* edit) {
+    if (edit->has_selection) {
+        delete_field_selection(buf, len, edit);
+        return;
+    }
+    if (edit->cursor >= *len) return;
+    delete_field_range(buf, len, edit->cursor, 1);
+    clear_field_selection(edit);
 }
 
 static int max_fields(LoginState* ls) {
@@ -592,6 +778,7 @@ static void handle_key(LoginState* ls, const Montauk::KeyEvent& key) {
     // Tab switches fields
     if (key.scancode == 0x0F) {
         int mf = max_fields(ls);
+        clear_all_field_selections(ls);
         if (key.shift) {
             ls->active_field = (ls->active_field + mf - 1) % mf;
         } else {
@@ -600,6 +787,10 @@ static void handle_key(LoginState* ls, const Montauk::KeyEvent& key) {
         ls->show_error = false;
         return;
     }
+
+    LoginField field = get_field(ls, ls->active_field);
+    if (!field.text || !field.len || !field.edit) return;
+    clamp_field_edit(field.edit, *field.len);
 
     // Enter submits
     if (key.ascii == '\n' || key.ascii == '\r') {
@@ -611,6 +802,9 @@ static void handle_key(LoginState* ls, const Montauk::KeyEvent& key) {
                 // Keep username, clear password fields
                 ls->password[0] = '\0'; ls->password_len = 0;
                 ls->confirm[0] = '\0'; ls->confirm_len = 0;
+                reset_field_edit(&ls->password_edit);
+                reset_field_edit(&ls->confirm_edit);
+                clear_all_field_selections(ls);
                 ls->show_error = false;
             }
         } else {
@@ -624,6 +818,8 @@ static void handle_key(LoginState* ls, const Montauk::KeyEvent& key) {
                 // Desktop exited (logout) — clear session and fields
                 montauk::user::clear_session();
                 ls->password[0] = '\0'; ls->password_len = 0;
+                reset_field_edit(&ls->password_edit);
+                clear_all_field_selections(ls);
                 ls->active_field = 1;  // Focus password field
                 ls->show_error = false;
             }
@@ -631,39 +827,76 @@ static void handle_key(LoginState* ls, const Montauk::KeyEvent& key) {
         return;
     }
 
+    if (key.ctrl && (key.ascii == 'a' || key.ascii == 'A')) {
+        field.edit->cursor = *field.len;
+        field.edit->sel_anchor = 0;
+        field.edit->sel_end = *field.len;
+        field.edit->has_selection = (*field.len > 0);
+        return;
+    }
+
+    if (key.scancode == 0x4B) {
+        if (key.shift) {
+            start_field_selection(field.edit);
+            if (field.edit->cursor > 0) field.edit->cursor--;
+            update_field_selection(field.edit);
+        } else if (field.edit->has_selection) {
+            int ss, se;
+            field_sel_range(field.edit, &ss, &se);
+            field.edit->cursor = ss;
+            clear_field_selection(field.edit);
+        } else if (field.edit->cursor > 0) {
+            field.edit->cursor--;
+        }
+        return;
+    }
+
+    if (key.scancode == 0x4D) {
+        if (key.shift) {
+            start_field_selection(field.edit);
+            if (field.edit->cursor < *field.len) field.edit->cursor++;
+            update_field_selection(field.edit);
+        } else if (field.edit->has_selection) {
+            int ss, se;
+            field_sel_range(field.edit, &ss, &se);
+            field.edit->cursor = se;
+            clear_field_selection(field.edit);
+        } else if (field.edit->cursor < *field.len) {
+            field.edit->cursor++;
+        }
+        return;
+    }
+
+    if (key.scancode == 0x47) {
+        if (key.shift) start_field_selection(field.edit);
+        else clear_field_selection(field.edit);
+        field.edit->cursor = 0;
+        if (key.shift) update_field_selection(field.edit);
+        return;
+    }
+
+    if (key.scancode == 0x4F) {
+        if (key.shift) start_field_selection(field.edit);
+        else clear_field_selection(field.edit);
+        field.edit->cursor = *field.len;
+        if (key.shift) update_field_selection(field.edit);
+        return;
+    }
+
+    if (key.scancode == 0x53) {
+        delete_char(field.text, field.len, field.edit);
+        return;
+    }
+
     // Backspace
     if (key.ascii == '\b' || key.scancode == 0x0E) {
-        if (ls->mode == MODE_FIRST_BOOT) {
-            switch (ls->active_field) {
-            case 0: backspace(ls->username, &ls->username_len); break;
-            case 1: backspace(ls->display_name, &ls->display_name_len); break;
-            case 2: backspace(ls->password, &ls->password_len); break;
-            case 3: backspace(ls->confirm, &ls->confirm_len); break;
-            }
-        } else {
-            switch (ls->active_field) {
-            case 0: backspace(ls->username, &ls->username_len); break;
-            case 1: backspace(ls->password, &ls->password_len); break;
-            }
-        }
+        backspace_char(field.text, field.len, field.edit);
         return;
     }
 
     // Printable characters
     if (key.ascii >= 0x20 && key.ascii < 0x7F) {
-        if (ls->mode == MODE_FIRST_BOOT) {
-            switch (ls->active_field) {
-            case 0: append_char(ls->username, &ls->username_len, 31, key.ascii); break;
-            case 1: append_char(ls->display_name, &ls->display_name_len, 63, key.ascii); break;
-            case 2: append_char(ls->password, &ls->password_len, 63, key.ascii); break;
-            case 3: append_char(ls->confirm, &ls->confirm_len, 63, key.ascii); break;
-            }
-        } else {
-            switch (ls->active_field) {
-            case 0: append_char(ls->username, &ls->username_len, 31, key.ascii); break;
-            case 1: append_char(ls->password, &ls->password_len, 63, key.ascii); break;
-            }
-        }
+        insert_char(field.text, field.len, field.max_len, field.edit, key.ascii);
     }
 }
 
@@ -677,22 +910,38 @@ static void handle_mouse(LoginState* ls) {
     if (!left_pressed) return;
     LoginLayout lo = layout_login_screen(ls);
 
+    auto focus_field = [&](int field_index, const Rect& rect) {
+        LoginField field = get_field(ls, field_index);
+        if (!field.text || !field.len || !field.edit) return;
+        clamp_field_edit(field.edit, *field.len);
+        char display[65];
+        build_display_text(display, sizeof(display), field.text, *field.len, field.is_password);
+        int anchor_cursor = (field_index == ls->active_field) ? field.edit->cursor : *field.len;
+        int rel_x = mx - (rect.x + FIELD_PAD);
+        int max_text_w = rect.w - FIELD_PAD * 2 - 2;
+        int cursor = field_cursor_from_mouse_x(display, *field.len, max_text_w, anchor_cursor, rel_x);
+        clear_all_field_selections(ls);
+        ls->active_field = field_index;
+        field.edit->cursor = cursor;
+        clear_field_selection(field.edit);
+    };
+
     if (lo.username_field.contains(mx, my)) {
-        ls->active_field = 0;
+        focus_field(0, lo.username_field);
         return;
     }
 
     if (ls->mode == MODE_FIRST_BOOT) {
         if (lo.display_name_field.contains(mx, my)) {
-            ls->active_field = 1;
+            focus_field(1, lo.display_name_field);
             return;
         }
         if (lo.password_field.contains(mx, my)) {
-            ls->active_field = 2;
+            focus_field(2, lo.password_field);
             return;
         }
         if (lo.confirm_field.contains(mx, my)) {
-            ls->active_field = 3;
+            focus_field(3, lo.confirm_field);
             return;
         }
         if (lo.submit_button.contains(mx, my)) {
@@ -701,13 +950,16 @@ static void handle_mouse(LoginState* ls) {
                 ls->active_field = 0;
                 ls->password[0] = '\0'; ls->password_len = 0;
                 ls->confirm[0] = '\0'; ls->confirm_len = 0;
+                reset_field_edit(&ls->password_edit);
+                reset_field_edit(&ls->confirm_edit);
+                clear_all_field_selections(ls);
                 ls->show_error = false;
             }
             return;
         }
     } else {
         if (lo.password_field.contains(mx, my)) {
-            ls->active_field = 1;
+            focus_field(1, lo.password_field);
             return;
         }
         if (lo.submit_button.contains(mx, my)) {
@@ -719,6 +971,8 @@ static void handle_mouse(LoginState* ls) {
                 }
                 montauk::user::clear_session();
                 ls->password[0] = '\0'; ls->password_len = 0;
+                reset_field_edit(&ls->password_edit);
+                clear_all_field_selections(ls);
                 ls->active_field = 1;
                 ls->show_error = false;
             }
@@ -752,11 +1006,6 @@ extern "C" void _start() {
 
     // Set mouse bounds
     montauk::set_mouse_bounds(ls->screen_w - 1, ls->screen_h - 1);
-
-    // Load power option icons
-    Color icon_color = colors::ICON_COLOR;
-    ls->icon_shutdown = svg_load("0:/icons/system-shutdown.svg", POWER_ICON_SZ, POWER_ICON_SZ, icon_color);
-    ls->icon_reboot = svg_load("0:/icons/system-reboot.svg", POWER_ICON_SZ, POWER_ICON_SZ, icon_color);
 
     // Load wallpaper from system desktop config
     load_login_wallpaper(ls);
