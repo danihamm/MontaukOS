@@ -241,6 +241,10 @@ void filemanager_read_apps(FileManagerState* fm) {
     int count = montauk::readdir("0:/apps", entries, 32);
 
     // Extract basenames from readdir results (strip "apps/" prefix)
+
+    /*
+        TODO: Fix crash if 16-app ceiling is removed and remove ceiling
+    */
     for (int i = 0; i < count && fm->entry_count < 16; i++) {
         const char* raw = entries[i];
         // Strip "apps/" prefix
