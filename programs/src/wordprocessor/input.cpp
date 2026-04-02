@@ -7,6 +7,12 @@
 #include "wordprocessor.hpp"
 #include <gui/dialogs.hpp>
 
+static void wp_set_status(WordProcessorState* wp, const char* msg) {
+    if (!msg) msg = "";
+    montauk::strncpy(wp->status_msg, msg, (int)sizeof(wp->status_msg) - 1);
+    wp->status_msg[sizeof(wp->status_msg) - 1] = '\0';
+}
+
 static void wp_open_pathbar_for_open(WordProcessorState* wp) {
     char path[256] = {};
     char msg[160] = {};
@@ -15,6 +21,12 @@ static void wp_open_pathbar_for_open(WordProcessorState* wp) {
     } else if (msg[0]) {
         wp_start_pathbar(wp, false, wp->filepath);
     }
+}
+
+static void wp_open_print_dialog(WordProcessorState* wp) {
+    char msg[160] = {};
+    if (wp_print_document(wp, msg, sizeof(msg)) || msg[0])
+        wp_set_status(wp, msg);
 }
 
 static void wp_commit_pathbar(WordProcessorState* wp) {
@@ -28,10 +40,23 @@ static void wp_commit_pathbar(WordProcessorState* wp) {
     wp->show_pathbar = false;
 }
 
+static int wp_special_char_flyout_x() {
+    int dx = WP_BTN_SECTION_X + 24 - WP_SPECIAL_CHAR_FLYOUT_W;
+    if (dx + WP_SPECIAL_CHAR_FLYOUT_W > g_win_w) dx = g_win_w - WP_SPECIAL_CHAR_FLYOUT_W;
+    return dx < 0 ? 0 : dx;
+}
+
 static void wp_close_dropdowns(WordProcessorState* wp) {
     wp->font_dropdown_open = false;
     wp->size_dropdown_open = false;
     wp->line_spacing_dropdown_open = false;
+    wp->special_char_flyout_open = false;
+}
+
+static void wp_insert_special_char(WordProcessorState* wp, uint8_t ch) {
+    if (wp->has_selection) wp_delete_selection(wp);
+    wp_insert_char(wp, (char)ch);
+    wp_history_checkpoint(wp);
 }
 
 static int wp_hit_test_text(WordProcessorState* wp, int local_x, int local_y, int edit_y) {
@@ -148,6 +173,19 @@ void wp_handle_mouse(const Montauk::WinEvent& ev) {
         return;
     }
 
+    if (wp->special_char_flyout_open && wp_left_pressed(ev.mouse.buttons, ev.mouse.prev_buttons)) {
+        int dx = wp_special_char_flyout_x();
+        int dy = WP_TOOLBAR_H;
+        int dh = WP_SPECIAL_CHAR_OPTION_COUNT * WP_SPECIAL_CHAR_ROW_H + 4;
+        if (local_x >= dx && local_x < dx + WP_SPECIAL_CHAR_FLYOUT_W && local_y >= dy && local_y < dy + dh) {
+            int idx = (local_y - dy - 2) / WP_SPECIAL_CHAR_ROW_H;
+            if (idx >= 0 && idx < WP_SPECIAL_CHAR_OPTION_COUNT)
+                wp_insert_special_char(wp, WP_SPECIAL_CHAR_OPTIONS[idx].code);
+        }
+        wp->special_char_flyout_open = false;
+        return;
+    }
+
     if (wp_left_pressed(ev.mouse.buttons, ev.mouse.prev_buttons) && local_y < WP_TOOLBAR_H) {
         if (local_x >= WP_BTN_OPEN_X && local_x < WP_BTN_OPEN_X + 24 && local_y >= 6 && local_y < 30) {
             wp_open_pathbar_for_open(wp);
@@ -155,6 +193,10 @@ void wp_handle_mouse(const Montauk::WinEvent& ev) {
         }
         if (local_x >= WP_BTN_SAVE_X && local_x < WP_BTN_SAVE_X + 24 && local_y >= 6 && local_y < 30) {
             wp_save_file(wp);
+            return;
+        }
+        if (local_x >= WP_BTN_PRINT_X && local_x < WP_BTN_PRINT_X + 24 && local_y >= 6 && local_y < 30) {
+            wp_open_print_dialog(wp);
             return;
         }
         if (local_x >= WP_BTN_UNDO_X && local_x < WP_BTN_UNDO_X + 24 && local_y >= 6 && local_y < 30) {
@@ -237,12 +279,13 @@ void wp_handle_mouse(const Montauk::WinEvent& ev) {
             wp->line_spacing_dropdown_open = !wp->line_spacing_dropdown_open;
             wp->font_dropdown_open = false;
             wp->size_dropdown_open = false;
+            wp->special_char_flyout_open = false;
             return;
         }
         if (local_x >= WP_BTN_SECTION_X && local_x < WP_BTN_SECTION_X + 24 && local_y >= 6 && local_y < 30) {
+            bool open = !wp->special_char_flyout_open;
             wp_close_dropdowns(wp);
-            wp_insert_char(wp, (char)0xA7);
-            wp_history_checkpoint(wp);
+            wp->special_char_flyout_open = open;
             return;
         }
         return;
@@ -347,6 +390,10 @@ void wp_handle_key(const Montauk::KeyEvent& key) {
     }
     if (key.ctrl && (key.ascii == 'o' || key.ascii == 'O')) {
         wp_open_pathbar_for_open(wp);
+        return;
+    }
+    if (key.ctrl && (key.ascii == 'p' || key.ascii == 'P')) {
+        wp_open_print_dialog(wp);
         return;
     }
 

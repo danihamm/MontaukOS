@@ -16,6 +16,7 @@ namespace WinServer {
     static int g_uiScale = 1;
     static kcp::Mutex wsLock;
     static constexpr int MaxRetiredSnapshots = MaxWindows * 4;
+    static constexpr uint32_t InitialWindowPixel = 0xFFFFFFFFu;
 
     struct RetiredSnapshot {
         bool used;
@@ -32,6 +33,11 @@ namespace WinServer {
 
     static void ResetSlotLocked(WindowSlot& slot) {
         memset(&slot, 0, sizeof(WindowSlot));
+    }
+
+    static void FillSurfaceLocked(Ipc::Surface* surface, int width, int height, uint32_t pixel) {
+        if (surface == nullptr || width <= 0 || height <= 0) return;
+        Ipc::CopySurfacePreserve(surface, width, height, surface, width, height, pixel);
     }
 
     static void RetireSnapshotLocked(int windowId, Ipc::Surface* surface) {
@@ -126,6 +132,12 @@ namespace WinServer {
         Ipc::RetainSurface(live);
         Ipc::RetainSurface(snapshot);
         Ipc::RetainMailbox(mailbox, true, true);
+
+        // New app windows become visible to the compositor before the app has
+        // necessarily rendered its first frame. Seed both buffers with the
+        // normal white document background so we don't flash an all-zero frame.
+        FillSurfaceLocked(live, w, h, InitialWindowPixel);
+        FillSurfaceLocked(snapshot, w, h, InitialWindowPixel);
 
         uint64_t userVa = 0;
         if (Ipc::MapSurfaceForPid(live, ownerPid, ownerPml4, heapNext, userVa) != 0) {

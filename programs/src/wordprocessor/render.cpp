@@ -35,6 +35,40 @@ static void wp_draw_ui_icon_button(Canvas& c, int x, int y, int w, int h,
     wp_draw_ui_button(c, x, y, w, h, fallback, bg, fg, radius);
 }
 
+static int wp_special_char_flyout_x() {
+    int dx = WP_BTN_SECTION_X + 24 - WP_SPECIAL_CHAR_FLYOUT_W;
+    if (dx + WP_SPECIAL_CHAR_FLYOUT_W > g_win_w) dx = g_win_w - WP_SPECIAL_CHAR_FLYOUT_W;
+    return dx < 0 ? 0 : dx;
+}
+
+static void wp_fit_ui_text(const char* src, char* out, int out_len, int max_w) {
+    if (!src || !src[0]) {
+        if (out_len > 0) out[0] = '\0';
+        return;
+    }
+
+    montauk::strncpy(out, src, out_len - 1);
+    out[out_len - 1] = '\0';
+    if (text_width(g_ui_font, out, fonts::UI_SIZE) <= max_w) return;
+
+    int slen = montauk::slen(src);
+    for (int keep = slen; keep > 1; keep--) {
+        char candidate[256];
+        candidate[0] = '.';
+        candidate[1] = '.';
+        int pos = 2;
+        const char* tail = src + (slen - keep);
+        while (*tail && pos < (int)sizeof(candidate) - 1)
+            candidate[pos++] = *tail++;
+        candidate[pos] = '\0';
+        if (text_width(g_ui_font, candidate, fonts::UI_SIZE) <= max_w) {
+            montauk::strncpy(out, candidate, out_len - 1);
+            out[out_len - 1] = '\0';
+            return;
+        }
+    }
+}
+
 static ParagraphStyle* wp_current_paragraph_style(WordProcessorState* wp) {
     if (wp->paragraph_count <= 0) {
         static ParagraphStyle fallback = { PARA_ALIGN_LEFT, PARA_LIST_NONE, 100, 0, 0, 0, 0, 0 };
@@ -110,7 +144,11 @@ void wp_render() {
     if (g_icon_save.pixels)
         c.icon(WP_BTN_SAVE_X + 4, 10, g_icon_save);
 
-    c.vline(WP_BTN_SAVE_X + 28, 4, 28, colors::BORDER);
+    c.fill_rounded_rect(WP_BTN_PRINT_X, 6, 24, 24, 3, btn_bg);
+    if (g_icon_print.pixels)
+        c.icon(WP_BTN_PRINT_X + 4, 10, g_icon_print);
+
+    c.vline(WP_BTN_PRINT_X + 28, 4, 28, colors::BORDER);
 
     wp_draw_ui_icon_button(c, WP_BTN_UNDO_X, 6, 24, 24, g_icon_undo, "U", btn_bg, colors::TEXT_COLOR);
     wp_draw_ui_icon_button(c, WP_BTN_REDO_X, 6, 24, 24, g_icon_redo, "R", btn_bg, colors::TEXT_COLOR);
@@ -167,7 +205,8 @@ void wp_render() {
 
     c.vline(WP_BTN_SECTION_X - 4, 4, 28, colors::BORDER);
 
-    c.fill_rounded_rect(WP_BTN_SECTION_X, 6, 24, 24, 3, btn_bg);
+    Color special_bg = wp->special_char_flyout_open ? btn_active : btn_bg;
+    c.fill_rounded_rect(WP_BTN_SECTION_X, 6, 24, 24, 3, special_bg);
     {
         char section[2] = { (char)0xA7, '\0' };
         TrueTypeFont* font = wp_get_font(FONT_ROBOTO, 0);
@@ -328,18 +367,25 @@ void wp_render() {
     c.fill_rect(0, status_y, c.w, WP_STATUS_H, Color::from_rgb(0x2B, 0x3E, 0x50));
     int status_text_y = status_y + (WP_STATUS_H - sfh) / 2;
 
-    char status_left[192];
+    char status_left[320];
     const char* name = wp->filename[0] ? wp->filename : "Untitled";
     snprintf(status_left, sizeof(status_left), " %s%s | %s %dpt | %s | %s | %d%%",
              name, wp->modified ? " *" : "",
              WP_FONT_NAMES[wp->cur_font_id < FONT_COUNT ? wp->cur_font_id : 0], (int)wp->cur_size,
              wp_align_label(cur_para->align), wp_list_label(cur_para->list_type),
              (int)cur_para->line_spacing);
-    wp_draw_ui_text(c, 4, status_text_y, status_left, colors::PANEL_TEXT);
 
     char status_right[32];
     snprintf(status_right, sizeof(status_right), "%d chars ", wp->total_text_len);
     int sr_w = text_width(g_ui_font, status_right, fonts::UI_SIZE);
+    char status_combined[320];
+    if (wp->status_msg[0]) snprintf(status_combined, sizeof(status_combined), "%s | %s", status_left, wp->status_msg);
+    else montauk::strncpy(status_combined, status_left, (int)sizeof(status_combined) - 1);
+    status_combined[sizeof(status_combined) - 1] = '\0';
+
+    char status_fit[320];
+    wp_fit_ui_text(status_combined, status_fit, sizeof(status_fit), c.w - sr_w - 12);
+    wp_draw_ui_text(c, 4, status_text_y, status_fit, colors::PANEL_TEXT);
     wp_draw_ui_text(c, c.w - sr_w - 4, status_text_y, status_right, colors::PANEL_TEXT);
 
     if (wp->font_dropdown_open) {
@@ -388,6 +434,26 @@ void wp_render() {
             char spacing[12];
             snprintf(spacing, sizeof(spacing), "%d%%", WP_LINE_SPACING_OPTIONS[i]);
             wp_draw_ui_text(c, dx + 8, iy + (24 - sfh) / 2, spacing, colors::TEXT_COLOR);
+        }
+    }
+
+    if (wp->special_char_flyout_open) {
+        int dx = wp_special_char_flyout_x();
+        int dy = WP_TOOLBAR_H;
+        int dw = WP_SPECIAL_CHAR_FLYOUT_W;
+        int dh = WP_SPECIAL_CHAR_OPTION_COUNT * WP_SPECIAL_CHAR_ROW_H + 4;
+        TrueTypeFont* glyph_font = wp_get_font(FONT_ROBOTO, 0);
+        c.fill_rect(dx, dy, dw, dh, colors::MENU_BG);
+        c.rect(dx, dy, dw, dh, colors::BORDER);
+        for (int i = 0; i < WP_SPECIAL_CHAR_OPTION_COUNT; i++) {
+            int iy = dy + 2 + i * WP_SPECIAL_CHAR_ROW_H;
+            char glyph[2] = { (char)WP_SPECIAL_CHAR_OPTIONS[i].code, '\0' };
+            c.fill_rect(dx + 2, iy, dw - 4, WP_SPECIAL_CHAR_ROW_H - 2, colors::MENU_BG);
+            draw_text(c, glyph_font ? glyph_font : g_ui_font,
+                      dx + 8, iy + (WP_SPECIAL_CHAR_ROW_H - sfh) / 2,
+                      glyph, colors::TEXT_COLOR, fonts::UI_SIZE);
+            wp_draw_ui_text(c, dx + 32, iy + (WP_SPECIAL_CHAR_ROW_H - sfh) / 2,
+                            WP_SPECIAL_CHAR_OPTIONS[i].label, colors::TEXT_COLOR);
         }
     }
 }

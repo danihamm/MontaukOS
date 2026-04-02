@@ -30,7 +30,9 @@ static constexpr const char* SPOOL_DONE_DIR          = "0:/spool/print/done";
 static constexpr const char* SPOOL_FAILED_DIR        = "0:/spool/print/failed";
 static constexpr const char* SPOOL_DOCS_DIR          = "0:/spool/print/docs";
 static constexpr const char* SPOOL_TMP_DIR           = "0:/spool/print/tmp";
+static constexpr const char* SPOOL_PRINTERS_DIR      = "0:/spool/print/printers";
 static constexpr const char* SPOOL_DAEMON_PID_PATH   = "0:/spool/print/daemon.pid";
+static constexpr const char* SPOOL_DAEMON_STATE_PATH = "0:/spool/print/daemon.state";
 static constexpr const char* SPOOL_PROBE_STATE_PATH  = "0:/spool/print/printer-probe.state";
 static constexpr const char* PRINTD_BINARY           = "0:/os/printd.elf";
 static constexpr int MAX_PATH_LEN                    = 256;
@@ -58,6 +60,7 @@ struct JobMeta {
     char debug_info[MAX_DEBUG_LEN];
     int remote_job_id;
     int size_bytes;
+    int copies;
 };
 
 struct IppUri {
@@ -98,6 +101,15 @@ struct ProbeState {
     IppCapabilities caps;
 };
 
+struct KnownPrinter {
+    char uri[MAX_PATH_LEN];
+    char display_name[128];
+    char last_seen[32];
+    char status_message[128];
+    bool ok;
+    bool is_default;
+};
+
 struct IppPrintResult {
     bool ok;
     bool use_tls;
@@ -132,6 +144,10 @@ inline void zero_job(JobMeta* job) {
 
 inline void zero_probe_state(ProbeState* state) {
     if (state) memset(state, 0, sizeof(*state));
+}
+
+inline void zero_known_printer(KnownPrinter* printer) {
+    if (printer) memset(printer, 0, sizeof(*printer));
 }
 
 inline void safe_copy(char* dst, int dst_len, const char* src) {
@@ -207,7 +223,8 @@ inline bool ensure_spool_dirs() {
         && ensure_dir(SPOOL_DONE_DIR)
         && ensure_dir(SPOOL_FAILED_DIR)
         && ensure_dir(SPOOL_DOCS_DIR)
-        && ensure_dir(SPOOL_TMP_DIR);
+        && ensure_dir(SPOOL_TMP_DIR)
+        && ensure_dir(SPOOL_PRINTERS_DIR);
 }
 
 inline bool path_join(char* out, int out_len, const char* a, const char* b) {
@@ -370,9 +387,136 @@ inline bool read_default_printer_uri(char* out, int out_len) {
     return read_text_file_line(DEFAULT_PRINTER_PATH, out, out_len);
 }
 
+inline uint32_t hash_uri_key(const char* text) {
+    uint32_t hash = 2166136261u;
+    if (!text) return hash;
+    for (const unsigned char* p = (const unsigned char*)text; *p; ++p) {
+        hash ^= (uint32_t)*p;
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+inline void make_known_printer_path(const char* uri, char* out, int out_len) {
+    unsigned hash = (unsigned)hash_uri_key(uri);
+    char leaf[32];
+    snprintf(leaf, sizeof(leaf), "%08x.printer", hash);
+    path_join(out, out_len, SPOOL_PRINTERS_DIR, leaf);
+}
+
+inline bool save_known_printer_atomic(const KnownPrinter* printer) {
+    if (printer == nullptr || printer->uri[0] == '\0') return false;
+
+    char path[MAX_PATH_LEN];
+    make_known_printer_path(printer->uri, path, sizeof(path));
+
+    char text[768];
+    int n = snprintf(text, sizeof(text),
+                     "uri=%s\n"
+                     "display_name=%s\n"
+                     "last_seen=%s\n"
+                     "status_message=%s\n"
+                     "ok=%d\n",
+                     printer->uri,
+                     printer->display_name,
+                     printer->last_seen,
+                     printer->status_message,
+                     printer->ok ? 1 : 0);
+    if (n <= 0 || n >= (int)sizeof(text)) return false;
+    return write_text_file_atomic(path, text);
+}
+
+inline bool load_known_printer_from_path(const char* path, KnownPrinter* printer) {
+    if (path == nullptr || printer == nullptr) return false;
+    zero_known_printer(printer);
+
+    FILE* f = fopen(path, "rb");
+    if (!f) return false;
+
+    char line[384];
+    while (fgets(line, sizeof(line), f) != nullptr) {
+        trim_line(line);
+        char* eq = strchr(line, '=');
+        if (!eq) continue;
+        *eq++ = '\0';
+
+        if (strcmp(line, "uri") == 0) safe_copy(printer->uri, sizeof(printer->uri), eq);
+        else if (strcmp(line, "display_name") == 0) safe_copy(printer->display_name, sizeof(printer->display_name), eq);
+        else if (strcmp(line, "last_seen") == 0) safe_copy(printer->last_seen, sizeof(printer->last_seen), eq);
+        else if (strcmp(line, "status_message") == 0) safe_copy(printer->status_message, sizeof(printer->status_message), eq);
+        else if (strcmp(line, "ok") == 0) printer->ok = atoi(eq) != 0;
+    }
+    fclose(f);
+    return printer->uri[0] != '\0';
+}
+
+inline bool remember_printer_uri(const char* uri,
+                                 const char* display_name,
+                                 bool ok,
+                                 const char* status_message,
+                                 const char* last_seen) {
+    if (uri == nullptr || *uri == '\0') return false;
+    ensure_spool_dirs();
+
+    KnownPrinter printer = {};
+    safe_copy(printer.uri, sizeof(printer.uri), uri);
+    safe_copy(printer.display_name, sizeof(printer.display_name), display_name ? display_name : "");
+    safe_copy(printer.last_seen, sizeof(printer.last_seen), last_seen ? last_seen : "");
+    safe_copy(printer.status_message, sizeof(printer.status_message), status_message ? status_message : "");
+    printer.ok = ok;
+    return save_known_printer_atomic(&printer);
+}
+
+inline int list_known_printers(KnownPrinter* out, int max) {
+    if (out == nullptr || max <= 0) return 0;
+    ensure_spool_dirs();
+
+    int count = 0;
+    DIR* d = opendir(SPOOL_PRINTERS_DIR);
+    if (d) {
+        struct dirent* ent = nullptr;
+        while ((ent = readdir(d)) != nullptr && count < max) {
+            if (ent->d_name[0] == '.') continue;
+            char path[MAX_PATH_LEN];
+            path_join(path, sizeof(path), SPOOL_PRINTERS_DIR, ent->d_name);
+            if (load_known_printer_from_path(path, &out[count]))
+                count++;
+        }
+        closedir(d);
+    }
+
+    char default_uri[MAX_PATH_LEN] = {};
+    bool have_default = read_default_printer_uri(default_uri, sizeof(default_uri));
+    for (int i = 0; i < count; i++) {
+        out[i].is_default = have_default && strcmp(out[i].uri, default_uri) == 0;
+    }
+
+    for (int i = 1; i < count; i++) {
+        KnownPrinter tmp = out[i];
+        int j = i - 1;
+        while (j >= 0) {
+            bool move = false;
+            if (tmp.is_default && !out[j].is_default) move = true;
+            else if (tmp.is_default == out[j].is_default) {
+                const char* ta = tmp.display_name[0] ? tmp.display_name : tmp.uri;
+                const char* tb = out[j].display_name[0] ? out[j].display_name : out[j].uri;
+                if (strcmp(ta, tb) < 0) move = true;
+            }
+            if (!move) break;
+            out[j + 1] = out[j];
+            j--;
+        }
+        out[j + 1] = tmp;
+    }
+
+    return count;
+}
+
 inline bool write_default_printer_uri(const char* uri) {
     ensure_spool_dirs();
-    return write_text_file_atomic(DEFAULT_PRINTER_PATH, uri);
+    bool ok = write_text_file_atomic(DEFAULT_PRINTER_PATH, uri);
+    if (ok && uri && *uri) remember_printer_uri(uri, nullptr, false, "", "");
+    return ok;
 }
 
 inline bool parse_args(ArgList* out) {
@@ -623,14 +767,14 @@ inline bool infer_doc_format(const char* path, char* out, int out_len) {
 }
 
 inline void generate_job_id(char* out, int out_len) {
+    static uint32_t seq = 0;
     uint64_t now = montauk::get_milliseconds();
-    uint32_t rnd = 0;
-    if (montauk::getrandom(&rnd, sizeof(rnd)) < 0) {
-        rnd = (uint32_t)(now ^ (uint64_t)montauk::getpid());
-    }
-    snprintf(out, (size_t)out_len, "%llu-%04x",
+    uint32_t cur = ++seq;
+    unsigned pid = (unsigned)(montauk::getpid() & 0xFFFF);
+    snprintf(out, (size_t)out_len, "%llu-%04x-%04x",
              (unsigned long long)now,
-             (unsigned)(rnd & 0xFFFFu));
+             pid,
+             (unsigned)(cur & 0xFFFFu));
 }
 
 inline bool save_job_to_path_atomic(const char* path, const JobMeta* job) {
@@ -668,6 +812,7 @@ inline bool save_job_to_path_atomic(const char* path, const JobMeta* job) {
     fprintf(f, "debug_info=%s\n", copy.debug_info);
     fprintf(f, "remote_job_id=%d\n", copy.remote_job_id);
     fprintf(f, "size_bytes=%d\n", copy.size_bytes);
+    fprintf(f, "copies=%d\n", copy.copies);
     fclose(f);
 
     if (rename(tmp, path) != 0) {
@@ -706,8 +851,10 @@ inline bool load_job_from_path(const char* path, JobMeta* job) {
         else if (strcmp(line, "debug_info") == 0) safe_copy(job->debug_info, sizeof(job->debug_info), eq);
         else if (strcmp(line, "remote_job_id") == 0) job->remote_job_id = atoi(eq);
         else if (strcmp(line, "size_bytes") == 0) job->size_bytes = atoi(eq);
+        else if (strcmp(line, "copies") == 0) job->copies = atoi(eq);
     }
     fclose(f);
+    if (job->copies <= 0) job->copies = 1;
     return job->id[0] != '\0';
 }
 
@@ -806,7 +953,14 @@ inline bool load_probe_state(const char* path, ProbeState* state) {
 
 inline bool save_printer_probe_state(const ProbeState* state) {
     ensure_spool_dirs();
-    return save_probe_state_atomic(SPOOL_PROBE_STATE_PATH, state);
+    bool ok = save_probe_state_atomic(SPOOL_PROBE_STATE_PATH, state);
+    if (ok && state && state->printer_uri[0]) {
+        const char* name = state->caps.printer_name[0] ? state->caps.printer_name : nullptr;
+        const char* msg = state->message[0] ? state->message
+                           : (state->caps.status_message[0] ? state->caps.status_message : "");
+        remember_printer_uri(state->printer_uri, name, state->ok, msg, state->probed_at);
+    }
+    return ok;
 }
 
 inline bool load_printer_probe_state(ProbeState* state) {
@@ -853,6 +1007,17 @@ inline bool daemon_is_running(int* out_pid) {
     uint32_t sig = montauk::wait_handle(handle, Montauk::IPC_SIGNAL_EXITED, 0);
     montauk::close(handle);
     if (sig & Montauk::IPC_SIGNAL_EXITED) return false;
+
+    Montauk::ProcInfo procs[128];
+    int proc_count = montauk::proclist(procs, (int)(sizeof(procs) / sizeof(procs[0])));
+    bool matched = false;
+    for (int i = 0; i < proc_count; i++) {
+        if (procs[i].pid != pid) continue;
+        if (strcmp(procs[i].name, PRINTD_BINARY) == 0) matched = true;
+        break;
+    }
+    if (!matched) return false;
+
     if (out_pid) *out_pid = pid;
     return true;
 }
@@ -1709,6 +1874,7 @@ inline bool probe_printer_uri(const char* printer_uri, ProbeState* out, char* er
 inline bool ipp_print_buffer(const char* printer_uri,
                              const char* job_name,
                              const char* user_name,
+                             int copies,
                              const char* doc_format,
                              const uint8_t* data, int data_len,
                              IppPrintResult* out,
@@ -1738,6 +1904,7 @@ inline bool ipp_print_buffer(const char* printer_uri,
     const char* use_job_name = (job_name && *job_name) ? job_name : "MontaukOS Print Job";
     const char* use_user = (user_name && *user_name) ? user_name : "montauk";
     const char* use_format = (doc_format && *doc_format) ? doc_format : "application/octet-stream";
+    int use_copies = copies > 0 ? copies : 1;
     if (out) {
         out->request_id = (int)request_id;
         safe_copy(out->document_format, sizeof(out->document_format), use_format);
@@ -1752,6 +1919,7 @@ inline bool ipp_print_buffer(const char* printer_uri,
         && bb_put_attr_str(&req, 0x45, "printer-uri", uri.normalized)
         && bb_put_attr_str(&req, 0x42, "requesting-user-name", use_user)
         && bb_put_attr_str(&req, 0x42, "job-name", use_job_name)
+        && bb_put_attr_int(&req, 0x21, "copies", use_copies)
         && bb_put_attr_str(&req, 0x49, "document-format", use_format)
         && bb_put8(&req, 0x03)
         && bb_put_bytes(&req, data, data_len);
@@ -1802,7 +1970,8 @@ inline bool submit_document_job(const char* source_path,
                                 const char* printer_uri,
                                 const char* job_name_override,
                                 char* out_job_id, int out_job_id_len,
-                                char* err, int err_len) {
+                                char* err, int err_len,
+                                int copies = 1) {
     ensure_spool_dirs();
 
     char resolved_uri[MAX_PATH_LEN];
@@ -1843,6 +2012,77 @@ inline bool submit_document_job(const char* source_path,
              uri.normalized, job.doc_format, job.source_name);
     job.remote_job_id = 0;
     job.size_bytes = size_bytes;
+    job.copies = copies > 0 ? copies : 1;
+
+    char job_path[MAX_PATH_LEN];
+    make_job_file_path(SPOOL_QUEUE_DIR, job.id, job_path, sizeof(job_path));
+    if (!save_job_to_path_atomic(job_path, &job)) {
+        remove(doc_path);
+        safe_copy(err, err_len, "failed to create queued job");
+        return false;
+    }
+
+    if (!ensure_daemon_running(err, err_len)) return false;
+
+    safe_copy(out_job_id, out_job_id_len, job.id);
+    return true;
+}
+
+inline bool submit_document_buffer_job(const uint8_t* data, int data_len,
+                                       const char* source_name,
+                                       const char* doc_format,
+                                       const char* printer_uri,
+                                       const char* job_name_override,
+                                       int copies = 1,
+                                       char* out_job_id = nullptr, int out_job_id_len = 0,
+                                       char* err = nullptr, int err_len = 0) {
+    ensure_spool_dirs();
+
+    if (data == nullptr || data_len < 0) {
+        safe_copy(err, err_len, "missing print document");
+        return false;
+    }
+
+    char resolved_uri[MAX_PATH_LEN];
+    if (printer_uri && *printer_uri) safe_copy(resolved_uri, sizeof(resolved_uri), printer_uri);
+    else if (!read_default_printer_uri(resolved_uri, sizeof(resolved_uri))) {
+        safe_copy(err, err_len, "no default printer is configured");
+        return false;
+    }
+
+    IppUri uri = {};
+    if (!parse_ipp_uri(resolved_uri, &uri, err, err_len)) return false;
+
+    char job_id[48];
+    generate_job_id(job_id, sizeof(job_id));
+
+    char doc_path[MAX_PATH_LEN];
+    make_doc_file_path(job_id, doc_path, sizeof(doc_path));
+    if (!write_file_atomic(doc_path, data, data_len, err, err_len)) return false;
+
+    JobMeta job = {};
+    safe_copy(job.id, sizeof(job.id), job_id);
+    safe_copy(job.state, sizeof(job.state), "queued");
+    safe_copy(job.source_kind, sizeof(job.source_kind), "document");
+    safe_copy(job.job_name, sizeof(job.job_name),
+              (job_name_override && *job_name_override) ? job_name_override
+                                                        : (source_name && *source_name ? source_name : "document"));
+    safe_copy(job.user_name, sizeof(job.user_name), "montauk");
+    safe_copy(job.printer_uri, sizeof(job.printer_uri), uri.normalized);
+    safe_copy(job.doc_path, sizeof(job.doc_path), doc_path);
+    safe_copy(job.doc_format, sizeof(job.doc_format),
+              (doc_format && *doc_format) ? doc_format : "application/octet-stream");
+    safe_copy(job.source_name, sizeof(job.source_name),
+              (source_name && *source_name) ? source_name : "document");
+    now_string(job.created_at, sizeof(job.created_at));
+    safe_copy(job.updated_at, sizeof(job.updated_at), job.created_at);
+    safe_copy(job.status_message, sizeof(job.status_message), "Queued");
+    snprintf(job.debug_info, sizeof(job.debug_info),
+             "printer=%s format=%s source=%s",
+             uri.normalized, job.doc_format, job.source_name);
+    job.remote_job_id = 0;
+    job.size_bytes = data_len;
+    job.copies = copies > 0 ? copies : 1;
 
     char job_path[MAX_PATH_LEN];
     make_job_file_path(SPOOL_QUEUE_DIR, job.id, job_path, sizeof(job_path));
@@ -1860,7 +2100,8 @@ inline bool submit_document_job(const char* source_path,
 
 inline bool submit_test_page_job(const char* printer_uri,
                                  char* out_job_id, int out_job_id_len,
-                                 char* err, int err_len) {
+                                 char* err, int err_len,
+                                 int copies = 1) {
     ensure_spool_dirs();
 
     char resolved_uri[MAX_PATH_LEN];
@@ -1889,6 +2130,7 @@ inline bool submit_test_page_job(const char* printer_uri,
     snprintf(job.debug_info, sizeof(job.debug_info),
              "printer=%s format=auto source=%s",
              uri.normalized, job.source_name);
+    job.copies = copies > 0 ? copies : 1;
 
     char job_path[MAX_PATH_LEN];
     make_job_file_path(SPOOL_QUEUE_DIR, job.id, job_path, sizeof(job_path));

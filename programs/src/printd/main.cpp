@@ -15,8 +15,30 @@ extern "C" {
 
 using namespace print;
 
-static constexpr uint64_t PROBE_REFRESH_OK_MS = 60000;
-static constexpr uint64_t PROBE_REFRESH_FAIL_MS = 15000;
+static constexpr bool ENABLE_BACKGROUND_PROBE = false;
+
+enum class ClaimResult {
+    None,
+    Claimed,
+    Failed,
+};
+
+static void write_daemon_state(const char* phase, const char* subject = nullptr,
+                               const char* detail = nullptr) {
+    char now[32] = {};
+    now_string(now, sizeof(now));
+
+    char buf[512];
+    int n = snprintf(buf, sizeof(buf),
+                     "time=%s\npid=%d\nphase=%s\nsubject=%s\ndetail=%s\n",
+                     now,
+                     montauk::getpid(),
+                     phase ? phase : "",
+                     subject ? subject : "",
+                     detail ? detail : "");
+    if (n < 0) return;
+    write_text_file_atomic(SPOOL_DAEMON_STATE_PATH, buf);
+}
 
 static void log_msg(const char* fmt, ...) {
     va_list ap;
@@ -68,6 +90,41 @@ static bool write_pid_file() {
     return write_text_file_atomic(SPOOL_DAEMON_PID_PATH, pid);
 }
 
+static bool move_job_file(const char* src, const char* dst, char* err = nullptr, int err_len = 0) {
+    if (err && err_len > 0) err[0] = '\0';
+    if (src == nullptr || dst == nullptr || *src == '\0' || *dst == '\0') {
+        safe_copy(err, err_len, "invalid source or destination path");
+        return false;
+    }
+    if (rename(src, dst) == 0) return true;
+
+    uint8_t* data = nullptr;
+    int len = 0;
+    char io_err[128] = {};
+    if (!read_file_bytes(src, &data, &len, io_err, sizeof(io_err))) {
+        char detail[160];
+        snprintf(detail, sizeof(detail), "rename failed; could not read source (%s)", io_err);
+        safe_copy(err, err_len, detail);
+        return false;
+    }
+
+    bool ok = write_file_atomic(dst, data, len, io_err, sizeof(io_err));
+    free(data);
+    if (!ok) {
+        char detail[160];
+        snprintf(detail, sizeof(detail), "rename failed; could not write destination (%s)", io_err);
+        safe_copy(err, err_len, detail);
+        return false;
+    }
+
+    if (remove(src) != 0) {
+        remove(dst);
+        safe_copy(err, err_len, "rename failed; copied destination but could not delete source");
+        return false;
+    }
+    return true;
+}
+
 static void auto_probe_configured_printer(char* last_uri, int last_uri_len,
                                           uint64_t* last_probe_ms, bool* last_probe_ok,
                                           bool force = false) {
@@ -90,8 +147,7 @@ static void auto_probe_configured_printer(char* last_uri, int last_uri_len,
     }
 
     bool uri_changed = strcmp(last_uri, current_uri) != 0;
-    uint64_t refresh_ms = *last_probe_ok ? PROBE_REFRESH_OK_MS : PROBE_REFRESH_FAIL_MS;
-    if (!force && !uri_changed && *last_probe_ms != 0 && now - *last_probe_ms < refresh_ms)
+    if (!force && !uri_changed && *last_probe_ms != 0)
         return;
 
     ProbeState state = {};
@@ -136,42 +192,59 @@ static void requeue_stale_active_jobs() {
             set_job_state(&job, "queued", "Re-queued after daemon restart");
             save_job_to_path_atomic(src, &job);
         }
-        rename(src, dst);
+        char move_err[160] = {};
+        if (!move_job_file(src, dst, move_err, sizeof(move_err))) {
+            log_msg("warning: failed to requeue stale job %s: %s",
+                    ent->d_name, move_err[0] ? move_err : "move failed");
+        }
     }
     closedir(dir);
 }
 
-static bool claim_next_job(char* out_active_path, int out_active_path_len) {
+static ClaimResult claim_next_job(char* out_active_path, int out_active_path_len) {
     DIR* dir = opendir(SPOOL_QUEUE_DIR);
-    if (!dir) return false;
+    if (!dir) return ClaimResult::None;
 
-    bool claimed = false;
+    char best_name[64] = {};
     struct dirent* ent = nullptr;
     while ((ent = readdir(dir)) != nullptr) {
         if (ent->d_name[0] == '.') continue;
-
-        char queued[MAX_PATH_LEN];
-        char active[MAX_PATH_LEN];
-        path_join(queued, sizeof(queued), SPOOL_QUEUE_DIR, ent->d_name);
-        path_join(active, sizeof(active), SPOOL_ACTIVE_DIR, ent->d_name);
-
-        if (rename(queued, active) == 0) {
-            safe_copy(out_active_path, out_active_path_len, active);
-            claimed = true;
-            break;
-        }
+        if (best_name[0] == '\0' || strcmp(ent->d_name, best_name) < 0)
+            safe_copy(best_name, sizeof(best_name), ent->d_name);
     }
-
     closedir(dir);
-    return claimed;
+    if (best_name[0] == '\0') return ClaimResult::None;
+
+    char queued[MAX_PATH_LEN];
+    char active[MAX_PATH_LEN];
+    path_join(queued, sizeof(queued), SPOOL_QUEUE_DIR, best_name);
+    path_join(active, sizeof(active), SPOOL_ACTIVE_DIR, best_name);
+
+    write_daemon_state("claiming", best_name, queued);
+    char move_err[160] = {};
+    if (!move_job_file(queued, active, move_err, sizeof(move_err))) {
+        char detail[256];
+        snprintf(detail, sizeof(detail), "%s -> %s (%s)",
+                 queued, active,
+                 move_err[0] ? move_err : "move failed");
+        write_daemon_state("claim-failed", best_name, detail);
+        log_msg("failed to claim job %s: %s", best_name, detail);
+        return ClaimResult::Failed;
+    }
+    write_daemon_state("claimed", best_name, active);
+    safe_copy(out_active_path, out_active_path_len, active);
+    return ClaimResult::Claimed;
 }
 
 static void finalize_job(const char* active_path, const char* target_dir, JobMeta* job) {
     save_job_to_path_atomic(active_path, job);
     char target[MAX_PATH_LEN];
     make_job_file_path(target_dir, job->id, target, sizeof(target));
-    if (rename(active_path, target) != 0) {
+    char move_err[160] = {};
+    if (!move_job_file(active_path, target, move_err, sizeof(move_err))) {
         log_msg("warning: failed to move job %s to %s", job->id, target_dir);
+        write_daemon_state("finalize-failed", job->id,
+                           move_err[0] ? move_err : target_dir);
     }
 }
 
@@ -223,12 +296,14 @@ static bool try_print_test_page(const char* active_path, JobMeta* job,
         }
 
         char detail[MAX_DEBUG_LEN];
-        snprintf(detail, sizeof(detail), "submitting test page as %s (%d bytes)",
-                 attempts[i].mime, len);
+        snprintf(detail, sizeof(detail), "submitting test page as %s (%d bytes, %d %s)",
+                 attempts[i].mime, len,
+                 job->copies > 0 ? job->copies : 1,
+                 (job->copies > 1) ? "copies" : "copy");
         persist_job_debug(active_path, job, detail);
 
         bool ok = ipp_print_buffer(job->printer_uri, job->job_name, job->user_name,
-                                   attempts[i].mime, data, len, result, err, err_len);
+                                   job->copies, attempts[i].mime, data, len, result, err, err_len);
         free(data);
         if (ok) return true;
     }
@@ -245,12 +320,14 @@ static bool try_print_document(const char* active_path, JobMeta* job,
     if (!read_file_bytes(job->doc_path, &data, &len, err, err_len)) return false;
 
     char detail[MAX_DEBUG_LEN];
-    snprintf(detail, sizeof(detail), "submitting %s document (%d bytes)",
-             job->doc_format[0] ? job->doc_format : "application/octet-stream", len);
+    snprintf(detail, sizeof(detail), "submitting %s document (%d bytes, %d %s)",
+             job->doc_format[0] ? job->doc_format : "application/octet-stream", len,
+             job->copies > 0 ? job->copies : 1,
+             (job->copies > 1) ? "copies" : "copy");
     persist_job_debug(active_path, job, detail);
 
     bool ok = ipp_print_buffer(job->printer_uri, job->job_name, job->user_name,
-                               job->doc_format, data, len, result, err, err_len);
+                               job->copies, job->doc_format, data, len, result, err, err_len);
     free(data);
     return ok;
 }
@@ -259,11 +336,13 @@ static void process_job(const char* active_path) {
     JobMeta job = {};
     if (!load_job_from_path(active_path, &job)) {
         log_msg("dropping unreadable job file: %s", active_path);
+        write_daemon_state("unreadable-job", active_path, nullptr);
         remove(active_path);
         return;
     }
 
     log_msg("processing job %s (%s)", job.id, job.job_name);
+    write_daemon_state("processing", job.id, job.job_name);
     set_job_state(&job, "printing", "Sending to printer");
     set_job_debug(&job, "dispatching queued job");
     save_job_to_path_atomic(active_path, &job);
@@ -284,12 +363,14 @@ static void process_job(const char* active_path) {
         set_job_debug_from_result(&job, &result, nullptr);
         finalize_job(active_path, SPOOL_DONE_DIR, &job);
         log_msg("job %s completed (printer job id %d)", job.id, result.job_id);
+        write_daemon_state("completed", job.id, job.status_message);
     } else {
         set_job_state(&job, "failed", err[0] ? err : "Print failed");
         set_job_debug_from_result(&job, &result, err[0] ? err : nullptr);
         finalize_job(active_path, SPOOL_FAILED_DIR, &job);
         log_msg("job %s failed: %s", job.id, job.status_message);
         if (job.debug_info[0]) log_msg("job %s debug: %s", job.id, job.debug_info);
+        write_daemon_state("failed", job.id, job.status_message);
     }
 
     if (job.doc_path[0] != '\0') remove(job.doc_path);
@@ -316,17 +397,24 @@ extern "C" void _start() {
     char last_probed_uri[MAX_PATH_LEN] = {};
     uint64_t last_probe_ms = 0;
     bool last_probe_ok = false;
-    auto_probe_configured_printer(last_probed_uri, sizeof(last_probed_uri),
-                                  &last_probe_ms, &last_probe_ok, true);
     log_msg("ready");
+    write_daemon_state("ready", nullptr, nullptr);
 
     for (;;) {
-        auto_probe_configured_printer(last_probed_uri, sizeof(last_probed_uri),
-                                      &last_probe_ms, &last_probe_ok);
         char active_path[MAX_PATH_LEN];
-        if (claim_next_job(active_path, sizeof(active_path))) {
+        ClaimResult claim = claim_next_job(active_path, sizeof(active_path));
+        if (claim == ClaimResult::Claimed) {
             process_job(active_path);
             continue;
+        }
+        if (claim == ClaimResult::Failed) {
+            montauk::sleep_ms(1000);
+            continue;
+        }
+        write_daemon_state("idle", nullptr, nullptr);
+        if (ENABLE_BACKGROUND_PROBE) {
+            auto_probe_configured_printer(last_probed_uri, sizeof(last_probed_uri),
+                                          &last_probe_ms, &last_probe_ok);
         }
         montauk::sleep_ms(1000);
     }

@@ -27,6 +27,11 @@ enum FileDialogMode : uint8_t {
     FILE_DIALOG_SAVE = 2,
 };
 
+enum PrintDialogMode : uint8_t {
+    PRINT_DIALOG_SETUP = 1,
+    PRINT_DIALOG_SUBMIT = 2,
+};
+
 struct Request {
     uint8_t kind;
     uint8_t mode;
@@ -35,6 +40,8 @@ struct Request {
     char suggested_name[128];
     char source_path[256];
     char job_name[128];
+    char printer_uri[256];
+    uint32_t copies;
     char result_path[256];
 };
 
@@ -42,6 +49,9 @@ struct Result {
     char status[16];
     char path[256];
     char job_id[64];
+    char printer_uri[256];
+    char printer_name[128];
+    uint32_t copies;
     char message[160];
 };
 
@@ -147,6 +157,8 @@ inline bool write_request_file(const char* path, const Request* req) {
                      "suggested_name=%s\n"
                      "source_path=%s\n"
                      "job_name=%s\n"
+                     "printer_uri=%s\n"
+                     "copies=%u\n"
                      "result_path=%s\n",
                      (unsigned)req->kind,
                      (unsigned)req->mode,
@@ -155,6 +167,8 @@ inline bool write_request_file(const char* path, const Request* req) {
                      req->suggested_name,
                      req->source_path,
                      req->job_name,
+                     req->printer_uri,
+                     (unsigned)req->copies,
                      req->result_path);
     if (n <= 0 || n >= (int)sizeof(text)) return false;
     return write_text_file(path, text);
@@ -174,6 +188,8 @@ inline bool read_request_file(const char* path, Request* req) {
     line_value(text, "suggested_name", req->suggested_name, sizeof(req->suggested_name));
     line_value(text, "source_path", req->source_path, sizeof(req->source_path));
     line_value(text, "job_name", req->job_name, sizeof(req->job_name));
+    line_value(text, "printer_uri", req->printer_uri, sizeof(req->printer_uri));
+    if (line_value(text, "copies", value, sizeof(value))) req->copies = parse_u32(value);
     line_value(text, "result_path", req->result_path, sizeof(req->result_path));
     return req->kind != 0 && req->result_path[0] != '\0';
 }
@@ -185,10 +201,16 @@ inline bool write_result_file(const char* path, const Result* res) {
                      "status=%s\n"
                      "path=%s\n"
                      "job_id=%s\n"
+                     "printer_uri=%s\n"
+                     "printer_name=%s\n"
+                     "copies=%u\n"
                      "message=%s\n",
                      res->status,
                      res->path,
                      res->job_id,
+                     res->printer_uri,
+                     res->printer_name,
+                     (unsigned)res->copies,
                      res->message);
     if (n <= 0 || n >= (int)sizeof(text)) return false;
     return write_text_file(path, text);
@@ -200,9 +222,13 @@ inline bool read_result_file(const char* path, Result* res) {
     if (!read_text_file(path, text, sizeof(text))) return false;
 
     reset_result(res);
+    char value[256];
     line_value(text, "status", res->status, sizeof(res->status));
     line_value(text, "path", res->path, sizeof(res->path));
     line_value(text, "job_id", res->job_id, sizeof(res->job_id));
+    line_value(text, "printer_uri", res->printer_uri, sizeof(res->printer_uri));
+    line_value(text, "printer_name", res->printer_name, sizeof(res->printer_name));
+    if (line_value(text, "copies", value, sizeof(value))) res->copies = parse_u32(value);
     line_value(text, "message", res->message, sizeof(res->message));
     return res->status[0] != '\0';
 }
@@ -311,6 +337,8 @@ inline bool print_file(const char* title,
                        char* out_message = nullptr, int out_message_len = 0) {
     Request req = {};
     req.kind = REQUEST_KIND_PRINT;
+    req.mode = PRINT_DIALOG_SUBMIT;
+    req.copies = 1;
     safe_copy(req.title, sizeof(req.title), title ? title : "Print");
     safe_copy(req.source_path, sizeof(req.source_path), source_path);
     safe_copy(req.job_name, sizeof(req.job_name), job_name);
@@ -318,6 +346,29 @@ inline bool print_file(const char* title,
     Result res = {};
     bool ok = run_request(&req, &res, out_message, out_message_len);
     if (ok && out_job_id && out_job_id_len > 0) safe_copy(out_job_id, out_job_id_len, res.job_id);
+    return ok;
+}
+
+inline bool configure_print(const char* title,
+                            const char* initial_printer_uri,
+                            const char* job_name,
+                            char* out_printer_uri, int out_printer_uri_len,
+                            char* out_printer_name, int out_printer_name_len,
+                            uint32_t* out_copies = nullptr,
+                            char* out_message = nullptr, int out_message_len = 0) {
+    Request req = {};
+    req.kind = REQUEST_KIND_PRINT;
+    req.mode = PRINT_DIALOG_SETUP;
+    req.copies = out_copies && *out_copies > 0 ? *out_copies : 1;
+    safe_copy(req.title, sizeof(req.title), title ? title : "Print");
+    safe_copy(req.job_name, sizeof(req.job_name), job_name ? job_name : "");
+    safe_copy(req.printer_uri, sizeof(req.printer_uri), initial_printer_uri);
+
+    Result res = {};
+    bool ok = run_request(&req, &res, out_message, out_message_len);
+    if (ok && out_printer_uri && out_printer_uri_len > 0) safe_copy(out_printer_uri, out_printer_uri_len, res.printer_uri);
+    if (ok && out_printer_name && out_printer_name_len > 0) safe_copy(out_printer_name, out_printer_name_len, res.printer_name);
+    if (ok && out_copies) *out_copies = res.copies > 0 ? res.copies : 1;
     return ok;
 }
 

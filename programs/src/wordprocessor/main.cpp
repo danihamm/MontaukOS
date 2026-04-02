@@ -13,6 +13,7 @@ WordProcessorState g_wp = {};
 WPFontTable g_wp_fonts = { {{nullptr}}, false };
 SvgIcon g_icon_folder = {};
 SvgIcon g_icon_save = {};
+SvgIcon g_icon_print = {};
 SvgIcon g_icon_undo = {};
 SvgIcon g_icon_redo = {};
 SvgIcon g_icon_align_left = {};
@@ -31,6 +32,8 @@ void wp_load_icons() {
         g_icon_folder = svg_load("0:/icons/folder.svg", 16, 16, def_color);
     if (!g_icon_save.pixels)
         g_icon_save = svg_load("0:/icons/document-save-symbolic.svg", 16, 16, def_color);
+    if (!g_icon_print.pixels)
+        g_icon_print = svg_load("0:/icons/printer-symbolic.svg", 16, 16, def_color);
     if (!g_icon_undo.pixels)
         g_icon_undo = svg_load("0:/icons/edit-undo-symbolic.svg", 16, 16, def_color);
     if (!g_icon_redo.pixels)
@@ -55,6 +58,7 @@ void wp_cleanup_state() {
     wp_free_document(&g_wp);
     if (g_icon_folder.pixels) svg_free(g_icon_folder);
     if (g_icon_save.pixels) svg_free(g_icon_save);
+    if (g_icon_print.pixels) svg_free(g_icon_print);
     if (g_icon_undo.pixels) svg_free(g_icon_undo);
     if (g_icon_redo.pixels) svg_free(g_icon_redo);
     if (g_icon_align_left.pixels) svg_free(g_icon_align_left);

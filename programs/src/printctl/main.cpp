@@ -70,6 +70,7 @@ static void print_job_detail(const JobMeta& job, const char* state, bool verbose
 
     if (job.printer_uri[0]) printf("    printer: %s\n", job.printer_uri);
     if (job.doc_format[0]) printf("    format: %s\n", job.doc_format);
+    if (job.copies > 1) printf("    copies: %d\n", job.copies);
     if (job.source_name[0]) printf("    source: %s\n", job.source_name);
     if (job.remote_job_id > 0) printf("    printer job id: %d\n", job.remote_job_id);
     if (job.status_message[0]) printf("    status: %s\n", job.status_message);

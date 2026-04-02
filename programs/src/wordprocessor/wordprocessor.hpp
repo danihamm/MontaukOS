@@ -21,8 +21,8 @@ extern "C" {
 
 using namespace gui;
 
-static constexpr int INIT_W            = 640;
-static constexpr int INIT_H            = 480;
+static constexpr int INIT_W            = 900;
+static constexpr int INIT_H            = 600;
 static constexpr int WP_TOOLBAR_H      = 36;
 static constexpr int WP_PATHBAR_H      = 32;
 static constexpr int WP_STATUS_H       = 24;
@@ -41,24 +41,27 @@ static constexpr int WP_LIST_HANGING   = -18;
 static constexpr int WP_LIST_MARKER_W  = 20;
 static constexpr int WP_BTN_OPEN_X     = 4;
 static constexpr int WP_BTN_SAVE_X     = 32;
-static constexpr int WP_BTN_UNDO_X     = 66;
-static constexpr int WP_BTN_REDO_X     = 94;
-static constexpr int WP_BTN_BOLD_X     = 128;
-static constexpr int WP_BTN_ITALIC_X   = 156;
-static constexpr int WP_FONT_DD_X      = 188;
-static constexpr int WP_FONT_DD_W      = 84;
-static constexpr int WP_SIZE_DD_X      = 278;
-static constexpr int WP_SIZE_DD_W      = 40;
-static constexpr int WP_BTN_ALIGN_L_X  = 330;
-static constexpr int WP_BTN_ALIGN_C_X  = 358;
-static constexpr int WP_BTN_ALIGN_R_X  = 386;
-static constexpr int WP_BTN_BULLET_X   = 418;
-static constexpr int WP_BTN_NUMBER_X   = 446;
-static constexpr int WP_BTN_OUTDENT_X  = 482;
-static constexpr int WP_BTN_INDENT_X   = 510;
-static constexpr int WP_LINE_DD_X      = 544;
-static constexpr int WP_LINE_DD_W      = 56;
-static constexpr int WP_BTN_SECTION_X  = 608;
+static constexpr int WP_BTN_PRINT_X    = 60;
+static constexpr int WP_BTN_UNDO_X     = 94;
+static constexpr int WP_BTN_REDO_X     = 122;
+static constexpr int WP_BTN_BOLD_X     = 156;
+static constexpr int WP_BTN_ITALIC_X   = 184;
+static constexpr int WP_FONT_DD_X      = 216;
+static constexpr int WP_FONT_DD_W      = 74;
+static constexpr int WP_SIZE_DD_X      = 296;
+static constexpr int WP_SIZE_DD_W      = 36;
+static constexpr int WP_BTN_ALIGN_L_X  = 344;
+static constexpr int WP_BTN_ALIGN_C_X  = 372;
+static constexpr int WP_BTN_ALIGN_R_X  = 400;
+static constexpr int WP_BTN_BULLET_X   = 432;
+static constexpr int WP_BTN_NUMBER_X   = 460;
+static constexpr int WP_BTN_OUTDENT_X  = 496;
+static constexpr int WP_BTN_INDENT_X   = 524;
+static constexpr int WP_LINE_DD_X      = 558;
+static constexpr int WP_LINE_DD_W      = 48;
+static constexpr int WP_BTN_SECTION_X  = 614;
+static constexpr int WP_SPECIAL_CHAR_ROW_H = 24;
+static constexpr int WP_SPECIAL_CHAR_FLYOUT_W = 144;
 
 static constexpr int FONT_ROBOTO    = 0;
 static constexpr int FONT_NOTOSERIF = 1;
@@ -78,6 +81,21 @@ inline constexpr int WP_SIZE_OPTIONS[] = { 12, 14, 16, 18, 20, 24, 28, 36 };
 static constexpr int WP_SIZE_OPTION_COUNT = 8;
 inline constexpr int WP_LINE_SPACING_OPTIONS[] = { 100, 125, 150, 200 };
 static constexpr int WP_LINE_SPACING_OPTION_COUNT = 4;
+
+struct WpSpecialCharOption {
+    uint8_t code;
+    const char* label;
+};
+
+inline constexpr WpSpecialCharOption WP_SPECIAL_CHAR_OPTIONS[] = {
+    { 0xA7, "Section" },
+    { 0xB6, "Pilcrow" },
+    { 0xA9, "Copyright" },
+    { 0xAE, "Registered" },
+    { 0xB0, "Degree" },
+    { 0xB1, "Plus/Minus" },
+};
+static constexpr int WP_SPECIAL_CHAR_OPTION_COUNT = 6;
 
 enum ParagraphAlign : uint8_t {
     PARA_ALIGN_LEFT = 0,
@@ -266,6 +284,10 @@ struct WordProcessorState {
     bool modified;
     char filepath[256];
     char filename[64];
+    char preferred_printer_uri[256];
+    char preferred_printer_name[128];
+    uint32_t preferred_print_copies;
+    char status_msg[160];
 
     bool show_pathbar;
     bool pathbar_save_mode;
@@ -276,6 +298,7 @@ struct WordProcessorState {
     bool font_dropdown_open;
     bool size_dropdown_open;
     bool line_spacing_dropdown_open;
+    bool special_char_flyout_open;
 
     UndoSnapshot undo[WP_UNDO_MAX];
     int undo_count;
@@ -289,6 +312,7 @@ extern WordProcessorState g_wp;
 extern WPFontTable g_wp_fonts;
 extern SvgIcon g_icon_folder;
 extern SvgIcon g_icon_save;
+extern SvgIcon g_icon_print;
 extern SvgIcon g_icon_undo;
 extern SvgIcon g_icon_redo;
 extern SvgIcon g_icon_align_left;
@@ -356,6 +380,8 @@ void wp_history_checkpoint(WordProcessorState* wp);
 void wp_history_mark_saved(WordProcessorState* wp);
 bool wp_undo(WordProcessorState* wp);
 bool wp_redo(WordProcessorState* wp);
+
+bool wp_print_document(WordProcessorState* wp, char* out_status, int out_status_len);
 
 void wp_render();
 void wp_handle_mouse(const Montauk::WinEvent& ev);

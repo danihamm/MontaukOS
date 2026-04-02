@@ -41,6 +41,7 @@ CXXFLAGS := \
     -mcmodel=small \
     -I $(PROG_INC) \
     -isystem $(PROG_INC)/libc \
+    -I ../../lib/bearssl/inc \
     -isystem ../../../kernel/freestnd-c-hdrs/x86_64/include \
     -isystem ../../../kernel/freestnd-cxx-hdrs/x86_64/include
 
@@ -53,8 +54,9 @@ LDFLAGS := \
     -z max-page-size=0x1000 \
     -T $(LINK_LD)
 
-SRCS := main.cpp document.cpp render.cpp input.cpp stb_truetype_impl.cpp
+SRCS := main.cpp document.cpp render.cpp input.cpp print_export.cpp stb_truetype_impl.cpp
 OBJS := $(addprefix $(OBJDIR)/,$(SRCS:.cpp=.o))
+LIBS := $(LIBDIR)/tls/libtls.a $(LIBDIR)/bearssl/libbearssl.a $(LIBDIR)/libjpegwrite/libjpegwrite.a $(LIBDIR)/libc/liblibc.a
 
 TARGET := $(BINDIR)/apps/wordprocessor/wordprocessor.elf
 
@@ -62,9 +64,9 @@ TARGET := $(BINDIR)/apps/wordprocessor/wordprocessor.elf
 
 all: $(TARGET)
 
-$(TARGET): $(OBJS) $(LINK_LD) Makefile
+$(TARGET): $(OBJS) $(LINK_LD) Makefile $(LIBS)
 	mkdir -p $(BINDIR)/apps/wordprocessor
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJS) $(LIBDIR)/libc/liblibc.a -o $@
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJS) $(LIBS) -o $@
 
 $(OBJDIR)/%.o: %.cpp Makefile
 	mkdir -p $(OBJDIR)

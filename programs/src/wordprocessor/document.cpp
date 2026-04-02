@@ -419,6 +419,10 @@ void wp_init_empty_document(WordProcessorState* wp) {
     wp->modified = false;
     wp->filepath[0] = '\0';
     wp->filename[0] = '\0';
+    wp->preferred_printer_uri[0] = '\0';
+    wp->preferred_printer_name[0] = '\0';
+    wp->preferred_print_copies = 1;
+    wp->status_msg[0] = '\0';
 
     wp->show_pathbar = false;
     wp->pathbar_save_mode = false;
@@ -429,6 +433,7 @@ void wp_init_empty_document(WordProcessorState* wp) {
     wp->font_dropdown_open = false;
     wp->size_dropdown_open = false;
     wp->line_spacing_dropdown_open = false;
+    wp->special_char_flyout_open = false;
 
     wp->undo_count = 0;
     wp->undo_pos = 0;
