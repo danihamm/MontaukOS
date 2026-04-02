@@ -29,6 +29,42 @@ static void wp_open_print_dialog(WordProcessorState* wp) {
         wp_set_status(wp, msg);
 }
 
+static void wp_make_pdf_suggested_name(WordProcessorState* wp, char* out, int out_len) {
+    if (!out || out_len <= 0) return;
+
+    const char* src = (wp && wp->filename[0]) ? wp->filename : "document";
+    int last_dot = -1;
+    for (int i = 0; src[i]; i++) {
+        if (src[i] == '.') last_dot = i;
+    }
+
+    int copy_len = (last_dot > 0) ? last_dot : montauk::slen(src);
+    if (copy_len > out_len - 5) copy_len = out_len - 5;
+    if (copy_len < 0) copy_len = 0;
+    montauk::memcpy(out, src, (uint64_t)copy_len);
+    out[copy_len] = '\0';
+    montauk::strncpy(out + copy_len, ".pdf", out_len - copy_len - 1);
+    out[out_len - 1] = '\0';
+}
+
+static void wp_open_export_dialog(WordProcessorState* wp) {
+    char path[256] = {};
+    char suggested_name[128] = {};
+    char msg[160] = {};
+
+    wp_make_pdf_suggested_name(wp, suggested_name, sizeof(suggested_name));
+    if (dialogs::save_file("Export PDF",
+                           wp->filepath,
+                           suggested_name,
+                           path, sizeof(path),
+                           msg, sizeof(msg))) {
+        if (wp_export_pdf_document(wp, path, msg, sizeof(msg)) || msg[0])
+            wp_set_status(wp, msg);
+    } else if (msg[0]) {
+        wp_set_status(wp, msg);
+    }
+}
+
 static void wp_commit_pathbar(WordProcessorState* wp) {
     if (!wp->pathbar_text[0]) return;
     if (wp->pathbar_save_mode) {
@@ -225,6 +261,10 @@ void wp_handle_mouse(const Montauk::WinEvent& ev) {
         }
         if (local_x >= WP_BTN_PRINT_X && local_x < WP_BTN_PRINT_X + 24 && local_y >= 6 && local_y < 30) {
             wp_open_print_dialog(wp);
+            return;
+        }
+        if (local_x >= WP_BTN_EXPORT_X && local_x < WP_BTN_EXPORT_X + 24 && local_y >= 6 && local_y < 30) {
+            wp_open_export_dialog(wp);
             return;
         }
         if (local_x >= WP_BTN_UNDO_X && local_x < WP_BTN_UNDO_X + 24 && local_y >= 6 && local_y < 30) {
@@ -425,7 +465,11 @@ void wp_handle_key(const Montauk::KeyEvent& key) {
         wp_open_pathbar_for_open(wp);
         return;
     }
-    if (key.ctrl && (key.ascii == 'p' || key.ascii == 'P')) {
+    if (key.ctrl && key.alt && (key.ascii == 'p' || key.ascii == 'P')) {
+        wp_open_export_dialog(wp);
+        return;
+    }
+    if (key.ctrl && !key.alt && (key.ascii == 'p' || key.ascii == 'P')) {
         wp_open_print_dialog(wp);
         return;
     }

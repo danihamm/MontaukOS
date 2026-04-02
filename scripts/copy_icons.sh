@@ -24,6 +24,7 @@ ICONS=(
     "actions/symbolic/go-next-symbolic.svg"
     "actions/symbolic/go-home-symbolic.svg"
     "actions/symbolic/document-save-symbolic.svg"
+    "actions/symbolic/document-export-symbolic.svg"
     "actions/symbolic/edit-undo-symbolic.svg"
     "actions/symbolic/edit-redo-symbolic.svg"
     "actions/symbolic/format-justify-left-symbolic.svg"

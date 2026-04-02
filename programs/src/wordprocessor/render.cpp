@@ -208,7 +208,10 @@ void wp_render() {
     if (g_icon_print.pixels)
         c.icon(WP_BTN_PRINT_X + 4, 10, g_icon_print);
 
-    c.vline(WP_BTN_PRINT_X + 28, 4, 28, colors::BORDER);
+    wp_draw_ui_icon_button(c, WP_BTN_EXPORT_X, 6, 24, 24, g_icon_export_pdf, "P",
+                           btn_bg, colors::TEXT_COLOR);
+
+    c.vline(WP_BTN_EXPORT_X + 28, 4, 28, colors::BORDER);
 
     wp_draw_ui_icon_button(c, WP_BTN_UNDO_X, 6, 24, 24, g_icon_undo, "U", btn_bg, colors::TEXT_COLOR);
     wp_draw_ui_icon_button(c, WP_BTN_REDO_X, 6, 24, 24, g_icon_redo, "R", btn_bg, colors::TEXT_COLOR);

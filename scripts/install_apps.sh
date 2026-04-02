@@ -22,7 +22,7 @@ APPS=(
     "wikipedia|apps/scalable/web-browser.svg"
     "imageviewer|apps/scalable/utilities-terminal.svg"
     "fontpreview|apps/scalable/utilities-terminal.svg"
-    "pdfviewer|apps/scalable/utilities-terminal.svg"
+    "pdfviewer|mimetypes/scalable/application-pdf.svg"
     "disks|apps/scalable/gparted.svg"
     "devexplorer|apps/scalable/hardware.svg"
     "installer|mimetypes/scalable/text-x-install.svg"
