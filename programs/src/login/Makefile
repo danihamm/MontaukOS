@@ -66,7 +66,14 @@ LDFLAGS := \
 
 # ---- Source files ----
 
-SRCS := main.cpp stb_truetype_impl.cpp font_data.cpp
+SRCS := \
+	main.cpp \
+	login_shared.cpp \
+	login_wallpaper.cpp \
+	login_render.cpp \
+	login_input.cpp \
+	stb_truetype_impl.cpp \
+	font_data.cpp
 OBJS := $(addprefix $(OBJDIR)/,$(SRCS:.cpp=.o))
 DEPS := $(OBJS:.o=.d)
 
