@@ -1055,13 +1055,10 @@ static void render_video_panel(uint32_t* pixels, const Rect& panel) {
         px_fill(pixels, g.win_w, g.win_h, inner.x, inner.y, inner.w, inner.h, VIDEO_BG);
         blit_scaled_argb(pixels, g.win_w, g.win_h, dst, g.frame_pixels, g.movie.width, g.movie.height);
     } else {
-        const char* line1 = "Open an AVI from Files";
-        const char* line2 = "Videos supports MJPEG and uncompressed RGB AVI files";
+        const char* line1 = "No file";
         int y = inner.y + inner.h / 2 - font_h(FONT_SIZE_LG);
         px_text(pixels, g.win_w, g.win_h, inner.x + (inner.w - text_w(line1, FONT_SIZE_LG)) / 2,
                 y, line1, TEXT, FONT_SIZE_LG);
-        px_text(pixels, g.win_w, g.win_h, inner.x + (inner.w - text_w(line2, FONT_SIZE_SM)) / 2,
-                y + font_h(FONT_SIZE_LG) + 8, line2, TEXT_DIM, FONT_SIZE_SM);
     }
 
     px_hline(pixels, g.win_w, g.win_h, panel.x, panel.y + panel.h - 1, panel.w, BORDER);
