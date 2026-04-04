@@ -1,3 +1,9 @@
+/*
+    * Ipc.cpp
+    * Kernel-mode IPC implementation
+    * Copyright (c) 2026 Daniel Hammer
+*/
+
 #include "Ipc.hpp"
 
 #include <Sched/Scheduler.hpp>
