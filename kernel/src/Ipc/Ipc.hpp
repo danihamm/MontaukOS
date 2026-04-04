@@ -1,5 +1,5 @@
 /*
-    * Ipc.cpp
+    * Ipc.hpp
     * Kernel-mode IPC implementation
     * Copyright (c) 2026 Daniel Hammer
 */
