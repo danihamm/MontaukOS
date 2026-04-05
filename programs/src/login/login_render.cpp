@@ -53,69 +53,8 @@ void draw_text_slice(Framebuffer& fb, int x, int y, const char* text,
     else draw_text(fb, x, y, tmp, fg);
 }
 
-struct PasswordMaskGlyph {
-    bool initialized;
-    bool use_system_font;
-    int width, height;
-    int xoff, yoff;
-    int ascent;
-    int line_height;
-    uint8_t* bitmap;
-};
-
-PasswordMaskGlyph& password_mask_glyph() {
-    static PasswordMaskGlyph glyph = {};
-    if (glyph.initialized) return glyph;
-
-    glyph.initialized = true;
-    if (!fonts::system_font || !fonts::system_font->valid) return glyph;
-
-    GlyphCache* gc = fonts::system_font->get_cache(fonts::UI_SIZE);
-    glyph.ascent = gc->ascent;
-    glyph.line_height = gc->line_height;
-
-    int x0, y0, x1, y1;
-    stbtt_GetCodepointBitmapBox(&fonts::system_font->info, PASSWORD_MASK_CODEPOINT,
-                                gc->scale, gc->scale, &x0, &y0, &x1, &y1);
-    glyph.width = x1 - x0;
-    glyph.height = y1 - y0;
-    glyph.xoff = x0;
-    glyph.yoff = y0;
-
-    if (glyph.width > 0 && glyph.height > 0) {
-        glyph.bitmap = (uint8_t*)montauk::malloc(glyph.width * glyph.height);
-        if (glyph.bitmap) {
-            stbtt_MakeCodepointBitmap(&fonts::system_font->info, glyph.bitmap,
-                                      glyph.width, glyph.height, glyph.width,
-                                      gc->scale, gc->scale, PASSWORD_MASK_CODEPOINT);
-            glyph.use_system_font = true;
-        }
-    }
-
-    return glyph;
-}
-
 void draw_password_mask_char(Framebuffer& fb, int x, int y, Color fg,
                              bool highlight = false, Color bg = colors::TRANSPARENT) {
-    PasswordMaskGlyph& glyph = password_mask_glyph();
-    int advance = password_mask_advance();
-
-    if (glyph.use_system_font && glyph.bitmap) {
-        if (highlight) fb.fill_rect(x, y, advance, glyph.line_height, bg);
-        int baseline = y + glyph.ascent;
-        int gx = x + glyph.xoff;
-        int gy = baseline + glyph.yoff;
-        for (int row = 0; row < glyph.height; row++) {
-            for (int col = 0; col < glyph.width; col++) {
-                uint8_t alpha = glyph.bitmap[row * glyph.width + col];
-                if (!alpha) continue;
-                Color c = {fg.r, fg.g, fg.b, alpha};
-                fb.put_pixel_alpha(gx + col, gy + row, c);
-            }
-        }
-        return;
-    }
-
     if (highlight) draw_text_bg(fb, x, y, "*", fg, bg);
     else draw_text(fb, x, y, "*", fg);
 }

@@ -102,8 +102,6 @@ inline constexpr int FIELD_GAP = 12;
 inline constexpr int POWER_BTN_W = 104;
 inline constexpr int POWER_BTN_GAP = 8;
 inline constexpr int FOOTER_PAD = 16;
-inline constexpr int PASSWORD_MASK_CODEPOINT = 0x2022;
-
 struct LoginLayout {
     gui::Rect card;
     gui::Rect titlebar;

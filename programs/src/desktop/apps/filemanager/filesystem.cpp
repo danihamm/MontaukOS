@@ -245,7 +245,7 @@ void filemanager_read_apps(FileManagerState* fm) {
     /*
         TODO: Fix crash if 16-app ceiling is removed and remove ceiling
     */
-    for (int i = 0; i < count && fm->entry_count < 16; i++) {
+    for (int i = 0; i < count && fm->entry_count < 64; i++) {
         const char* raw = entries[i];
         // Strip "apps/" prefix
         if (raw[0] == 'a' && raw[1] == 'p' && raw[2] == 'p' && raw[3] == 's' && raw[4] == '/')

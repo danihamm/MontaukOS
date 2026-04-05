@@ -145,17 +145,6 @@ void delete_field_selection(char* buf, int* len, FieldEditState* edit) {
 }
 
 int password_mask_advance() {
-    if (fonts::system_font && fonts::system_font->valid) {
-        GlyphCache* gc = fonts::system_font->get_cache(fonts::UI_SIZE);
-        int advance = 0;
-        int lsb = 0;
-        stbtt_GetCodepointHMetrics(&fonts::system_font->info,
-                                   PASSWORD_MASK_CODEPOINT,
-                                   &advance, &lsb);
-        (void)lsb;
-        int scaled = (int)(advance * gc->scale);
-        if (scaled > 0) return scaled;
-    }
     return text_width("*");
 }
 

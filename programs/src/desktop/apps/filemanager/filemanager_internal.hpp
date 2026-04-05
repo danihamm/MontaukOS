@@ -60,9 +60,9 @@ struct FileManagerState {
 
     // Apps view
     bool at_apps_view;
-    int app_map[16];           // entry index -> external_apps[] index
-    SvgIcon app_icons_lg[16];  // 48x48 icons for grid view
-    SvgIcon app_icons_sm[16];  // 16x16 icons for list view
+    int app_map[64];           // entry index -> external_apps[] index
+    SvgIcon app_icons_lg[64];  // 48x48 icons for grid view
+    SvgIcon app_icons_sm[64];  // 16x16 icons for list view
     int app_icon_count;
 };
 
