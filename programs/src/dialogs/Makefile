@@ -55,7 +55,7 @@ LDFLAGS := \
     -z max-page-size=0x1000 \
     -T $(LINK_LD)
 
-SRCS := main.cpp stb_truetype_impl.cpp font_data.cpp
+SRCS := main.cpp filedialog.cpp printdialog.cpp stb_truetype_impl.cpp font_data.cpp
 OBJS := $(addprefix $(OBJDIR)/,$(SRCS:.cpp=.o))
 
 TARGET := $(BINDIR)/apps/dialogs/dialogs.elf

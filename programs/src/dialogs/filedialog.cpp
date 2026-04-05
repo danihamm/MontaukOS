@@ -1,0 +1,1203 @@
+/*
+    * filedialog.cpp
+    * File open/save dialog implementation
+    * Copyright (c) 2026 Daniel Hammer
+*/
+
+#include "filedialog.hpp"
+#include "main.hpp"
+#include <gui/svg.hpp>
+#include <gui/canvas.hpp>
+#include <montauk/user.h>
+
+namespace {
+
+using namespace gui;
+using namespace filedialog;
+
+constexpr const char* SPECIAL_FOLDER_NAMES[] = {
+    "Documents", "Desktop", "Music", "Videos", "Pictures", "Downloads"
+};
+constexpr const char* SPECIAL_FOLDER_ICONS[] = {
+    "folder-blue-documents.svg",
+    "folder-blue-desktop.svg",
+    "folder-blue-music.svg",
+    "folder-blue-videos.svg",
+    "folder-blue-pictures.svg",
+    "folder-blue-downloads.svg"
+};
+constexpr int SPECIAL_FOLDER_COUNT = 6;
+
+enum EntryType : uint8_t {
+    ENTRY_FILE = 0,
+    ENTRY_DIR = 1,
+    ENTRY_DRIVE = 3,
+    ENTRY_HOME = 4,
+    ENTRY_SPECIAL = 7,
+};
+
+enum FocusField : uint8_t {
+    FOCUS_LIST = 0,
+    FOCUS_PATH = 1,
+    FOCUS_NAME = 2,
+};
+
+struct FileDialogIcons {
+    SvgIcon icon_go_back;
+    SvgIcon icon_go_forward;
+    SvgIcon icon_go_up;
+    SvgIcon icon_home;
+    SvgIcon icon_folder;
+    SvgIcon icon_folder_lg;
+    SvgIcon icon_file;
+    SvgIcon icon_file_lg;
+    SvgIcon icon_drive;
+    SvgIcon icon_drive_lg;
+    SvgIcon icon_home_folder;
+    SvgIcon icon_home_folder_lg;
+    SvgIcon icon_special[ SPECIAL_FOLDER_COUNT ];
+    SvgIcon icon_special_lg[ SPECIAL_FOLDER_COUNT ];
+};
+
+struct FileDialogState {
+    FileDialogIcons icons;
+
+    char home_dir[256];
+    char current_path[256];
+    char history[MAX_HISTORY][256];
+    int history_pos;
+    int history_count;
+
+    char entry_names[MAX_ENTRIES][64];
+    uint8_t entry_types[MAX_ENTRIES];
+    int entry_sizes[MAX_ENTRIES];
+    bool is_dir[MAX_ENTRIES];
+    int drive_indices[MAX_ENTRIES];
+    int entry_count;
+
+    int selected;
+    int last_click_item;
+    uint64_t last_click_time;
+
+    Scrollbar scrollbar;
+    bool grid_view;
+    bool at_drives_root;
+    FocusField focus;
+
+    char path_buf[256];
+    int path_len;
+    int path_cursor;
+
+    char filename_buf[128];
+    int filename_len;
+    int filename_cursor;
+
+    char pending_select[64];
+    char error[160];
+
+    int mouse_x;
+    int mouse_y;
+};
+
+FileDialogState g_file;
+
+void safe_copy(char* dst, int dst_len, const char* src) {
+    gui::dialogs::safe_copy(dst, dst_len, src);
+}
+
+int str_compare_ci(const char* a, const char* b) {
+    while (*a && *b) {
+        char ca = (*a >= 'A' && *a <= 'Z') ? (*a + 32) : *a;
+        char cb = (*b >= 'A' && *b <= 'Z') ? (*b + 32) : *b;
+        if (ca != cb) return ca - cb;
+        a++;
+        b++;
+    }
+    return (unsigned char)*a - (unsigned char)*b;
+}
+
+bool str_ends_with(const char* s, const char* suffix) {
+    int slen = montauk::slen(s);
+    int suflen = montauk::slen(suffix);
+    if (suflen > slen) return false;
+    for (int i = 0; i < suflen; i++) {
+        char sc = s[slen - suflen + i];
+        char ec = suffix[i];
+        if (sc >= 'A' && sc <= 'Z') sc += 32;
+        if (ec >= 'A' && ec <= 'Z') ec += 32;
+        if (sc != ec) return false;
+    }
+    return true;
+}
+
+void str_append(char* dst, const char* src, int max_len) {
+    int len = montauk::slen(dst);
+    int i = 0;
+    while (src[i] && len < max_len - 1) {
+        dst[len++] = src[i++];
+    }
+    dst[len] = '\0';
+}
+
+const char* path_basename(const char* path) {
+    const char* last = path;
+    for (const char* p = path; *p; p++) {
+        if (*p == '/' && *(p + 1)) last = p + 1;
+    }
+    return last;
+}
+
+void build_fullpath(char* out, int out_len, const char* dir, const char* name) {
+    safe_copy(out, out_len, dir);
+    int len = montauk::slen(out);
+    if (len > 0 && out[len - 1] != '/') str_append(out, "/", out_len);
+    str_append(out, name, out_len);
+}
+
+void split_parent_path(const char* path, char* out_dir, int out_dir_len, char* out_name, int out_name_len) {
+    safe_copy(out_dir, out_dir_len, "");
+    safe_copy(out_name, out_name_len, "");
+    if (!path || !path[0]) return;
+
+    int last_slash = -1;
+    for (int i = 0; path[i]; i++)
+        if (path[i] == '/') last_slash = i;
+
+    if (last_slash < 0) {
+        safe_copy(out_name, out_name_len, path);
+        return;
+    }
+
+    int dir_len = last_slash + 1;
+    if (dir_len >= out_dir_len) dir_len = out_dir_len - 1;
+    montauk::memcpy(out_dir, path, (uint64_t)dir_len);
+    out_dir[dir_len] = '\0';
+    safe_copy(out_name, out_name_len, path + last_slash + 1);
+}
+
+bool is_dir_path(const char* path) {
+    if (!path || !path[0]) return false;
+    const char* names[1];
+    return montauk::readdir(path, names, 1) >= 0;
+}
+
+bool path_exists_via_open(const char* path) {
+    if (!path || !path[0]) return false;
+    int fd = montauk::open(path);
+    if (fd < 0) return false;
+    montauk::close(fd);
+    return true;
+}
+
+void format_size(char* buf, int buf_len, int size) {
+    if (size < 1024) snprintf(buf, buf_len, "%d B", size);
+    else if (size < 1024 * 1024) {
+        int kb = size / 1024;
+        int frac = ((size % 1024) * 10) / 1024;
+        if (kb < 10) snprintf(buf, buf_len, "%d.%d KB", kb, frac);
+        else snprintf(buf, buf_len, "%d KB", kb);
+    } else {
+        int mb = size / (1024 * 1024);
+        int frac = ((size % (1024 * 1024)) * 10) / (1024 * 1024);
+        if (mb < 10) snprintf(buf, buf_len, "%d.%d MB", mb, frac);
+        else snprintf(buf, buf_len, "%d MB", mb);
+    }
+}
+
+void fit_text_end(const char* src, char* out, int out_len, int max_px) {
+    if (!src || !src[0]) {
+        safe_copy(out, out_len, "");
+        return;
+    }
+    if (text_width(src) <= max_px) {
+        safe_copy(out, out_len, src);
+        return;
+    }
+
+    int slen = montauk::slen(src);
+    int keep = slen;
+    while (keep > 1) {
+        char candidate[256];
+        candidate[0] = '.';
+        candidate[1] = '.';
+        int pos = 2;
+        const char* tail = src + (slen - keep);
+        while (*tail && pos < (int)sizeof(candidate) - 1)
+            candidate[pos++] = *tail++;
+        candidate[pos] = '\0';
+        if (text_width(candidate) <= max_px) {
+            safe_copy(out, out_len, candidate);
+            return;
+        }
+        keep--;
+    }
+
+    safe_copy(out, out_len, src);
+}
+
+void draw_input(Canvas& c, const Rect& rect, const char* text, bool focused, int cursor_pos) {
+    c.fill_rect(rect.x, rect.y, rect.w, rect.h, colors::WHITE);
+    c.rect(rect.x, rect.y, rect.w, rect.h, focused ? colors::ACCENT : colors::BORDER);
+    int ty = rect.y + (rect.h - system_font_height()) / 2;
+    c.text(rect.x + 6, ty, text, colors::TEXT_COLOR);
+    if (focused) {
+        char prefix[256];
+        int plen = cursor_pos;
+        if (plen > 255) plen = 255;
+        for (int i = 0; i < plen; i++) prefix[i] = text[i];
+        prefix[plen] = '\0';
+        int cx = rect.x + 6 + text_width(prefix);
+        c.vline(cx, rect.y + 4, rect.h - 8, colors::ACCENT);
+    }
+}
+
+void draw_action_button(Canvas& c, const Rect& rect, const char* label, bool enabled, bool hovered, bool primary) {
+    Color bg = primary ? colors::ACCENT : Color::from_rgb(0xE8, 0xE8, 0xE8);
+    Color fg = primary ? colors::WHITE : colors::TEXT_COLOR;
+    if (!enabled) {
+        bg = Color::from_rgb(0xF0, 0xF0, 0xF0);
+        fg = Color::from_rgb(0x9A, 0x9A, 0x9A);
+    } else if (hovered) {
+        bg = primary ? Color::from_rgb(0x2B, 0x6B, 0xE0) : Color::from_rgb(0xDC, 0xDC, 0xDC);
+    }
+    c.fill_rounded_rect(rect.x, rect.y, rect.w, rect.h, 4, bg);
+    int tx = rect.x + (rect.w - text_width(label)) / 2;
+    int ty = rect.y + (rect.h - system_font_height()) / 2;
+    c.text(tx, ty, label, fg);
+}
+
+void draw_scrollbar(Canvas& c, const Scrollbar& sb) {
+    if (sb.content_height <= sb.view_height) return;
+    c.fill_rect(sb.bounds.x, sb.bounds.y, sb.bounds.w, sb.bounds.h, sb.bg);
+    int th = sb.thumb_height();
+    int ty = sb.thumb_y();
+    Color thumb = (sb.hovered || sb.dragging) ? sb.hover_fg : sb.fg;
+    c.fill_rounded_rect(sb.bounds.x + 1, ty, sb.bounds.w - 2, th, 3, thumb);
+}
+
+FileDialogLayout file_layout(const FileDialogState* st) {
+    FileDialogLayout lo = {};
+    int footer_h = (g_app.request.mode == gui::dialogs::FILE_DIALOG_SAVE) ? FOOTER_H_SAVE : FOOTER_H_OPEN;
+    lo.back_btn = {4, 4, 24, 24};
+    lo.forward_btn = {32, 4, 24, 24};
+    lo.up_btn = {60, 4, 24, 24};
+    lo.home_btn = {88, 4, 24, 24};
+    lo.view_btn = {120, 4, 24, 24};
+    lo.path_rect = {8, TOOLBAR_H + 4, g_app.win.width - 16, PATHBAR_H - 8};
+    lo.content_rect = {0, TOOLBAR_H + PATHBAR_H, g_app.win.width, g_app.win.height - TOOLBAR_H - PATHBAR_H - footer_h};
+    lo.footer_rect = {0, g_app.win.height - footer_h, g_app.win.width, footer_h};
+    lo.list_rect = lo.content_rect;
+    int btn_y = lo.footer_rect.y + footer_h - BUTTON_H - 12;
+    lo.confirm_btn = {g_app.win.width - BUTTON_W - 16, btn_y, BUTTON_W, BUTTON_H};
+    lo.cancel_btn = {lo.confirm_btn.x - BUTTON_W - 8, btn_y, BUTTON_W, BUTTON_H};
+    lo.name_rect = {88, lo.footer_rect.y + 12, lo.cancel_btn.x - 100, 30};
+    if (lo.name_rect.w < 120) lo.name_rect.w = 120;
+    (void)st;
+    return lo;
+}
+
+void file_sync_path_buffer(FileDialogState* st) {
+    if (st->at_drives_root) {
+        st->path_buf[0] = '\0';
+        st->path_len = 0;
+        st->path_cursor = 0;
+        return;
+    }
+    safe_copy(st->path_buf, sizeof(st->path_buf), st->current_path);
+    st->path_len = montauk::slen(st->path_buf);
+    st->path_cursor = st->path_len;
+}
+
+void file_set_filename(FileDialogState* st, const char* name) {
+    safe_copy(st->filename_buf, sizeof(st->filename_buf), name);
+    st->filename_len = montauk::slen(st->filename_buf);
+    st->filename_cursor = st->filename_len;
+}
+
+void file_set_error(FileDialogState* st, const char* msg) {
+    safe_copy(st->error, sizeof(st->error), msg);
+}
+
+int special_folder_index(const char* name) {
+    for (int i = 0; i < SPECIAL_FOLDER_COUNT; i++) {
+        if (montauk::streq(name, SPECIAL_FOLDER_NAMES[i])) return i;
+    }
+    return -1;
+}
+
+void load_file_icons(FileDialogState* st) {
+    Color def = colors::ICON_COLOR;
+    st->icons.icon_go_back = svg_load("0:/icons/go-previous-symbolic.svg", 16, 16, def);
+    st->icons.icon_go_forward = svg_load("0:/icons/go-next-symbolic.svg", 16, 16, def);
+    st->icons.icon_go_up = svg_load("0:/icons/go-up-symbolic.svg", 16, 16, def);
+    st->icons.icon_home = svg_load("0:/icons/user-home.svg", 16, 16, def);
+    st->icons.icon_folder = svg_load("0:/icons/folder.svg", 16, 16, def);
+    st->icons.icon_folder_lg = svg_load("0:/icons/folder.svg", 48, 48, def);
+    st->icons.icon_file = svg_load("0:/icons/text-x-generic.svg", 16, 16, def);
+    st->icons.icon_file_lg = svg_load("0:/icons/text-x-generic.svg", 48, 48, def);
+    st->icons.icon_drive = svg_load("0:/icons/drive-harddisk.svg", 16, 16, def);
+    st->icons.icon_drive_lg = svg_load("0:/icons/drive-harddisk.svg", 48, 48, def);
+    st->icons.icon_home_folder = svg_load("0:/icons/folder-blue-home.svg", 16, 16, def);
+    st->icons.icon_home_folder_lg = svg_load("0:/icons/folder-blue-home.svg", 48, 48, def);
+    for (int i = 0; i < SPECIAL_FOLDER_COUNT; i++) {
+        char path[128];
+        snprintf(path, sizeof(path), "0:/icons/%s", SPECIAL_FOLDER_ICONS[i]);
+        st->icons.icon_special[i] = svg_load(path, 16, 16, def);
+        st->icons.icon_special_lg[i] = svg_load(path, 48, 48, def);
+    }
+}
+
+void free_icon(SvgIcon* icon) {
+    if (icon && icon->pixels) {
+        svg_free(*icon);
+        icon->pixels = nullptr;
+    }
+}
+
+void free_file_icons(FileDialogState* st) {
+    free_icon(&st->icons.icon_go_back);
+    free_icon(&st->icons.icon_go_forward);
+    free_icon(&st->icons.icon_go_up);
+    free_icon(&st->icons.icon_home);
+    free_icon(&st->icons.icon_folder);
+    free_icon(&st->icons.icon_folder_lg);
+    free_icon(&st->icons.icon_file);
+    free_icon(&st->icons.icon_file_lg);
+    free_icon(&st->icons.icon_drive);
+    free_icon(&st->icons.icon_drive_lg);
+    free_icon(&st->icons.icon_home_folder);
+    free_icon(&st->icons.icon_home_folder_lg);
+    for (int i = 0; i < SPECIAL_FOLDER_COUNT; i++) {
+        free_icon(&st->icons.icon_special[i]);
+        free_icon(&st->icons.icon_special_lg[i]);
+    }
+}
+
+void file_push_history(FileDialogState* st) {
+    if (st->history_count > 0 && st->history_pos >= 0) {
+        if (montauk::streq(st->history[st->history_pos], st->current_path)) return;
+    }
+    st->history_pos++;
+    if (st->history_pos >= MAX_HISTORY) st->history_pos = MAX_HISTORY - 1;
+    safe_copy(st->history[st->history_pos], sizeof(st->history[st->history_pos]), st->current_path);
+    st->history_count = st->history_pos + 1;
+}
+
+void file_apply_pending_select(FileDialogState* st) {
+    st->selected = -1;
+    if (!st->pending_select[0]) return;
+    for (int i = 0; i < st->entry_count; i++) {
+        if (montauk::streq(st->entry_names[i], st->pending_select)) {
+            st->selected = i;
+            break;
+        }
+    }
+    st->pending_select[0] = '\0';
+}
+
+void file_read_drives(FileDialogState* st) {
+    st->entry_count = 0;
+    st->at_drives_root = true;
+    st->current_path[0] = '\0';
+
+    if (st->home_dir[0] != '\0') {
+        int i = st->entry_count++;
+        safe_copy(st->entry_names[i], sizeof(st->entry_names[i]), "Home");
+        st->entry_types[i] = ENTRY_HOME;
+        st->entry_sizes[i] = 0;
+        st->is_dir[i] = true;
+        st->drive_indices[i] = -1;
+    }
+
+    if (st->home_dir[0] != '\0') {
+        for (int sf = 0; sf < SPECIAL_FOLDER_COUNT && st->entry_count < MAX_ENTRIES; sf++) {
+            char probe[256];
+            safe_copy(probe, sizeof(probe), st->home_dir);
+            int plen = montauk::slen(probe);
+            if (plen > 0 && probe[plen - 1] != '/') str_append(probe, "/", sizeof(probe));
+            str_append(probe, SPECIAL_FOLDER_NAMES[sf], sizeof(probe));
+            if (path_exists_via_open(probe)) {
+                int i = st->entry_count++;
+                safe_copy(st->entry_names[i], sizeof(st->entry_names[i]), SPECIAL_FOLDER_NAMES[sf]);
+                st->entry_types[i] = ENTRY_SPECIAL;
+                st->entry_sizes[i] = 0;
+                st->is_dir[i] = true;
+                st->drive_indices[i] = sf;
+            }
+        }
+    }
+
+    int drives[MAX_DRIVES];
+    int drive_count = montauk::drivelist(drives, MAX_DRIVES);
+    for (int di = 0; di < drive_count && st->entry_count < MAX_ENTRIES; di++) {
+        int d = drives[di];
+        int i = st->entry_count++;
+        char label[64];
+        if (d < 10) snprintf(label, sizeof(label), "Drive %d:/", d);
+        else snprintf(label, sizeof(label), "Drive %d:/", d);
+        safe_copy(st->entry_names[i], sizeof(st->entry_names[i]), label);
+        st->entry_types[i] = ENTRY_DRIVE;
+        st->entry_sizes[i] = 0;
+        st->is_dir[i] = true;
+        st->drive_indices[i] = d;
+    }
+
+    st->scrollbar.scroll_offset = 0;
+    st->last_click_item = -1;
+    st->last_click_time = 0;
+    file_sync_path_buffer(st);
+    file_apply_pending_select(st);
+}
+
+void file_read_dir(FileDialogState* st) {
+    if (!st->current_path[0] || !is_dir_path(st->current_path)) {
+        file_read_drives(st);
+        return;
+    }
+
+    st->at_drives_root = false;
+    const char* names[MAX_ENTRIES];
+    st->entry_count = montauk::readdir(st->current_path, names, MAX_ENTRIES);
+    if (st->entry_count < 0) st->entry_count = 0;
+
+    const char* after_drive = st->current_path;
+    for (int k = 0; after_drive[k]; k++) {
+        if (after_drive[k] == ':' && after_drive[k + 1] == '/') {
+            after_drive += k + 2;
+            break;
+        }
+    }
+
+    char prefix[256] = {};
+    int prefix_len = 0;
+    if (after_drive[0] != '\0') {
+        safe_copy(prefix, sizeof(prefix), after_drive);
+        prefix_len = montauk::slen(prefix);
+        if (prefix_len > 0 && prefix[prefix_len - 1] != '/') {
+            prefix[prefix_len++] = '/';
+            prefix[prefix_len] = '\0';
+        }
+    }
+
+    for (int i = 0; i < st->entry_count; i++) {
+        const char* raw = names[i];
+        if (prefix_len > 0) {
+            bool match = true;
+            for (int k = 0; k < prefix_len; k++) {
+                if (raw[k] != prefix[k]) { match = false; break; }
+            }
+            if (match) raw += prefix_len;
+        }
+
+        safe_copy(st->entry_names[i], sizeof(st->entry_names[i]), raw);
+        int len = montauk::slen(st->entry_names[i]);
+        if (len > 0 && st->entry_names[i][len - 1] == '/') {
+            st->is_dir[i] = true;
+            st->entry_names[i][len - 1] = '\0';
+        } else {
+            st->is_dir[i] = false;
+        }
+
+        st->entry_types[i] = st->is_dir[i] ? ENTRY_DIR : ENTRY_FILE;
+        st->entry_sizes[i] = 0;
+        st->drive_indices[i] = -1;
+
+        if (!st->is_dir[i]) {
+            char full[512];
+            build_fullpath(full, sizeof(full), st->current_path, st->entry_names[i]);
+            int fd = montauk::open(full);
+            if (fd >= 0) {
+                st->entry_sizes[i] = (int)montauk::getsize(fd);
+                montauk::close(fd);
+            }
+        }
+    }
+
+    for (int i = 1; i < st->entry_count; i++) {
+        char tmp_name[64];
+        uint8_t tmp_type = st->entry_types[i];
+        int tmp_size = st->entry_sizes[i];
+        bool tmp_isdir = st->is_dir[i];
+        safe_copy(tmp_name, sizeof(tmp_name), st->entry_names[i]);
+
+        int j = i - 1;
+        while (j >= 0) {
+            bool swap = false;
+            if (tmp_isdir && !st->is_dir[j]) swap = true;
+            else if (tmp_isdir == st->is_dir[j] && str_compare_ci(tmp_name, st->entry_names[j]) < 0) swap = true;
+            if (!swap) break;
+
+            safe_copy(st->entry_names[j + 1], sizeof(st->entry_names[j + 1]), st->entry_names[j]);
+            st->entry_types[j + 1] = st->entry_types[j];
+            st->entry_sizes[j + 1] = st->entry_sizes[j];
+            st->is_dir[j + 1] = st->is_dir[j];
+            st->drive_indices[j + 1] = st->drive_indices[j];
+            j--;
+
+            safe_copy(st->entry_names[j + 1], sizeof(st->entry_names[j + 1]), tmp_name);
+            st->entry_types[j + 1] = tmp_type;
+            st->entry_sizes[j + 1] = tmp_size;
+            st->is_dir[j + 1] = tmp_isdir;
+            st->drive_indices[j + 1] = -1;
+        }
+    }
+
+    st->scrollbar.scroll_offset = 0;
+    st->last_click_item = -1;
+    st->last_click_time = 0;
+    file_sync_path_buffer(st);
+    file_apply_pending_select(st);
+}
+
+void file_ensure_selected_visible(FileDialogState* st) {
+    if (st->selected < 0 || st->selected >= st->entry_count) return;
+    FileDialogLayout lo = file_layout(st);
+    if (st->grid_view) {
+        int cols = (lo.content_rect.w - SCROLLBAR_W) / GRID_CELL_W;
+        if (cols < 1) cols = 1;
+        int row = st->selected / cols;
+        int top = row * GRID_CELL_H;
+        int bottom = top + GRID_CELL_H;
+        if (top < st->scrollbar.scroll_offset) st->scrollbar.scroll_offset = top;
+        else if (bottom > st->scrollbar.scroll_offset + lo.content_rect.h)
+            st->scrollbar.scroll_offset = bottom - lo.content_rect.h;
+    } else {
+        int view_h = lo.content_rect.h - HEADER_H;
+        int top = st->selected * ITEM_H;
+        int bottom = top + ITEM_H;
+        if (top < st->scrollbar.scroll_offset) st->scrollbar.scroll_offset = top;
+        else if (bottom > st->scrollbar.scroll_offset + view_h)
+            st->scrollbar.scroll_offset = bottom - view_h;
+    }
+    int ms = st->scrollbar.max_scroll();
+    if (st->scrollbar.scroll_offset < 0) st->scrollbar.scroll_offset = 0;
+    if (st->scrollbar.scroll_offset > ms) st->scrollbar.scroll_offset = ms;
+}
+
+void file_navigate_into(FileDialogState* st, int idx) {
+    if (idx < 0 || idx >= st->entry_count) return;
+
+    if (st->at_drives_root && st->entry_types[idx] == ENTRY_HOME) {
+        safe_copy(st->current_path, sizeof(st->current_path), st->home_dir);
+        file_push_history(st);
+        file_read_dir(st);
+        return;
+    }
+
+    if (st->at_drives_root && st->entry_types[idx] == ENTRY_SPECIAL) {
+        safe_copy(st->current_path, sizeof(st->current_path), st->home_dir);
+        int len = montauk::slen(st->current_path);
+        if (len > 0 && st->current_path[len - 1] != '/') str_append(st->current_path, "/", sizeof(st->current_path));
+        str_append(st->current_path, st->entry_names[idx], sizeof(st->current_path));
+        file_push_history(st);
+        file_read_dir(st);
+        return;
+    }
+
+    if (st->at_drives_root && st->entry_types[idx] == ENTRY_DRIVE) {
+        snprintf(st->current_path, sizeof(st->current_path), "%d:/", st->drive_indices[idx]);
+        file_push_history(st);
+        file_read_dir(st);
+        return;
+    }
+
+    if (st->is_dir[idx]) {
+        char next[256];
+        build_fullpath(next, sizeof(next), st->current_path, st->entry_names[idx]);
+        safe_copy(st->current_path, sizeof(st->current_path), next);
+        file_push_history(st);
+        file_read_dir(st);
+    }
+}
+
+bool file_accept_open(FileDialogState* st) {
+    if (st->selected < 0 || st->selected >= st->entry_count) {
+        file_set_error(st, "Select a file to open");
+        return false;
+    }
+    if (st->is_dir[st->selected]) {
+        file_navigate_into(st, st->selected);
+        return false;
+    }
+
+    char full[512];
+    build_fullpath(full, sizeof(full), st->current_path, st->entry_names[st->selected]);
+    dialog_finish("ok", full, "", full);
+    return true;
+}
+
+bool file_accept_save(FileDialogState* st) {
+    if (st->at_drives_root) {
+        file_set_error(st, "Choose a folder before saving");
+        return false;
+    }
+    if (!st->filename_buf[0]) {
+        file_set_error(st, "Enter a file name");
+        return false;
+    }
+
+    char full[512];
+    build_fullpath(full, sizeof(full), st->current_path, st->filename_buf);
+    dialog_finish("ok", full, "", full);
+    return true;
+}
+
+void file_activate_selected(FileDialogState* st, bool from_double_click) {
+    if (st->selected < 0 || st->selected >= st->entry_count) return;
+    if (st->is_dir[st->selected]) {
+        file_navigate_into(st, st->selected);
+        return;
+    }
+
+    if (g_app.request.mode == gui::dialogs::FILE_DIALOG_SAVE) {
+        file_set_filename(st, st->entry_names[st->selected]);
+        if (from_double_click) file_accept_save(st);
+    } else {
+        file_accept_open(st);
+    }
+}
+
+void file_go_home(FileDialogState* st) {
+    file_read_drives(st);
+    file_push_history(st);
+}
+
+void file_go_back(FileDialogState* st) {
+    if (st->history_pos <= 0) return;
+    st->history_pos--;
+    safe_copy(st->current_path, sizeof(st->current_path), st->history[st->history_pos]);
+    if (st->current_path[0]) file_read_dir(st);
+    else file_read_drives(st);
+}
+
+void file_go_forward(FileDialogState* st) {
+    if (st->history_pos >= st->history_count - 1) return;
+    st->history_pos++;
+    safe_copy(st->current_path, sizeof(st->current_path), st->history[st->history_pos]);
+    if (st->current_path[0]) file_read_dir(st);
+    else file_read_drives(st);
+}
+
+void file_go_up(FileDialogState* st) {
+    if (st->at_drives_root) return;
+
+    int len = montauk::slen(st->current_path);
+    if (len >= 3 && st->current_path[len - 1] == '/') {
+        int colon = -1;
+        for (int i = 0; i < len; i++) {
+            if (st->current_path[i] == ':') { colon = i; break; }
+        }
+        if (colon >= 0 && colon + 2 == len) {
+            file_read_drives(st);
+            file_push_history(st);
+            return;
+        }
+    }
+
+    if (len > 0 && st->current_path[len - 1] == '/') {
+        st->current_path[len - 1] = '\0';
+        len--;
+    }
+    int last_slash = -1;
+    for (int i = len - 1; i >= 0; i--) {
+        if (st->current_path[i] == '/') { last_slash = i; break; }
+    }
+    if (last_slash >= 0) {
+        if (last_slash > 0 && st->current_path[last_slash - 1] == ':') st->current_path[last_slash + 1] = '\0';
+        else st->current_path[last_slash] = '\0';
+    }
+    file_push_history(st);
+    file_read_dir(st);
+}
+
+void file_open_path(FileDialogState* st, const char* path) {
+    if (!path || !path[0]) {
+        if (st->home_dir[0]) {
+            safe_copy(st->current_path, sizeof(st->current_path), st->home_dir);
+            file_push_history(st);
+            file_read_dir(st);
+        } else {
+            file_read_drives(st);
+            file_push_history(st);
+        }
+        return;
+    }
+
+    if (is_dir_path(path)) {
+        safe_copy(st->current_path, sizeof(st->current_path), path);
+        file_push_history(st);
+        file_read_dir(st);
+        return;
+    }
+
+    char dir[256];
+    char name[128];
+    split_parent_path(path, dir, sizeof(dir), name, sizeof(name));
+    if (dir[0] && is_dir_path(dir)) {
+        safe_copy(st->current_path, sizeof(st->current_path), dir);
+        safe_copy(st->pending_select, sizeof(st->pending_select), name);
+        if (g_app.request.mode == gui::dialogs::FILE_DIALOG_SAVE && name[0]) file_set_filename(st, name);
+        file_push_history(st);
+        file_read_dir(st);
+        if (g_app.request.mode == gui::dialogs::FILE_DIALOG_OPEN && name[0]) {
+            for (int i = 0; i < st->entry_count; i++) {
+                if (montauk::streq(st->entry_names[i], name)) {
+                    st->selected = i;
+                    break;
+                }
+            }
+        }
+        return;
+    }
+
+    file_set_error(st, "Path does not exist");
+}
+
+void init_file_dialog(const gui::dialogs::Request& req) {
+    FileDialogState* st = &g_file;
+    montauk::memset(st, 0, sizeof(*st));
+    load_file_icons(st);
+    st->selected = -1;
+    st->last_click_item = -1;
+    st->history_pos = -1;
+    st->grid_view = true;
+    st->focus = FOCUS_LIST;
+    st->scrollbar.init(0, 0, SCROLLBAR_W, 100);
+    montauk::user::get_home_dir(st->home_dir, sizeof(st->home_dir));
+
+    char initial_dir[256] = {};
+    char initial_name[128] = {};
+    if (req.initial_path[0]) split_parent_path(req.initial_path, initial_dir, sizeof(initial_dir), initial_name, sizeof(initial_name));
+
+    if (req.initial_path[0] && is_dir_path(req.initial_path)) {
+        safe_copy(st->current_path, sizeof(st->current_path), req.initial_path);
+        file_read_dir(st);
+        file_push_history(st);
+    } else if (initial_dir[0] && is_dir_path(initial_dir)) {
+        safe_copy(st->current_path, sizeof(st->current_path), initial_dir);
+        safe_copy(st->pending_select, sizeof(st->pending_select), initial_name);
+        file_read_dir(st);
+        file_push_history(st);
+    } else if (st->home_dir[0] && is_dir_path(st->home_dir)) {
+        safe_copy(st->current_path, sizeof(st->current_path), st->home_dir);
+        file_read_dir(st);
+        file_push_history(st);
+    } else {
+        file_read_drives(st);
+        file_push_history(st);
+    }
+
+    if (req.mode == gui::dialogs::FILE_DIALOG_SAVE) {
+        if (req.suggested_name[0]) file_set_filename(st, req.suggested_name);
+        else if (initial_name[0]) file_set_filename(st, initial_name);
+    }
+}
+
+void draw_toolbar_icon(Canvas& c, const Rect& rect, const SvgIcon& icon) {
+    c.fill_rect(rect.x, rect.y, rect.w, rect.h, Color::from_rgb(0xE8, 0xE8, 0xE8));
+    if (icon.pixels) {
+        int ix = rect.x + (rect.w - icon.width) / 2;
+        int iy = rect.y + (rect.h - icon.height) / 2;
+        c.icon(ix, iy, icon);
+    }
+}
+
+void draw_grid_entries(Canvas& c, FileDialogState* st, const FileDialogLayout& lo) {
+    int cols = (lo.content_rect.w - SCROLLBAR_W) / GRID_CELL_W;
+    if (cols < 1) cols = 1;
+    int rows = (st->entry_count + cols - 1) / cols;
+    int content_h = rows * GRID_CELL_H;
+    st->scrollbar.bounds = {c.w - SCROLLBAR_W, lo.content_rect.y, SCROLLBAR_W, lo.content_rect.h};
+    st->scrollbar.content_height = content_h;
+    st->scrollbar.view_height = lo.content_rect.h;
+
+    for (int i = 0; i < st->entry_count; i++) {
+        int col = i % cols;
+        int row = i / cols;
+        int cell_x = col * GRID_CELL_W;
+        int cell_y = lo.content_rect.y + row * GRID_CELL_H - st->scrollbar.scroll_offset;
+        if (cell_y + GRID_CELL_H <= lo.content_rect.y || cell_y >= lo.content_rect.y + lo.content_rect.h) continue;
+
+        if (i == st->selected) {
+            int sy = gui_max(cell_y, lo.content_rect.y);
+            int sh = gui_min(cell_y + GRID_CELL_H, lo.content_rect.y + lo.content_rect.h) - sy;
+            int sw = gui_min(GRID_CELL_W, c.w - SCROLLBAR_W - cell_x);
+            if (sh > 0 && sw > 0) c.fill_rect(cell_x, sy, sw, sh, colors::MENU_HOVER);
+        }
+
+        int icon_x = cell_x + (GRID_CELL_W - GRID_ICON) / 2;
+        int icon_y = cell_y + GRID_PAD;
+        SvgIcon* icon = &st->icons.icon_file_lg;
+        int sfi = -1;
+        if (st->entry_types[i] == ENTRY_SPECIAL) sfi = st->drive_indices[i];
+        if (sfi >= 0 && st->icons.icon_special_lg[sfi].pixels) icon = &st->icons.icon_special_lg[sfi];
+        else if (st->entry_types[i] == ENTRY_HOME && st->icons.icon_home_folder_lg.pixels) icon = &st->icons.icon_home_folder_lg;
+        else if (st->entry_types[i] == ENTRY_DRIVE && st->icons.icon_drive_lg.pixels) icon = &st->icons.icon_drive_lg;
+        else if (st->is_dir[i] && st->icons.icon_folder_lg.pixels) icon = &st->icons.icon_folder_lg;
+        if (icon->pixels) c.icon(icon_x, icon_y, *icon);
+
+        char label[16];
+        int nlen = montauk::slen(st->entry_names[i]);
+        if (nlen > 11) {
+            for (int k = 0; k < 9; k++) label[k] = st->entry_names[i][k];
+            label[9] = '.';
+            label[10] = '.';
+            label[11] = '\0';
+        } else {
+            safe_copy(label, sizeof(label), st->entry_names[i]);
+        }
+        int tx = cell_x + (GRID_CELL_W - text_width(label)) / 2;
+        if (tx < cell_x) tx = cell_x;
+        int ty = icon_y + GRID_ICON + 2;
+        if (ty >= lo.content_rect.y && ty + system_font_height() <= lo.content_rect.y + lo.content_rect.h)
+            c.text(tx, ty, label, colors::TEXT_COLOR);
+    }
+}
+
+void draw_list_entries(Canvas& c, FileDialogState* st, const FileDialogLayout& lo) {
+    int header_y = lo.content_rect.y;
+    int rows_y = header_y + HEADER_H;
+    int rows_h = lo.content_rect.h - HEADER_H;
+    if (rows_h < 0) rows_h = 0;
+
+    c.fill_rect(0, header_y, c.w, HEADER_H, Color::from_rgb(0xF8, 0xF8, 0xF8));
+    c.text(8, header_y + 2, "Name", Color::from_rgb(0x88, 0x88, 0x88));
+    c.text(c.w - SCROLLBAR_W - 120, header_y + 2, "Size", Color::from_rgb(0x88, 0x88, 0x88));
+    c.text(c.w - SCROLLBAR_W - 60, header_y + 2, "Type", Color::from_rgb(0x88, 0x88, 0x88));
+    c.hline(0, header_y + HEADER_H - 1, c.w, colors::BORDER);
+    c.vline(c.w - SCROLLBAR_W - 124, header_y, lo.content_rect.h, colors::BORDER);
+    c.vline(c.w - SCROLLBAR_W - 64, header_y, lo.content_rect.h, colors::BORDER);
+
+    st->scrollbar.bounds = {c.w - SCROLLBAR_W, rows_y, SCROLLBAR_W, rows_h};
+    st->scrollbar.content_height = st->entry_count * ITEM_H;
+    st->scrollbar.view_height = rows_h;
+
+    for (int i = 0; i < st->entry_count; i++) {
+        int y = rows_y + i * ITEM_H - st->scrollbar.scroll_offset;
+        if (y + ITEM_H <= rows_y || y >= rows_y + rows_h) continue;
+
+        if (i == st->selected) c.fill_rect(0, y, c.w - SCROLLBAR_W, ITEM_H, colors::MENU_HOVER);
+
+        int sfi = -1;
+        if (st->entry_types[i] == ENTRY_SPECIAL) sfi = st->drive_indices[i];
+        if (sfi >= 0 && st->icons.icon_special[sfi].pixels) c.icon(8, y + 4, st->icons.icon_special[sfi]);
+        else if (st->entry_types[i] == ENTRY_HOME && st->icons.icon_home_folder.pixels) c.icon(8, y + 4, st->icons.icon_home_folder);
+        else if (st->entry_types[i] == ENTRY_DRIVE && st->icons.icon_drive.pixels) c.icon(8, y + 4, st->icons.icon_drive);
+        else if (st->is_dir[i] && st->icons.icon_folder.pixels) c.icon(8, y + 4, st->icons.icon_folder);
+        else if (st->icons.icon_file.pixels) c.icon(8, y + 4, st->icons.icon_file);
+
+        c.text(30, y + 3, st->entry_names[i], colors::TEXT_COLOR);
+
+        if (!st->is_dir[i]) {
+            char size_buf[16];
+            format_size(size_buf, sizeof(size_buf), st->entry_sizes[i]);
+            c.text(c.w - SCROLLBAR_W - 120, y + 3, size_buf, Color::from_rgb(0x66, 0x66, 0x66));
+        }
+
+        const char* type_label = st->is_dir[i] ? "Folder" : "File";
+        if (st->entry_types[i] == ENTRY_DRIVE) type_label = "Drive";
+        else if (st->entry_types[i] == ENTRY_HOME) type_label = "Home";
+        c.text(c.w - SCROLLBAR_W - 60, y + 3, type_label, Color::from_rgb(0x66, 0x66, 0x66));
+        c.hline(0, y + ITEM_H - 1, c.w, Color::from_rgb(0xF0, 0xF0, 0xF0));
+    }
+}
+
+void draw_file_dialog() {
+    FileDialogState* st = &g_file;
+    Canvas c = g_app.win.canvas();
+    c.fill(colors::WINDOW_BG);
+
+    FileDialogLayout lo = file_layout(st);
+
+    c.fill_rect(0, 0, c.w, TOOLBAR_H, Color::from_rgb(0xF5, 0xF5, 0xF5));
+    draw_toolbar_icon(c, lo.back_btn, st->icons.icon_go_back);
+    draw_toolbar_icon(c, lo.forward_btn, st->icons.icon_go_forward);
+    draw_toolbar_icon(c, lo.up_btn, st->icons.icon_go_up);
+    draw_toolbar_icon(c, lo.home_btn, st->icons.icon_home);
+
+    c.fill_rect(lo.view_btn.x, lo.view_btn.y, lo.view_btn.w, lo.view_btn.h, Color::from_rgb(0xE8, 0xE8, 0xE8));
+    if (st->grid_view) {
+        for (int r = 0; r < 2; r++)
+            for (int cc = 0; cc < 2; cc++)
+                c.fill_rect(lo.view_btn.x + 5 + cc * 8, lo.view_btn.y + 5 + r * 8, 6, 6, colors::TEXT_COLOR);
+    } else {
+        for (int r = 0; r < 3; r++)
+            c.fill_rect(lo.view_btn.x + 5, lo.view_btn.y + 5 + r * 5, 14, 2, colors::TEXT_COLOR);
+    }
+    c.hline(0, TOOLBAR_H - 1, c.w, colors::BORDER);
+
+    char path_label[256];
+    if (st->at_drives_root && st->focus != FOCUS_PATH) safe_copy(path_label, sizeof(path_label), "Computer");
+    else safe_copy(path_label, sizeof(path_label), st->path_buf);
+    draw_input(c, lo.path_rect, path_label, st->focus == FOCUS_PATH, st->path_cursor);
+
+    if (st->grid_view) draw_grid_entries(c, st, lo);
+    else draw_list_entries(c, st, lo);
+
+    draw_scrollbar(c, st->scrollbar);
+
+    c.fill_rect(0, lo.footer_rect.y, c.w, lo.footer_rect.h, Color::from_rgb(0xF7, 0xF7, 0xF7));
+    c.hline(0, lo.footer_rect.y, c.w, colors::BORDER);
+
+    bool confirm_enabled = false;
+    const char* confirm_label = (g_app.request.mode == gui::dialogs::FILE_DIALOG_SAVE) ? "Save" : "Open";
+    if (g_app.request.mode == gui::dialogs::FILE_DIALOG_SAVE) {
+        c.text(12, lo.footer_rect.y + 18, "File name", Color::from_rgb(0x66, 0x66, 0x66));
+        draw_input(c, lo.name_rect, st->filename_buf, st->focus == FOCUS_NAME, st->filename_cursor);
+        confirm_enabled = st->filename_buf[0] != '\0' && !st->at_drives_root;
+    } else {
+        char selection[256] = {};
+        if (st->selected >= 0 && st->selected < st->entry_count) {
+            char full[512];
+            if (st->at_drives_root && st->entry_types[st->selected] == ENTRY_HOME) safe_copy(full, sizeof(full), st->home_dir);
+            else if (st->at_drives_root && st->entry_types[st->selected] == ENTRY_DRIVE) snprintf(full, sizeof(full), "%d:/", st->drive_indices[st->selected]);
+            else if (st->at_drives_root && st->entry_types[st->selected] == ENTRY_SPECIAL) {
+                safe_copy(full, sizeof(full), st->home_dir);
+                int len = montauk::slen(full);
+                if (len > 0 && full[len - 1] != '/') str_append(full, "/", sizeof(full));
+                str_append(full, st->entry_names[st->selected], sizeof(full));
+            } else {
+                build_fullpath(full, sizeof(full), st->current_path, st->entry_names[st->selected]);
+            }
+            fit_text_end(full, selection, sizeof(selection), lo.cancel_btn.x - 16);
+        } else {
+            safe_copy(selection, sizeof(selection), "Choose a file");
+        }
+        c.text(12, lo.footer_rect.y + 14, selection, Color::from_rgb(0x66, 0x66, 0x66));
+        confirm_enabled = st->selected >= 0;
+    }
+
+    if (st->error[0]) {
+        char err[160];
+        fit_text_end(st->error, err, sizeof(err), lo.cancel_btn.x - 16);
+        c.text(12, lo.footer_rect.y + lo.footer_rect.h - system_font_height() - 12, err, Color::from_rgb(0xC0, 0x33, 0x33));
+    }
+
+    draw_action_button(c, lo.cancel_btn, "Cancel", true, lo.cancel_btn.contains(st->mouse_x, st->mouse_y), false);
+    draw_action_button(c, lo.confirm_btn, confirm_label, confirm_enabled, lo.confirm_btn.contains(st->mouse_x, st->mouse_y), true);
+}
+
+void text_insert(char* buf, int* len, int* cursor, int max_len, char ch) {
+    if (!buf || !len || !cursor || *len >= max_len - 1) return;
+    for (int i = *len; i > *cursor; i--) buf[i] = buf[i - 1];
+    buf[*cursor] = ch;
+    (*len)++;
+    (*cursor)++;
+    buf[*len] = '\0';
+}
+
+void text_backspace(char* buf, int* len, int* cursor) {
+    if (!buf || !len || !cursor || *cursor <= 0 || *len <= 0) return;
+    for (int i = *cursor - 1; i < *len - 1; i++) buf[i] = buf[i + 1];
+    (*len)--;
+    (*cursor)--;
+    buf[*len] = '\0';
+}
+
+void text_delete(char* buf, int* len, int* cursor) {
+    if (!buf || !len || !cursor || *cursor >= *len || *len <= 0) return;
+    for (int i = *cursor; i < *len - 1; i++) buf[i] = buf[i + 1];
+    (*len)--;
+    buf[*len] = '\0';
+}
+
+int file_entry_at(FileDialogState* st, int mx, int my) {
+    FileDialogLayout lo = file_layout(st);
+    if (!lo.content_rect.contains(mx, my)) return -1;
+
+    if (st->grid_view) {
+        if (mx >= lo.content_rect.w - SCROLLBAR_W) return -1;
+        int cols = (lo.content_rect.w - SCROLLBAR_W) / GRID_CELL_W;
+        if (cols < 1) cols = 1;
+        int col = mx / GRID_CELL_W;
+        int row = (my - lo.content_rect.y + st->scrollbar.scroll_offset) / GRID_CELL_H;
+        int idx = row * cols + col;
+        if (idx >= 0 && idx < st->entry_count && col < cols) return idx;
+        return -1;
+    }
+
+    int rows_y = lo.content_rect.y + HEADER_H;
+    if (my < rows_y || mx >= lo.content_rect.w - SCROLLBAR_W) return -1;
+    int rel_y = my - rows_y + st->scrollbar.scroll_offset;
+    int idx = rel_y / ITEM_H;
+    if (idx >= 0 && idx < st->entry_count) return idx;
+    return -1;
+}
+
+void handle_file_mouse(const Montauk::WinEvent& ev) {
+    FileDialogState* st = &g_file;
+    st->mouse_x = ev.mouse.x;
+    st->mouse_y = ev.mouse.y;
+
+    FileDialogLayout lo = file_layout(st);
+    MouseEvent me = {ev.mouse.x, ev.mouse.y, ev.mouse.buttons, ev.mouse.prev_buttons, ev.mouse.scroll};
+    st->scrollbar.handle_mouse(me);
+
+    if (me.left_pressed()) {
+        st->error[0] = '\0';
+
+        if (lo.back_btn.contains(me.x, me.y)) { file_go_back(st); return; }
+        if (lo.forward_btn.contains(me.x, me.y)) { file_go_forward(st); return; }
+        if (lo.up_btn.contains(me.x, me.y)) { file_go_up(st); return; }
+        if (lo.home_btn.contains(me.x, me.y)) { file_go_home(st); return; }
+        if (lo.view_btn.contains(me.x, me.y)) {
+            st->grid_view = !st->grid_view;
+            st->scrollbar.scroll_offset = 0;
+            return;
+        }
+        if (lo.cancel_btn.contains(me.x, me.y)) { dialog_cancel(); return; }
+        if (lo.confirm_btn.contains(me.x, me.y)) {
+            if (g_app.request.mode == gui::dialogs::FILE_DIALOG_SAVE) file_accept_save(st);
+            else file_accept_open(st);
+            return;
+        }
+        if (lo.path_rect.contains(me.x, me.y)) {
+            st->focus = FOCUS_PATH;
+            return;
+        }
+        if (g_app.request.mode == gui::dialogs::FILE_DIALOG_SAVE && lo.name_rect.contains(me.x, me.y)) {
+            st->focus = FOCUS_NAME;
+            return;
+        }
+
+        int idx = file_entry_at(st, me.x, me.y);
+        if (idx >= 0) {
+            uint64_t now = montauk::get_milliseconds();
+            st->focus = FOCUS_LIST;
+            if (st->last_click_item == idx && (now - st->last_click_time) < 400) {
+                st->selected = idx;
+                file_activate_selected(st, true);
+                st->last_click_item = -1;
+                st->last_click_time = 0;
+            } else {
+                st->selected = idx;
+                st->last_click_item = idx;
+                st->last_click_time = now;
+                if (g_app.request.mode == gui::dialogs::FILE_DIALOG_SAVE && !st->is_dir[idx]) {
+                    file_set_filename(st, st->entry_names[idx]);
+                }
+            }
+            file_ensure_selected_visible(st);
+            return;
+        }
+
+        st->selected = -1;
+        st->focus = FOCUS_LIST;
+    }
+
+    if (me.scroll != 0 && lo.content_rect.contains(me.x, me.y)) {
+        int step = st->grid_view ? GRID_CELL_H : ITEM_H;
+        st->scrollbar.scroll_offset -= me.scroll * step;
+        int ms = st->scrollbar.max_scroll();
+        if (st->scrollbar.scroll_offset < 0) st->scrollbar.scroll_offset = 0;
+        if (st->scrollbar.scroll_offset > ms) st->scrollbar.scroll_offset = ms;
+    }
+}
+
+void handle_file_key(const Montauk::KeyEvent& key) {
+    if (!key.pressed) return;
+
+    FileDialogState* st = &g_file;
+    st->error[0] = '\0';
+
+    if (key.scancode == 0x01) {
+        dialog_cancel();
+        return;
+    }
+
+    if (st->focus == FOCUS_PATH) {
+        if (key.ascii == '\n' || key.ascii == '\r') {
+            file_open_path(st, st->path_buf);
+            st->focus = FOCUS_LIST;
+            return;
+        }
+        if (key.ascii == '\b' || key.scancode == 0x0E) {
+            text_backspace(st->path_buf, &st->path_len, &st->path_cursor);
+            return;
+        }
+        if (key.scancode == 0x53) { text_delete(st->path_buf, &st->path_len, &st->path_cursor); return; }
+        if (key.scancode == 0x4B) { if (st->path_cursor > 0) st->path_cursor--; return; }
+        if (key.scancode == 0x4D) { if (st->path_cursor < st->path_len) st->path_cursor++; return; }
+        if (key.scancode == 0x47) { st->path_cursor = 0; return; }
+        if (key.scancode == 0x4F) { st->path_cursor = st->path_len; return; }
+        if (key.ascii >= 32 && key.ascii < 127) {
+            text_insert(st->path_buf, &st->path_len, &st->path_cursor, (int)sizeof(st->path_buf), key.ascii);
+            return;
+        }
+        return;
+    }
+
+    if (st->focus == FOCUS_NAME && g_app.request.mode == gui::dialogs::FILE_DIALOG_SAVE) {
+        if (key.ascii == '\n' || key.ascii == '\r') { file_accept_save(st); return; }
+        if (key.ascii == '\b' || key.scancode == 0x0E) {
+            text_backspace(st->filename_buf, &st->filename_len, &st->filename_cursor);
+            return;
+        }
+        if (key.scancode == 0x53) { text_delete(st->filename_buf, &st->filename_len, &st->filename_cursor); return; }
+        if (key.scancode == 0x4B) { if (st->filename_cursor > 0) st->filename_cursor--; return; }
+        if (key.scancode == 0x4D) { if (st->filename_cursor < st->filename_len) st->filename_cursor++; return; }
+        if (key.scancode == 0x47) { st->filename_cursor = 0; return; }
+        if (key.scancode == 0x4F) { st->filename_cursor = st->filename_len; return; }
+        if (key.ascii >= 32 && key.ascii < 127 && key.ascii != '/' && key.ascii != '\\') {
+            text_insert(st->filename_buf, &st->filename_len, &st->filename_cursor, (int)sizeof(st->filename_buf), key.ascii);
+            return;
+        }
+        return;
+    }
+
+    if (key.ascii == '\n' || key.ascii == '\r') {
+        if (g_app.request.mode == gui::dialogs::FILE_DIALOG_SAVE) file_accept_save(st);
+        else file_accept_open(st);
+        return;
+    }
+
+    if (key.scancode == 0x4B || key.scancode == 0x48) {
+        if (st->selected > 0) st->selected--;
+        else if (st->entry_count > 0) st->selected = 0;
+        file_ensure_selected_visible(st);
+        return;
+    }
+
+    if (key.scancode == 0x4D || key.scancode == 0x50) {
+        if (st->selected < st->entry_count - 1) st->selected++;
+        else if (st->entry_count > 0) st->selected = st->entry_count - 1;
+        file_ensure_selected_visible(st);
+        return;
+    }
+
+    if (key.ctrl && (key.ascii == 'l' || key.ascii == 'L')) {
+        st->focus = FOCUS_PATH;
+        return;
+    }
+
+    if (key.ctrl && g_app.request.mode == gui::dialogs::FILE_DIALOG_SAVE && (key.ascii == 'n' || key.ascii == 'N')) {
+        st->focus = FOCUS_NAME;
+        return;
+    }
+}
+
+} // namespace
+
+namespace filedialog {
+
+void init(const gui::dialogs::Request& req) {
+    init_file_dialog(req);
+}
+
+void draw() {
+    draw_file_dialog();
+}
+
+void handle_mouse(const Montauk::WinEvent& ev) {
+    handle_file_mouse(ev);
+}
+
+void handle_key(const Montauk::KeyEvent& key) {
+    handle_file_key(key);
+}
+
+void cleanup() {
+    free_file_icons(&g_file);
+}
+
+} // namespace filedialog
