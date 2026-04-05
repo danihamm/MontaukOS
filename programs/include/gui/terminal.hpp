@@ -69,6 +69,23 @@ static inline Color term_ansi_color(int idx) {
     }
 }
 
+// ANSI 256-color palette (0-15 = standard, 16-231 = RGB cube, 232-255 = grayscale)
+static inline Color term_ansi_256_color(int idx) {
+    if (idx < 0) return colors::TERM_FG;
+    if (idx <= 15) return term_ansi_color(idx);
+    if (idx <= 231) {
+        // 6x6x6 RGB cube: idx 16 = (0,0,0), idx 231 = (5,5,5)
+        int r = ((idx - 16) / 36) * 51;
+        int g = (((idx - 16) % 36) / 6) * 51;
+        int b = ((idx - 16) % 6) * 51;
+        return Color::from_rgb(r, g, b);
+    }
+    // Grayscale: idx 232 = #080808, idx 255 = #eeeeee
+    int gray = 8 + (idx - 232) * 10;
+    if (gray > 238) gray = 238;
+    return Color::from_rgb(gray, gray, gray);
+}
+
 // Helper: pointer to start of screen-relative row r in the cells buffer
 static inline TermCell* term_screen_row(TerminalState* t, int r) {
     return &t->cells[(t->scrollback_lines + r) * t->cols];
@@ -330,6 +347,34 @@ static inline void terminal_process_csi(TerminalState* t, char cmd) {
         // SGR - Set Graphics Rendition
         for (int i = 0; i < t->csi_param_count; i++) {
             int code = t->csi_params[i];
+
+            // Handle extended color sequences: 38;5;N or 48;5;N or 38;2;R;G;B or 48;2;R;G;B
+            if ((code == 38 || code == 48) && i + 2 < t->csi_param_count) {
+                if (t->csi_params[i + 1] == 5) {
+                    // 256-color: 38;5;N or 48;5;N
+                    int color_idx = t->csi_params[i + 2];
+                    if (code == 38) {
+                        t->current_fg = term_ansi_256_color(color_idx);
+                    } else {
+                        t->current_bg = term_ansi_256_color(color_idx);
+                    }
+                    i += 2;
+                    continue;
+                } else if (t->csi_params[i + 1] == 2 && i + 4 < t->csi_param_count) {
+                    // Truecolor: 38;2;R;G;B or 48;2;R;G;B
+                    int r = t->csi_params[i + 2];
+                    int g = t->csi_params[i + 3];
+                    int b = t->csi_params[i + 4];
+                    if (code == 38) {
+                        t->current_fg = Color::from_rgb(r, g, b);
+                    } else {
+                        t->current_bg = Color::from_rgb(r, g, b);
+                    }
+                    i += 4;
+                    continue;
+                }
+            }
+
             if (code == 0) {
                 t->current_fg = colors::TERM_FG;
                 t->current_bg = colors::TERM_BG;

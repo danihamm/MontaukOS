@@ -12,6 +12,8 @@ using montauk::slen;
 using montauk::memcpy;
 using montauk::memmove;
 
+#include <edit/syntax_ansi.hpp>
+
 // ---- Integer to string ----
 
 static int itoa(int val, char* buf) {
@@ -60,6 +62,33 @@ static void exit_alt_screen() { esc("?1049l"); }
 static void reset_attrs() { esc("0m"); }
 static void reverse_video() { esc("7m"); }
 static void dim_text() { esc("2m"); }
+
+// ---- Syntax highlighting state ----
+
+static SynState synState = {};
+static SynLanguage synLang = SYN_LANG_NONE;
+
+// ANSI color for token type (must be called before each colored character)
+// Uses ANSI 256-color codes (38;5;N) for rich terminal colors
+static void syn_ansi_color(SynToken tok) {
+    // 256-color foreground: \033[38;5;Nm
+    putch('\033'); putch('[');
+    switch (tok) {
+    case SYN_KEYWORD:      print("38;5;13m"); break;   // magenta
+    case SYN_TYPE:         print("38;5;14m"); break;   // cyan
+    case SYN_PREPROCESSOR: print("38;5;141m"); break;  // purple
+    case SYN_STRING:       print("38;5;71m"); break;   // green
+    case SYN_CHAR:         print("38;5;71m"); break;   // green
+    case SYN_COMMENT:      print("38;5;8m"); break;   // gray
+    case SYN_NUMBER:       print("38;5;214m"); break;  // orange
+    case SYN_OPERATOR:     print("38;5;15m"); break;  // white
+    default:               print("0m"); break;
+    }
+}
+
+static void syn_ansi_reset() {
+    reset_attrs();
+}
 
 // ---- Line buffer ----
 
@@ -207,6 +236,10 @@ static void build_path(const char* fname, char* out, int outMax) {
 }
 
 static void load_file(const char* fname) {
+    // Detect language before potentially creating a new file
+    synLang = syn_detect_language(fname);
+    synState = syn_make_state();
+
     char path[256];
     build_path(fname, path, sizeof(path));
 
@@ -444,9 +477,35 @@ static void draw_line(int screenRow, int docLine) {
         Line* ln = &lines[docLine];
         int startCol = leftCol;
         int maxChars = screenCols - gutterWidth;
+        int visibleLen = 0;
+        if (startCol < ln->len) {
+            visibleLen = ln->len - startCol;
+            if (visibleLen > maxChars) visibleLen = maxChars;
+        }
 
-        for (int c = 0; c < maxChars && startCol + c < ln->len; c++) {
-            putch(ln->data[startCol + c]);
+        if (synLang != SYN_LANG_NONE && visibleLen > 0) {
+            // Tokenize visible portion for syntax highlighting
+            static SynToken tokens[256];
+            int tokCount = visibleLen;
+            if (tokCount > 256) tokCount = 256;
+            syn_fill_tokens(tokens, tokCount, 0, tokCount, SYN_NORMAL);
+            syn_highlight_line(ln->data + startCol, visibleLen, tokens, tokCount, synLang, synState);
+
+            // Output with ANSI colors
+            SynToken prevTok = SYN_NORMAL;
+            for (int c = 0; c < tokCount; c++) {
+                if (c == 0 || tokens[c] != prevTok) {
+                    syn_ansi_color(tokens[c]);
+                    prevTok = tokens[c];
+                }
+                putch(ln->data[startCol + c]);
+            }
+            syn_ansi_reset();
+        } else {
+            // No highlighting - plain output
+            for (int c = 0; c < visibleLen; c++) {
+                putch(ln->data[startCol + c]);
+            }
         }
     } else {
         // Past end of file
@@ -798,6 +857,8 @@ extern "C" void _start() {
         // New empty buffer
         numLines = 1;
         line_init(&lines[0]);
+        synLang = SYN_LANG_NONE;
+        synState = syn_make_state();
     }
 
     // Enter alternate screen
