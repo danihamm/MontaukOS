@@ -135,51 +135,12 @@ struct Canvas {
     void text(int x, int y, const char* str, Color c) {
         if (fonts::system_font && fonts::system_font->valid) {
             fonts::system_font->draw_to_buffer(pixels, w, h, x, y, str, c, fonts::UI_SIZE);
-            return;
-        }
-        uint32_t px = c.to_pixel();
-        for (int i = 0; str[i] && x + (i + 1) * FONT_WIDTH <= w; i++) {
-            const uint8_t* glyph = &font_data[(unsigned char)str[i] * FONT_HEIGHT];
-            int cx = x + i * FONT_WIDTH;
-            for (int fy = 0; fy < FONT_HEIGHT && y + fy < h; fy++) {
-                uint8_t bits = glyph[fy];
-                for (int fx = 0; fx < FONT_WIDTH; fx++) {
-                    if (bits & (0x80 >> fx)) {
-                        int dx = cx + fx;
-                        int dy = y + fy;
-                        if (dx >= 0 && dx < w && dy >= 0)
-                            pixels[dy * w + dx] = px;
-                    }
-                }
-            }
         }
     }
 
     void text_2x(int x, int y, const char* str, Color c) {
         if (fonts::system_font && fonts::system_font->valid) {
             fonts::system_font->draw_to_buffer(pixels, w, h, x, y, str, c, fonts::LARGE_SIZE);
-            return;
-        }
-        uint32_t px = c.to_pixel();
-        for (int i = 0; str[i] && x + (i + 1) * FONT_WIDTH * 2 <= w; i++) {
-            const uint8_t* glyph = &font_data[(unsigned char)str[i] * FONT_HEIGHT];
-            int cx = x + i * FONT_WIDTH * 2;
-            for (int fy = 0; fy < FONT_HEIGHT; fy++) {
-                uint8_t bits = glyph[fy];
-                for (int fx = 0; fx < FONT_WIDTH; fx++) {
-                    if (bits & (0x80 >> fx)) {
-                        int dx = cx + fx * 2;
-                        int dy = y + fy * 2;
-                        for (int sy = 0; sy < 2; sy++)
-                            for (int sx = 0; sx < 2; sx++) {
-                                int pdx = dx + sx;
-                                int pdy = dy + sy;
-                                if (pdx >= 0 && pdx < w && pdy >= 0 && pdy < h)
-                                    pixels[pdy * w + pdx] = px;
-                            }
-                    }
-                }
-            }
         }
     }
 

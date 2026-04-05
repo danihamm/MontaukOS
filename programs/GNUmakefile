@@ -59,7 +59,7 @@ BINDIR := bin
 PROGRAMS := $(notdir $(wildcard src/*))
 
 # Programs with custom Makefiles (built separately).
-CUSTOM_BUILDS := doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator desktop login shell rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl dialogs test_dl libloader
+CUSTOM_BUILDS := doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator desktop login shell rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl dialogs test_dl libloader libhello
 SYSTEM_PROGRAMS := $(filter-out $(CUSTOM_BUILDS),$(PROGRAMS))
 
 # Build targets: system programs go to bin/os/, apps go to bin/apps/<name>/.
@@ -81,9 +81,9 @@ CA_CERTS := $(BINDIR)/etc/ca-certificates.crt
 # Common shared assets (wallpapers, etc.)
 COMMONKEEP := $(BINDIR)/common/.keep
 
-.PHONY: all clean doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator login desktop shell rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl dialogs icons fonts bearssl libc tls libjpeg libjpegwrite install-apps libloader libs test_dl
+.PHONY: all clean doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator login desktop shell rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl dialogs icons fonts bearssl libc tls libjpeg libjpegwrite install-apps libloader libs libhello test_dl
 
-all: bearssl libc libjpeg libjpegwrite tls libloader libs $(TARGETS) fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator doom rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl dialogs login desktop shell icons fonts install-apps test_dl $(MANDST) $(WWWDST) $(CA_CERTS) $(COMMONKEEP)
+all: bearssl libc libjpeg libjpegwrite tls libloader libs libhello $(TARGETS) fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator doom rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl dialogs login desktop shell icons fonts install-apps test_dl $(MANDST) $(WWWDST) $(CA_CERTS) $(COMMONKEEP)
 
 # Build BearSSL static library (cross-compiled for freestanding x86_64).
 BEARSSL_INCLUDES := -isystem $(shell cd .. && pwd)/kernel/freestnd-c-hdrs/x86_64/include -isystem $(abspath include/libc)
@@ -111,6 +111,10 @@ libloader: libc
 # Build shared libraries (libmath.lib etc).
 libs: libloader
 	$(MAKE) -C libs/libmath
+
+# Build libhello shared GUI library.
+libhello: libloader
+	$(MAKE) -C libs/libhello
 
 # Build fetch via its own Makefile (depends on bearssl, libc, and tls).
 fetch: bearssl libc tls
@@ -348,4 +352,5 @@ clean:
 	$(MAKE) -C src/dialogs clean
 	$(MAKE) -C src/libloader clean
 	$(MAKE) -C libs/libmath clean
+	$(MAKE) -C libs/libhello clean
 	$(MAKE) -C src/test_dl clean

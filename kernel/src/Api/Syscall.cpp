@@ -417,6 +417,8 @@ namespace Montauk {
                 return Sys_UnloadLib(frame->arg1);
             case SYS_DLSYM:
                 return (int64_t)Sys_DLSym(frame->arg1, frame->arg2);
+            case SYS_GETLIBBASE:
+                return (int64_t)Sys_GetLibBase(frame->arg1);
             default:
                 return -1;
         }

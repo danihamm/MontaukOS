@@ -107,6 +107,10 @@ static bool parseSymbolFile(const char* symPath, LibHandle* lib) {
 
 static uint64_t hexToUint64(const char* str) {
     uint64_t result = 0;
+    // Skip optional "0x" prefix
+    if (str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
+        str += 2;
+    }
     while (*str) {
         char c = *str;
         uint64_t val = 0;
@@ -164,14 +168,9 @@ LibHandle* dlopen(const char* path) {
 void* dlsym(LibHandle* lib, const char* symbolName) {
     if (!lib || !symbolName) return nullptr;
 
-    // Get base address if we don't have it
+    // Get base address from kernel if we don't have it
     if (lib->base == 0) {
-        // The base is stored in the handle - we need a syscall to get it
-        // For now, we'll use a workaround: calculate base from slot
-        // handle = slot + 1, so slot = handle - 1
-        // base = 0x60000000 + slot * 0x200000
-        int slot = lib->handle - 1;
-        lib->base = 0x60000000ULL + (uint64_t)slot * 0x200000ULL;
+        lib->base = montauk::get_libbase(lib->handle);
     }
 
     // Look up in symbol table

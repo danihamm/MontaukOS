@@ -292,6 +292,9 @@ namespace montauk {
     inline void* dlsym(int handle, uint64_t symbolOffset) {
         return (void*)syscall2(Montauk::SYS_DLSYM, (uint64_t)handle, symbolOffset);
     }
+    inline uint64_t get_libbase(int handle) {
+        return (uint64_t)syscall1(Montauk::SYS_GETLIBBASE, (uint64_t)handle);
+    }
 
     // Process management
     inline void waitpid(int pid) { syscall1(Montauk::SYS_WAITPID, (uint64_t)pid); }

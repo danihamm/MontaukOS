@@ -270,11 +270,11 @@ namespace Sched {
                 if (copyStart < copyEnd) {
                     // Source: file data at (copyStart - targetSegStart) offset from p_offset
                     uint64_t srcOffset = phdr->p_offset + (copyStart - targetSegStart);
-                    // Dest: page at (copyStart - pageStart) offset
-                    uint64_t dstOffset = copyStart - pageStart;
+                    // Dest: page at (copyStart - targetSegStart) offset, then adjusted for this page
+                    uint64_t pageDataOffset = copyStart - targetSegStart;
                     uint64_t copySize = copyEnd - copyStart;
 
-                    uint8_t* dst = (uint8_t*)Memory::HHDM(physAddr) + dstOffset;
+                    uint8_t* dst = (uint8_t*)Memory::HHDM(physAddr) + pageDataOffset;
                     uint8_t* src = fileData + srcOffset;
                     memcpy(dst, src, copySize);
                 }

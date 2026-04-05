@@ -148,6 +148,7 @@ namespace Montauk {
     static constexpr uint64_t SYS_LOAD_LIB      = 114;
     static constexpr uint64_t SYS_UNLOAD_LIB     = 115;
     static constexpr uint64_t SYS_DLSYM          = 116;
+    static constexpr uint64_t SYS_GETLIBBASE     = 117;
 
     static constexpr uint32_t IPC_SIGNAL_READABLE    = 1u << 0;
     static constexpr uint32_t IPC_SIGNAL_WRITABLE    = 1u << 1;
