@@ -141,7 +141,7 @@ void filemanager_read_dir(FileManagerState* fm) {
             }
             if (match) raw += prefix_len;
         }
-        montauk::strncpy(fm->entry_names[i], raw, 63);
+        montauk::strncpy(fm->entry_names[i], raw, 128);
         int len = montauk::slen(fm->entry_names[i]);
 
         // Detect directory

@@ -17,7 +17,7 @@ struct FileManagerState {
     char history[16][256];
     int history_pos;
     int history_count;
-    char entry_names[64][64];
+    char entry_names[64][128];
     int entry_types[64];   // 0=file, 1=dir, 2=exec, 3=drive, 4=home, 5=apps, 6=app, 7=special_dir
     int entry_sizes[64];
     int entry_count;
@@ -48,7 +48,7 @@ struct FileManagerState {
     // Rename
     bool rename_active;
     int rename_idx;
-    char rename_buf[64];
+    char rename_buf[128];
     int rename_cursor;
     int rename_len;
 
