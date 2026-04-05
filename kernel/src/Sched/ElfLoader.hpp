@@ -41,9 +41,18 @@ namespace Sched {
     static constexpr uint16_t ET_EXEC    = 2;
     static constexpr uint16_t EM_X86_64  = 62;
 
+    // Fixed base address for shared libraries.
+    static constexpr uint64_t LIB_BASE = 0x60000000ULL;
+    static constexpr uint64_t LIB_MAX_SIZE = 0x200000ULL;  // 2MB per library
+
     // Load an ELF64 binary into a per-process address space.
     // pml4Phys = physical address of the process's PML4.
     // Returns the entry point address, or 0 on failure.
     uint64_t ElfLoad(const char* vfsPath, uint64_t pml4Phys);
+
+    // Load a shared library into a fixed address range.
+    // Loads at LIB_BASE for the given slot.
+    // Returns the library base virtual address on success, or 0 on failure.
+    uint64_t ElfLoadLib(const char* vfsPath, uint64_t pml4Phys, int slot);
 
 }

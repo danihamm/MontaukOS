@@ -33,6 +33,7 @@
 #include "Audio.hpp"      // SYS_AUDIOOPEN, SYS_AUDIOCLOSE, SYS_AUDIOWRITE, SYS_AUDIOCTL
 #include "BluetoothSyscall.hpp" // SYS_BTSCAN, SYS_BTCONNECT, SYS_BTDISCONNECT, SYS_BTLIST, SYS_BTINFO
 #include "IpcSyscall.hpp" // SYS_DUPHANDLE, SYS_WAIT_HANDLE, SYS_STREAM_CREATE, SYS_STREAM_READ, SYS_STREAM_WRITE, SYS_MAILBOX_CREATE, SYS_MAILBOX_SEND, SYS_MAILBOX_RECV, SYS_WAITSET_CREATE, SYS_WAITSET_ADD, SYS_WAITSET_REMOVE, SYS_WAITSET_WAIT, SYS_PROC_OPEN, SYS_SURFACE_CREATE, SYS_SURFACE_MAP, SYS_SURFACE_RESIZE
+#include "LibSyscall.hpp" // SYS_LOAD_LIB, SYS_UNLOAD_LIB, SYS_DLSYM
 
 // Assembly entry point
 extern "C" void SyscallEntry();
@@ -65,6 +66,8 @@ namespace Montauk {
                 auto* proc = Sched::GetCurrentProcessPtr();
                 if (slot >= 0 && proc)
                     CleanupHeapForSlot(slot, proc->pml4Phys);
+                if (slot >= 0)
+                    CleanupLibTable(slot);
                 Sys_Exit((int)frame->arg1);
                 return 0;
             }
@@ -274,6 +277,7 @@ namespace Montauk {
                     auto* slot0 = Sched::GetProcessSlot(0);
                     int targetSlot = (int)(target - slot0);
                     CleanupHeapForSlot(targetSlot, target->pml4Phys);
+                    CleanupLibTable(targetSlot);
                 }
                 return (int64_t)Sys_Kill((int)frame->arg1);
             }
@@ -406,6 +410,13 @@ namespace Montauk {
                 return (int64_t)Sys_SurfaceMap((int)frame->arg1);
             case SYS_SURFACE_RESIZE:
                 return Sys_SurfaceResize((int)frame->arg1, frame->arg2);
+            case SYS_LOAD_LIB:
+                if (!ValidUserPtr(frame->arg1)) return 0;
+                return (int64_t)Sys_LoadLib((const char*)frame->arg1);
+            case SYS_UNLOAD_LIB:
+                return Sys_UnloadLib(frame->arg1);
+            case SYS_DLSYM:
+                return (int64_t)Sys_DLSym(frame->arg1, frame->arg2);
             default:
                 return -1;
         }

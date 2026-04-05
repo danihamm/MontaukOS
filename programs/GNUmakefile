@@ -59,7 +59,7 @@ BINDIR := bin
 PROGRAMS := $(notdir $(wildcard src/*))
 
 # Programs with custom Makefiles (built separately).
-CUSTOM_BUILDS := doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator desktop login shell rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl dialogs
+CUSTOM_BUILDS := doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator desktop login shell rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl dialogs test_dl libloader
 SYSTEM_PROGRAMS := $(filter-out $(CUSTOM_BUILDS),$(PROGRAMS))
 
 # Build targets: system programs go to bin/os/, apps go to bin/apps/<name>/.
@@ -81,9 +81,9 @@ CA_CERTS := $(BINDIR)/etc/ca-certificates.crt
 # Common shared assets (wallpapers, etc.)
 COMMONKEEP := $(BINDIR)/common/.keep
 
-.PHONY: all clean doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator login desktop shell rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl dialogs icons fonts bearssl libc tls libjpeg libjpegwrite install-apps
+.PHONY: all clean doom fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator login desktop shell rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl dialogs icons fonts bearssl libc tls libjpeg libjpegwrite install-apps libloader libs test_dl
 
-all: bearssl libc libjpeg libjpegwrite tls $(TARGETS) fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator doom rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl dialogs login desktop shell icons fonts install-apps $(MANDST) $(WWWDST) $(CA_CERTS) $(COMMONKEEP)
+all: bearssl libc libjpeg libjpegwrite tls libloader libs $(TARGETS) fetch wiki wikipedia weather imageviewer fontpreview spreadsheet wordprocessor pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator doom rpgdemo paint tcc lua screenshot texteditor mandelbrot printers printd printctl dialogs login desktop shell icons fonts install-apps test_dl $(MANDST) $(WWWDST) $(CA_CERTS) $(COMMONKEEP)
 
 # Build BearSSL static library (cross-compiled for freestanding x86_64).
 BEARSSL_INCLUDES := -isystem $(shell cd .. && pwd)/kernel/freestnd-c-hdrs/x86_64/include -isystem $(abspath include/libc)
@@ -103,6 +103,14 @@ libc:
 # Build shared TLS helper library.
 tls: bearssl libc
 	$(MAKE) -C lib/tls
+
+# Build libloader static library (used by test_dl).
+libloader: libc
+	$(MAKE) -C src/libloader
+
+# Build shared libraries (libmath.lib etc).
+libs: libloader
+	$(MAKE) -C libs/libmath
 
 # Build fetch via its own Makefile (depends on bearssl, libc, and tls).
 fetch: bearssl libc tls
@@ -265,6 +273,10 @@ printctl: bearssl libc tls
 dialogs: bearssl libc tls
 	$(MAKE) -C src/dialogs
 
+# Build test_dl (dynamic loading test app, depends on libloader).
+test_dl: libloader libs
+	$(MAKE) -C src/test_dl
+
 # Install app bundles (manifests, icons, data files) into bin/apps/<name>/.
 install-apps: doom rpgdemo paint spreadsheet wordprocessor weather wikipedia imageviewer fontpreview pdfviewer disks devexplorer installer volume music video bluetooth terminal klog procmgr calculator screenshot texteditor mandelbrot printers dialogs
 	../scripts/install_apps.sh
@@ -334,3 +346,6 @@ clean:
 	$(MAKE) -C src/printd clean
 	$(MAKE) -C src/printctl clean
 	$(MAKE) -C src/dialogs clean
+	$(MAKE) -C src/libloader clean
+	$(MAKE) -C libs/libmath clean
+	$(MAKE) -C src/test_dl clean

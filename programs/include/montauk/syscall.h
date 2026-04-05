@@ -282,6 +282,17 @@ namespace montauk {
         return (int)syscall2(Montauk::SYS_SURFACE_RESIZE, (uint64_t)handle, newSize);
     }
 
+    // Shared library support
+    inline int load_lib(const char* path) {
+        return (int)syscall1(Montauk::SYS_LOAD_LIB, (uint64_t)path);
+    }
+    inline int unload_lib(int handle) {
+        return (int)syscall1(Montauk::SYS_UNLOAD_LIB, (uint64_t)handle);
+    }
+    inline void* dlsym(int handle, uint64_t symbolOffset) {
+        return (void*)syscall2(Montauk::SYS_DLSYM, (uint64_t)handle, symbolOffset);
+    }
+
     // Process management
     inline void waitpid(int pid) { syscall1(Montauk::SYS_WAITPID, (uint64_t)pid); }
 
