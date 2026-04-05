@@ -43,6 +43,8 @@ static WsWindow g_win;
 static TermTabs g_tabs = {};
 static bool g_should_exit = false;
 static bool g_force_redraw = true;
+static int g_last_win_w = 0;
+static int g_last_win_h = 0;
 
 static bool left_pressed(const Montauk::WinEvent& ev) {
     return (ev.mouse.buttons & 1) && !(ev.mouse.prev_buttons & 1);
@@ -146,7 +148,11 @@ static bool term_render() {
 
     TerminalState* ts = g_tabs.tabs[g_tabs.active_tab];
 
-    if (new_cols != ts->cols || new_rows != ts->rows) {
+    // Only resize the terminal buffer when window pixel dimensions change,
+    // not when font size (zoom) changes
+    if (g_win.width != g_last_win_w || term_h != g_last_win_h) {
+        g_last_win_w = g_win.width;
+        g_last_win_h = term_h;
         for (int i = 0; i < g_tabs.tab_count; i++)
             terminal_resize(g_tabs.tabs[i], new_cols, new_rows);
     }
@@ -295,6 +301,28 @@ static void term_handle_key(const Montauk::KeyEvent& key) {
         return;
     }
 
+    // Ctrl+Plus/Equal: zoom in
+    if (key.ctrl && key.pressed && (key.ascii == '+' || key.ascii == '=')) {
+        if (fonts::TERM_SIZE < 64) {
+            fonts::TERM_SIZE += 2;
+            for (int i = 0; i < g_tabs.tab_count; i++)
+                g_tabs.tabs[i]->dirty = true;
+            term_request_redraw();
+        }
+        return;
+    }
+
+    // Ctrl+Minus: zoom out
+    if (key.ctrl && key.pressed && key.ascii == '-') {
+        if (fonts::TERM_SIZE > 8) {
+            fonts::TERM_SIZE -= 2;
+            for (int i = 0; i < g_tabs.tab_count; i++)
+                g_tabs.tabs[i]->dirty = true;
+            term_request_redraw();
+        }
+        return;
+    }
+
     terminal_handle_key(g_tabs.tabs[g_tabs.active_tab], key);
 }
 
@@ -315,6 +343,10 @@ extern "C" void _start() {
 
     if (!g_win.create("Terminal", INIT_W, INIT_H))
         montauk::exit(1);
+
+    int term_h = g_win.height - TERM_TAB_BAR_H;
+    g_last_win_w = g_win.width;
+    g_last_win_h = term_h;
 
     int cols = g_win.width / mono_cell_width();
     int rows = (g_win.height - TERM_TAB_BAR_H) / mono_cell_height();
