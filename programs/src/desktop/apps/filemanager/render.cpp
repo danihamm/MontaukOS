@@ -217,16 +217,29 @@ void filemanager_on_draw(Window* win, Framebuffer& fb) {
                     c.vline(cx, ty, system_font_height(), colors::ACCENT);
                 }
             } else {
+                // Truncate by pixel width so names never overflow cells
+                int max_w = FM_GRID_CELL_W - 4;
+                const char* name = fm->entry_names[i];
+                int nlen = montauk::slen(name);
                 char label[64];
-                int nlen = montauk::slen(fm->entry_names[i]);
-                if (nlen > 60) {
-                    for (int k = 0; k < 60; k++) label[k] = fm->entry_names[i][k];
-                    label[60] = '.';
-                    label[61] = '.';
-                    label[62] = '\0';
-                } else {
-                    montauk::strncpy(label, fm->entry_names[i], 63);
+                montauk::strncpy(label, name, 63);
+
+                if (text_width(label) > max_w && nlen > 3) {
+                    int ellipsis_w = text_width("...");
+                    int final_len = nlen;
+                    while (final_len > 1) {
+                        label[final_len] = '\0';
+                        int w = text_width(label);
+                        if (w + ellipsis_w <= max_w) break;
+                        final_len--;
+                    }
+                    if (final_len > 60) final_len = 60;
+                    label[final_len] = '.';
+                    label[final_len + 1] = '.';
+                    label[final_len + 2] = '.';
+                    label[final_len + 3] = '\0';
                 }
+
                 int tw = text_width(label);
                 int tx = cell_x + (FM_GRID_CELL_W - tw) / 2;
                 if (tx < cell_x) tx = cell_x;

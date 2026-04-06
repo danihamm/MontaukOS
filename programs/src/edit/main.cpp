@@ -222,17 +222,47 @@ static void set_status(const char* msg) {
 
 // Build VFS path from filename
 static void build_path(const char* fname, char* out, int outMax) {
-    int i = 0;
     // Check if already has drive prefix
     bool hasPrefix = (fname[0] >= '0' && fname[0] <= '9' && fname[1] == ':');
-    if (!hasPrefix) {
-        out[i++] = '0'; out[i++] = ':'; out[i++] = '/';
+
+    if (hasPrefix) {
+        // Absolute path - copy as-is
+        int i = 0;
+        while (fname[i] && i < outMax - 1) {
+            out[i++] = fname[i];
+        }
+        out[i] = '\0';
+    } else {
+        // Relative path - prepend CWD
+        char cwd[256];
+        if (montauk::getcwd(cwd, sizeof(cwd)) > 0) {
+            int i = 0;
+            int j = 0;
+            // Copy CWD
+            while (cwd[j] && i < outMax - 1) {
+                out[i++] = cwd[j++];
+            }
+            // Ensure we end with /
+            if (i > 0 && out[i-1] != '/') {
+                out[i++] = '/';
+            }
+            // Append filename
+            j = 0;
+            while (fname[j] && i < outMax - 1) {
+                out[i++] = fname[j++];
+            }
+            out[i] = '\0';
+        } else {
+            // Fallback: just prepend 0:/
+            int i = 0;
+            out[i++] = '0'; out[i++] = ':'; out[i++] = '/';
+            int j = 0;
+            while (fname[j] && i < outMax - 1) {
+                out[i++] = fname[j++];
+            }
+            out[i] = '\0';
+        }
     }
-    int j = 0;
-    while (fname[j] && i < outMax - 1) {
-        out[i++] = fname[j++];
-    }
-    out[i] = '\0';
 }
 
 static void load_file(const char* fname) {
